@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useAppStore } from '../store/appStore';
+import { GoogleDriveUpload } from './GoogleDriveUpload';
 import type { BinderItem } from '../types';
 
 const LABEL_COLORS: Record<string, string> = {
@@ -11,6 +12,12 @@ const LABEL_COLORS: Record<string, string> = {
   blue: '#63b3ed',
   purple: '#b794f4',
 };
+
+function isItemInTrash(binder: BinderItem[], itemId: string): boolean {
+  const trash = binder.find((item) => item.id === 'trash');
+  if (!trash) return false;
+  return trash.children.some((child) => child.id === itemId);
+}
 
 interface BinderNodeProps {
   item: BinderItem;
@@ -24,11 +31,16 @@ function BinderNode({ item, depth }: BinderNodeProps) {
     toggleExpanded,
     addItem,
     updateItem,
+    removeItem,
+    emptyTrash,
+    permanentlyDeleteItem,
   } = useAppStore();
 
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(item.title);
   const [dragOver, setDragOver] = useState(false);
+  const [showContextMenu, setShowContextMenu] = useState(false);
+  const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
 
   const isSelected = selectedId === item.id;
   const isFolder = item.type === 'folder';
@@ -55,6 +67,28 @@ function BinderNode({ item, depth }: BinderNodeProps) {
     }
   }
 
+  function handleContextMenu(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    selectItem(item.id);
+    setContextMenuPos({ x: e.clientX, y: e.clientY });
+    setShowContextMenu(true);
+  }
+
+  function handleDelete() {
+    if (item.id === 'trash') {
+      emptyTrash();
+    } else {
+      removeItem(item.id);
+    }
+    setShowContextMenu(false);
+  }
+
+  function handlePermanentDelete() {
+    permanentlyDeleteItem(item.id);
+    setShowContextMenu(false);
+  }
+
   return (
     <div>
       <div
@@ -67,6 +101,7 @@ function BinderNode({ item, depth }: BinderNodeProps) {
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
         onClick={() => selectItem(item.id)}
+        onContextMenu={handleContextMenu}
         onDoubleClick={() => {
           setEditTitle(item.title);
           setEditing(true);
@@ -156,12 +191,75 @@ function BinderNode({ item, depth }: BinderNodeProps) {
           )}
         </div>
       )}
+
+      {/* Context menu */}
+      {showContextMenu && (
+        <div
+          className="fixed bg-[#2d3748] border border-[#0f3460] rounded text-xs text-gray-200 shadow-lg z-50"
+          style={{ top: `${contextMenuPos.y}px`, left: `${contextMenuPos.x}px` }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {item.id === 'trash' && item.children.length > 0 && (
+            <button
+              onClick={handleDelete}
+              className="w-full text-left px-3 py-2 hover:bg-red-600 hover:text-white transition-colors"
+            >
+              🗑️ Empty Trash
+            </button>
+          )}
+          {isItemInTrash(useAppStore.getState().binder, item.id) && (
+            <button
+              onClick={handlePermanentDelete}
+              className="w-full text-left px-3 py-2 hover:bg-red-600 hover:text-white transition-colors"
+            >
+              ⚠️ Delete Permanently
+            </button>
+          )}
+          {item.id !== 'trash' && !isItemInTrash(useAppStore.getState().binder, item.id) && (
+            <button
+              onClick={handleDelete}
+              className="w-full text-left px-3 py-2 hover:bg-[#6b46c1] hover:text-white transition-colors"
+            >
+              🗑️ Delete
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Close menu on outside click */}
+      {showContextMenu && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setShowContextMenu(false)}
+        />
+      )}
     </div>
   );
 }
 
 export function Binder() {
-  const { binder, addItem } = useAppStore();
+  const { binder, addItem, updateItem, selectItem } = useAppStore();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleFileUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = event.currentTarget.files;
+    if (!files) return;
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const text = await file.text();
+
+      addItem(null, 'document');
+      const lastBinder = useAppStore.getState().binder;
+      const lastDoc = lastBinder[lastBinder.length - 1];
+      if (lastDoc && lastDoc.id !== 'trash') {
+        const fileName = file.name.replace(/\.[^/.]+$/, '');
+        updateItem(lastDoc.id, { content: text, title: fileName });
+        selectItem(lastDoc.id);
+      }
+    }
+    event.currentTarget.value = '';
+  }
 
   return (
     <div className="w-56 shrink-0 bg-[#16213e] border-r border-[#0f3460] flex flex-col overflow-hidden">
@@ -185,6 +283,21 @@ export function Binder() {
           >
             📄+
           </button>
+          <label
+            title="Upload file from computer"
+            className="text-xs text-gray-400 hover:text-white px-1 cursor-pointer"
+          >
+            ⬆️
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept=".txt,.md,.html"
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+          </label>
+          <GoogleDriveUpload />
         </div>
       </div>
 

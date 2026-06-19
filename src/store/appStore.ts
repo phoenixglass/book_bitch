@@ -284,6 +284,25 @@ export const useAppStore = create<AppState>()(
           };
         });
       },
+
+      emptyTrash: () => {
+        set((s) => {
+          const trashItem = findItem(s.binder, 'trash');
+          if (!trashItem) return s;
+          return {
+            binder: patchItemInTree(s.binder, 'trash', {
+              children: [],
+            }),
+          };
+        });
+      },
+
+      permanentlyDeleteItem: (id) => {
+        set((s) => {
+          const [newBinder] = removeItemFromTree(s.binder, id);
+          return { binder: newBinder };
+        });
+      },
     }),
     { name: 'book-bitch-project' },
   ),
