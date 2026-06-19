@@ -2,53 +2,59 @@ import { useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import type { BinderItem } from '../types';
 
+/**
+ * Safely extract plain text from HTML using the browser's DOMParser,
+ * which guarantees no script tags or injection can survive.
+ */
 function stripHtml(html: string): string {
-  return html
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n\n')
-    .replace(/<\/h[1-6]>/gi, '\n\n')
-    .replace(/<\/li>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&quot;/g, '"')
-    .trim();
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  // Preserve paragraph breaks
+  doc.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, br').forEach((el) => {
+    el.after(document.createTextNode('\n'));
+  });
+  return (doc.body.textContent ?? '').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+/**
+ * Convert TipTap HTML to Markdown. We first sanitise via DOMParser to
+ * prevent any script injection surviving into the downloaded file.
+ */
 function htmlToMarkdown(html: string): string {
-  return html
-    .replace(/<h1[^>]*>(.*?)<\/h1>/gi, '# $1\n\n')
-    .replace(/<h2[^>]*>(.*?)<\/h2>/gi, '## $1\n\n')
-    .replace(/<h3[^>]*>(.*?)<\/h3>/gi, '### $1\n\n')
-    .replace(/<strong[^>]*>(.*?)<\/strong>/gi, '**$1**')
-    .replace(/<b[^>]*>(.*?)<\/b>/gi, '**$1**')
-    .replace(/<em[^>]*>(.*?)<\/em>/gi, '*$1*')
-    .replace(/<i[^>]*>(.*?)<\/i>/gi, '*$1*')
-    .replace(/<s[^>]*>(.*?)<\/s>/gi, '~~$1~~')
-    .replace(/<code[^>]*>(.*?)<\/code>/gi, '`$1`')
-    .replace(/<mark[^>]*>(.*?)<\/mark>/gi, '==$1==')
-    .replace(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/gi, (_, c) =>
-      c
-        .replace(/<[^>]+>/g, '')
-        .split('\n')
-        .map((l: string) => `> ${l}`)
-        .join('\n'),
-    )
-    .replace(/<li[^>]*>(.*?)<\/li>/gi, '- $1\n')
-    .replace(/<\/?(ul|ol|li)[^>]*>/gi, '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n\n')
-    .replace(/<p[^>]*>/gi, '')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&quot;/g, '"')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+  // Parse through DOMParser for safety, then walk the sanitised DOM
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+
+  function nodeToMd(node: Node): string {
+    if (node.nodeType === Node.TEXT_NODE) {
+      return node.textContent ?? '';
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+    const el = node as Element;
+    const tag = el.tagName.toLowerCase();
+    const inner = Array.from(el.childNodes).map(nodeToMd).join('');
+
+    switch (tag) {
+      case 'h1': return `# ${inner}\n\n`;
+      case 'h2': return `## ${inner}\n\n`;
+      case 'h3': return `### ${inner}\n\n`;
+      case 'strong':
+      case 'b':   return `**${inner}**`;
+      case 'em':
+      case 'i':   return `*${inner}*`;
+      case 's':   return `~~${inner}~~`;
+      case 'code': return `\`${inner}\``;
+      case 'mark': return `==${inner}==`;
+      case 'blockquote':
+        return inner.split('\n').map((l) => `> ${l}`).join('\n') + '\n\n';
+      case 'li':  return `- ${inner}\n`;
+      case 'ul':
+      case 'ol':  return inner + '\n';
+      case 'p':   return `${inner}\n\n`;
+      case 'br':  return '\n';
+      default:    return inner;
+    }
+  }
+
+  return nodeToMd(doc.body).replace(/\n{3,}/g, '\n\n').trim();
 }
 
 function collectDocuments(items: BinderItem[]): BinderItem[] {
@@ -77,12 +83,21 @@ export function CompileDialog({ onClose }: CompileDialogProps) {
 
   const docs = collectDocuments(binder);
 
+  function escapeHtml(text: string): string {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
   function buildContent(): string {
     const parts: string[] = [];
+    const safeTitle = escapeHtml(projectTitle);
 
     if (includeTitle) {
       if (format === 'html') {
-        parts.push(`<h1>${projectTitle}</h1>`);
+        parts.push(`<h1>${safeTitle}</h1>`);
       } else if (format === 'md') {
         parts.push(`# ${projectTitle}\n`);
       } else {
@@ -91,10 +106,12 @@ export function CompileDialog({ onClose }: CompileDialogProps) {
     }
 
     for (const doc of docs) {
+      const safeDocTitle = escapeHtml(doc.title);
+      const safeDocSynopsis = escapeHtml(doc.synopsis);
       if (format === 'html') {
-        parts.push(`<h2>${doc.title}</h2>`);
+        parts.push(`<h2>${safeDocTitle}</h2>`);
         if (includeSynopsis && doc.synopsis) {
-          parts.push(`<p class="synopsis"><em>${doc.synopsis}</em></p>`);
+          parts.push(`<p class="synopsis"><em>${safeDocSynopsis}</em></p>`);
         }
         parts.push(doc.content || '<p></p>');
         if (separatorLine) parts.push('<hr />');
@@ -121,7 +138,7 @@ export function CompileDialog({ onClose }: CompileDialogProps) {
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>${projectTitle}</title>
+<title>${safeTitle}</title>
 <style>
   body { font-family: Georgia, serif; max-width: 700px; margin: 4rem auto; line-height: 1.7; color: #333; }
   h1 { font-size: 2em; margin-bottom: 0.5em; }

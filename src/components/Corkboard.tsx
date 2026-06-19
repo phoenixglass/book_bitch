@@ -79,15 +79,11 @@ function FolderGroup({ folder }: FolderGroupProps) {
 }
 
 export function Corkboard() {
-  const { binder, selectedId, selectItem } = useAppStore();
+  const { binder } = useAppStore();
 
   // Find the selected item; if it's a folder show its children as cards,
   // otherwise show all top-level folders' documents
-  const selected = binder.find((b) => b.id === selectedId);
-  const foldersToShow =
-    selected?.type === 'folder'
-      ? [selected]
-      : binder.filter((b) => b.type === 'folder');
+  const foldersToShow = binder.filter((b) => b.type === 'folder');
 
   const allDocs = binder.flatMap((b) =>
     b.type === 'document' ? [b] : [],
@@ -130,9 +126,6 @@ export function Corkboard() {
           </div>
         )}
       </div>
-
-      {/* Suppress unused selectItem warning */}
-      <span style={{ display: 'none' }} onClick={() => selectItem(null)} />
     </div>
   );
 }

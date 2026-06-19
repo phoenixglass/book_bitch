@@ -18,7 +18,6 @@ interface EditorProps {
 const TOOLBAR_BTNS = [
   { label: 'B', title: 'Bold', cmd: (e: ReturnType<typeof useEditor>) => e?.chain().focus().toggleBold().run(), active: (e: ReturnType<typeof useEditor>) => e?.isActive('bold') ?? false, style: 'font-bold' },
   { label: 'I', title: 'Italic', cmd: (e: ReturnType<typeof useEditor>) => e?.chain().focus().toggleItalic().run(), active: (e: ReturnType<typeof useEditor>) => e?.isActive('italic') ?? false, style: 'italic' },
-  { label: 'U̲', title: 'Underline (Ctrl+U)', cmd: () => {}, active: () => false, style: '' },
   { label: 'S', title: 'Strikethrough', cmd: (e: ReturnType<typeof useEditor>) => e?.chain().focus().toggleStrike().run(), active: (e: ReturnType<typeof useEditor>) => e?.isActive('strike') ?? false, style: 'line-through' },
 ];
 
@@ -70,8 +69,7 @@ export function RichEditor({ itemId, content, compositionMode }: EditorProps) {
             : 'bg-[#1a1a2e] border-b border-[#0f3460]'
         }`}
       >
-        {TOOLBAR_BTNS.map((btn) =>
-          btn.label === 'U̲' ? null : (
+        {TOOLBAR_BTNS.map((btn) => (
             <button
               key={btn.label}
               onMouseDown={(e) => {
@@ -87,8 +85,7 @@ export function RichEditor({ itemId, content, compositionMode }: EditorProps) {
             >
               {btn.label}
             </button>
-          ),
-        )}
+          ))}
 
         <div className="w-px h-5 bg-[#0f3460] mx-1" />
 
