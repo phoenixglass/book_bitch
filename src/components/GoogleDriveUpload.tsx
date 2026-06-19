@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useAppStore } from '../store/appStore';
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
-const SCOPES = 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/spreadsheets.readonly';
+const SCOPES = 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/spreadsheets.readonly https://www.googleapis.com/auth/documents.readonly';
 
 export function GoogleDriveUpload() {
   const { addItem, updateItem, selectItem } = useAppStore();
@@ -69,8 +69,11 @@ export function GoogleDriveUpload() {
 
       for (const file of files) {
         try {
-          // Check if it's a Google Sheet
-          if (file.mimeType === 'application/vnd.google-apps.spreadsheet') {
+          // Check if it's a Google Doc
+          if (file.mimeType === 'application/vnd.google-apps.document') {
+            await handleGoogleDoc(file);
+          } else if (file.mimeType === 'application/vnd.google-apps.spreadsheet') {
+            // Check if it's a Google Sheet
             await handleGoogleSheet(file);
           } else {
             // Handle regular documents
@@ -88,6 +91,210 @@ export function GoogleDriveUpload() {
         }
       }
     }
+  }
+
+  async function handleGoogleDoc(file: any) {
+    try {
+      // Fetch the document using Google Docs API
+      const docResponse = await fetch(
+        `https://docs.googleapis.com/v1/documents/${file.id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${window.gapi.auth2.getAuthInstance().currentUser.get().getAuthResponse().id_token}`,
+          },
+        }
+      );
+      const docData = await docResponse.json();
+
+      // Parse tabs/sections from the document
+      const tabs = parseDocumentTabs(docData);
+
+      if (tabs.length === 0) {
+        // No tabs found, import as single document
+        const content = await downloadGoogleDriveFile(file.id);
+        addItem(null, 'document');
+        const lastBinder = useAppStore.getState().binder;
+        const lastDoc = lastBinder[lastBinder.length - 1];
+        if (lastDoc && lastDoc.id !== 'trash') {
+          updateItem(lastDoc.id, { content, title: file.name });
+          selectItem(lastDoc.id);
+        }
+        return;
+      }
+
+      // Create a folder for the document
+      addItem(null, 'folder');
+      const lastBinder = useAppStore.getState().binder;
+      const folderItem = lastBinder[lastBinder.length - 1];
+
+      if (folderItem && folderItem.id !== 'trash') {
+        updateItem(folderItem.id, { title: file.name });
+
+        // Create chapters for each tab
+        for (const tab of tabs) {
+          try {
+            // Convert tab content to HTML
+            const htmlContent = docElementsToHtml(tab.content);
+
+            // Create document for this tab
+            addItem(folderItem.id, 'document');
+            const state = useAppStore.getState();
+            const parentFolder = findItemInArray(state.binder, folderItem.id);
+            if (parentFolder && parentFolder.children.length > 0) {
+              const newChapter = parentFolder.children[parentFolder.children.length - 1];
+              updateItem(newChapter.id, {
+                content: htmlContent,
+                title: tab.title,
+              });
+            }
+          } catch (error) {
+            console.error(`Failed to import tab ${tab.title}:`, error);
+          }
+        }
+
+        selectItem(folderItem.id);
+      }
+    } catch (error) {
+      console.error('Failed to process Google Doc:', error);
+    }
+  }
+
+  function parseDocumentTabs(docData: any): Array<{ title: string; content: any[] }> {
+    const tabs: Array<{ title: string; content: any[] }> = [];
+    const body = docData.body?.content || [];
+
+    let currentTab: { title: string; content: any[] } | null = null;
+
+    for (const element of body) {
+      // Check if this element is a tab marker (typically a paragraph with specific styling)
+      // Tabs in Google Docs are marked by named ranges or specific structural elements
+      const tabTitle = extractTabTitle(element, docData);
+
+      if (tabTitle) {
+        // This is a tab header
+        if (currentTab) {
+          tabs.push(currentTab);
+        }
+        currentTab = { title: tabTitle, content: [] };
+      } else if (currentTab) {
+        // Add content to current tab
+        currentTab.content.push(element);
+      }
+    }
+
+    // Push the last tab
+    if (currentTab) {
+      tabs.push(currentTab);
+    }
+
+    return tabs;
+  }
+
+  function extractTabTitle(element: any, docData: any): string | null {
+    // Check if element is marked as a tab in named ranges
+    const namedRanges = docData.namedRanges || [];
+
+    if (element.paragraph) {
+      const paragraph = element.paragraph;
+      const elementId = element.paragraph.paragraphStyle?.namedStyleType;
+
+      // Look for named ranges that contain this element
+      for (const range of namedRanges) {
+        if (range.name && (range.name.startsWith('tab_') || range.name.startsWith('Tab_'))) {
+          // Check if this element is at the start of the range
+          if (range.range && range.range.startIndex) {
+            // Found a tab marker
+            return range.name.replace(/^[Tt]ab_/, '').replace(/_/g, ' ');
+          }
+        }
+      }
+
+      // Alternative: check if paragraph has a specific style indicating a tab
+      if (paragraph.paragraphStyle?.namedStyleType === 'HEADING_1') {
+        const text = extractTextFromParagraph(paragraph);
+        // Check if this looks like a tab title (all caps or specific pattern)
+        if (text && text.length > 0) {
+          return text;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  function extractTextFromParagraph(paragraph: any): string {
+    let text = '';
+    if (paragraph.elements) {
+      for (const elem of paragraph.elements) {
+        if (elem.textRun) {
+          text += elem.textRun.content;
+        }
+      }
+    }
+    return text.trim();
+  }
+
+  function docElementsToHtml(elements: any[]): string {
+    if (!elements || elements.length === 0) return '';
+
+    let html = '';
+    for (const element of elements) {
+      if (element.paragraph) {
+        html += paragraphToHtml(element.paragraph);
+      } else if (element.table) {
+        html += tableToHtml(element.table);
+      } else if (element.pageBreak) {
+        html += '<hr style="page-break-after: always;">';
+      }
+    }
+    return html;
+  }
+
+  function paragraphToHtml(paragraph: any): string {
+    let html = '<p>';
+    if (paragraph.elements) {
+      for (const elem of paragraph.elements) {
+        if (elem.textRun) {
+          const text = escapeHtml(elem.textRun.content);
+          const style = elem.textRun.textStyle || {};
+          let styledText = text;
+
+          if (style.bold) styledText = `<strong>${styledText}</strong>`;
+          if (style.italic) styledText = `<em>${styledText}</em>`;
+          if (style.underline) styledText = `<u>${styledText}</u>`;
+
+          html += styledText;
+        }
+      }
+    }
+    html += '</p>';
+    return html;
+  }
+
+  function tableToHtml(table: any): string {
+    let html = '<table style="border-collapse: collapse; width: 100%;">';
+    if (table.tableRows) {
+      for (const row of table.tableRows) {
+        html += '<tr>';
+        if (row.tableCells) {
+          for (const cell of row.tableCells) {
+            html += '<td style="border: 1px solid #ccc; padding: 8px;">';
+            if (cell.content) {
+              for (const elem of cell.content) {
+                if (elem.paragraph) {
+                  const pText = extractTextFromParagraph(elem.paragraph);
+                  html += escapeHtml(pText);
+                }
+              }
+            }
+            html += '</td>';
+          }
+        }
+        html += '</tr>';
+      }
+    }
+    html += '</table>';
+    return html;
   }
 
   async function handleGoogleSheet(file: any) {
