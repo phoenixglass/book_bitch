@@ -32,9 +32,22 @@ export function GoogleDriveUpload() {
 
     try {
       setIsLoading(true);
-      await initializeGoogleAPI();
+
+      // Ensure gapi is available
+      if (!window.gapi) {
+        throw new Error('Google API library not loaded. Please refresh the page.');
+      }
+
+      const initResult = await initializeGoogleAPI();
+      if (!initResult) {
+        throw new Error('Failed to initialize Google API');
+      }
 
       const auth = window.gapi.auth2.getAuthInstance();
+      if (!auth) {
+        throw new Error('Failed to get auth instance');
+      }
+
       if (!auth.isSignedIn.get()) {
         await auth.signIn();
       }
@@ -43,7 +56,9 @@ export function GoogleDriveUpload() {
       showGoogleDrivePicker();
     } catch (error) {
       console.error('Google Drive auth error:', error);
-      alert('Failed to authenticate with Google Drive');
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('Full error:', { errorMessage, gapiExists: !!window.gapi, clientId: !!CLIENT_ID });
+      alert(`Failed to authenticate with Google Drive: ${errorMessage}`);
     } finally {
       setIsLoading(false);
     }
