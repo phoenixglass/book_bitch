@@ -17,14 +17,15 @@ export function GoogleDriveUpload() {
         return;
       }
 
-      const client = window.google.accounts.oauth2.initCodeClient({
+      const client = window.google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
         scope: SCOPES,
-        ux_mode: 'popup',
         callback: (response: any) => {
-          // Exchange code for token (this requires a backend)
-          // For now, we'll use the token directly if available
-          resolve(response.access_token || '');
+          if (response.access_token) {
+            resolve(response.access_token);
+          } else {
+            reject(new Error('No access token received'));
+          }
         },
         error_callback: (error: any) => {
           reject(error);
