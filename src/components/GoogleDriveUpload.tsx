@@ -12,12 +12,15 @@ export function GoogleDriveUpload() {
     return new Promise((resolve) => {
       window.gapi.load('client', async () => {
         try {
+          console.log('Initializing gapi.client with CLIENT_ID:', CLIENT_ID);
           await window.gapi.client.init({
             clientId: CLIENT_ID,
             scope: SCOPES,
           });
+          console.log('gapi.client initialized successfully');
           resolve(true);
-        } catch {
+        } catch (error) {
+          console.error('Failed to initialize gapi.client:', error);
           resolve(false);
         }
       });
