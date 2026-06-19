@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { useAppStore } from '../store/appStore';
 import { GoogleDriveUpload } from './GoogleDriveUpload';
+import { useDriveImport } from '../hooks/useDriveImport';
 import type { BinderItem } from '../types';
 
 const LABEL_COLORS: Record<string, string> = {
@@ -22,9 +23,10 @@ function isItemInTrash(binder: BinderItem[], itemId: string): boolean {
 interface BinderNodeProps {
   item: BinderItem;
   depth: number;
+  onResync?: (folderId: string, driveFileId: string) => void;
 }
 
-function BinderNode({ item, depth }: BinderNodeProps) {
+function BinderNode({ item, depth, onResync }: BinderNodeProps) {
   const {
     selectedId,
     selectItem,
@@ -131,7 +133,10 @@ function BinderNode({ item, depth }: BinderNodeProps) {
         )}
 
         {/* Icon */}
-        <span className="text-xs">{isFolder ? '📁' : '📄'}</span>
+        <span className="text-xs">
+          {isFolder ? '📁' : '📄'}
+          {item.driveFileId && <span title="Linked to Google Drive">☁️</span>}
+        </span>
 
         {/* Label dot */}
         {item.label !== 'none' && (
@@ -181,7 +186,7 @@ function BinderNode({ item, depth }: BinderNodeProps) {
       {isFolder && item.expanded && (
         <div>
           {item.children.map((child) => (
-            <BinderNode key={child.id} item={child} depth={depth + 1} />
+            <BinderNode key={child.id} item={child} depth={depth + 1} onResync={onResync} />
           ))}
           {item.children.length === 0 && (
             <div
@@ -225,6 +230,17 @@ function BinderNode({ item, depth }: BinderNodeProps) {
               🗑️ Delete
             </button>
           )}
+          {item.driveFileId && onResync && (
+            <button
+              onClick={() => {
+                onResync(item.id, item.driveFileId!);
+                setShowContextMenu(false);
+              }}
+              className="w-full text-left px-3 py-2 hover:bg-[#2b6cb0] hover:text-white transition-colors"
+            >
+              🔄 Re-sync from Drive
+            </button>
+          )}
         </div>
       )}
 
@@ -241,6 +257,7 @@ function BinderNode({ item, depth }: BinderNodeProps) {
 
 export function Binder() {
   const { binder, addItem, updateItem, selectItem } = useAppStore();
+  const { resyncDriveFolder } = useDriveImport();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleFileUpload(event: React.ChangeEvent<HTMLInputElement>) {
@@ -306,7 +323,7 @@ export function Binder() {
       {/* Tree */}
       <div className="flex-1 overflow-y-auto py-1">
         {binder.map((item) => (
-          <BinderNode key={item.id} item={item} depth={0} />
+          <BinderNode key={item.id} item={item} depth={0} onResync={resyncDriveFolder} />
         ))}
       </div>
     </div>

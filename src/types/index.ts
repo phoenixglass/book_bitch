@@ -38,6 +38,7 @@ export interface BinderItem {
   expanded: boolean;
   snapshots: Snapshot[];
   wordCountTarget: number;
+  driveFileId?: string; // Google Drive doc ID — enables re-sync
 }
 
 export type ViewMode = 'editor' | 'corkboard' | 'outline';

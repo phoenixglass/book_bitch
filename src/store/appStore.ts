@@ -79,7 +79,7 @@ const INITIAL_BINDER: BinderItem[] = [
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
-function findItem(
+export function findItem(
   items: BinderItem[],
   id: string,
 ): BinderItem | null {
