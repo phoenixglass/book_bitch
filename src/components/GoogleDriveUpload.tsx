@@ -117,18 +117,156 @@ export function GoogleDriveUpload() {
 
   async function handleGoogleDoc(file: any) {
     try {
-      // Simply export the Google Doc as HTML
-      const htmlContent = await exportGoogleDocAsHtml(file.id);
-      addItem(null, 'document');
+      // Fetch the document structure to detect chapters by heading levels
+      const docResponse = await fetch(
+        `https://docs.googleapis.com/v1/documents/${file.id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${cachedAccessToken}`,
+          },
+        }
+      );
+      const docData = await docResponse.json();
+
+      // Split document into chapters based on HEADING_1
+      const chapters = splitDocumentByHeading(docData);
+
+      if (chapters.length <= 1) {
+        // No chapters found, import as single document
+        const htmlContent = await exportGoogleDocAsHtml(file.id);
+        addItem(null, 'document');
+        const lastBinder = useAppStore.getState().binder;
+        const lastDoc = lastBinder[lastBinder.length - 1];
+        if (lastDoc && lastDoc.id !== 'trash') {
+          updateItem(lastDoc.id, { content: htmlContent, title: file.name });
+          selectItem(lastDoc.id);
+        }
+        return;
+      }
+
+      // Create folder for the document
+      addItem(null, 'folder');
       const lastBinder = useAppStore.getState().binder;
-      const lastDoc = lastBinder[lastBinder.length - 1];
-      if (lastDoc && lastDoc.id !== 'trash') {
-        updateItem(lastDoc.id, { content: htmlContent, title: file.name });
-        selectItem(lastDoc.id);
+      const folderItem = lastBinder[lastBinder.length - 1];
+
+      if (folderItem && folderItem.id !== 'trash') {
+        updateItem(folderItem.id, { title: file.name });
+
+        // Create a document for each chapter
+        for (const chapter of chapters) {
+          try {
+            const htmlContent = docElementsToHtml(chapter.elements);
+            addItem(folderItem.id, 'document');
+            const state = useAppStore.getState();
+            const parent = state.binder.find((item) => item.id === folderItem.id);
+            if (parent && parent.children.length > 0) {
+              const newDoc = parent.children[parent.children.length - 1];
+              updateItem(newDoc.id, {
+                content: htmlContent,
+                title: chapter.title,
+              });
+            }
+          } catch (error) {
+            console.error(`Failed to import chapter ${chapter.title}:`, error);
+          }
+        }
+        selectItem(folderItem.id);
       }
     } catch (error) {
       console.error('Failed to import Google Doc:', error);
     }
+  }
+
+  function splitDocumentByHeading(docData: any): Array<{ title: string; elements: any[] }> {
+    const chapters: Array<{ title: string; elements: any[] }> = [];
+    const body = docData.body?.content || [];
+    let currentChapter: { title: string; elements: any[] } | null = null;
+
+    for (const element of body) {
+      if (element.paragraph?.paragraphStyle?.namedStyleType === 'HEADING_1') {
+        // Start a new chapter
+        if (currentChapter) {
+          chapters.push(currentChapter);
+        }
+        const title = extractTextFromElement(element) || 'Untitled Chapter';
+        currentChapter = { title, elements: [element] };
+      } else if (currentChapter) {
+        currentChapter.elements.push(element);
+      }
+    }
+
+    if (currentChapter) {
+      chapters.push(currentChapter);
+    }
+
+    return chapters;
+  }
+
+  function extractTextFromElement(element: any): string {
+    if (element.paragraph?.elements) {
+      return element.paragraph.elements
+        .map((e: any) => e.textRun?.content || '')
+        .join('')
+        .trim();
+    }
+    return '';
+  }
+
+  function docElementsToHtml(elements: any[]): string {
+    if (!elements || elements.length === 0) return '';
+    let html = '';
+    for (const element of elements) {
+      if (element.paragraph) {
+        html += paragraphToHtml(element.paragraph);
+      } else if (element.table) {
+        html += tableToHtml(element.table);
+      }
+    }
+    return html;
+  }
+
+  function paragraphToHtml(paragraph: any): string {
+    let html = '<p>';
+    if (paragraph.elements) {
+      for (const elem of paragraph.elements) {
+        if (elem.textRun) {
+          let text = escapeHtml(elem.textRun.content);
+          const style = elem.textRun.textStyle || {};
+          if (style.bold) text = `<strong>${text}</strong>`;
+          if (style.italic) text = `<em>${text}</em>`;
+          if (style.underline) text = `<u>${text}</u>`;
+          html += text;
+        }
+      }
+    }
+    html += '</p>';
+    return html;
+  }
+
+  function tableToHtml(table: any): string {
+    let html = '<table style="border-collapse: collapse; width: 100%;"><tbody>';
+    if (table.tableRows) {
+      for (const row of table.tableRows) {
+        html += '<tr>';
+        if (row.tableCells) {
+          for (const cell of row.tableCells) {
+            html += '<td style="border: 1px solid #ccc; padding: 8px;">';
+            if (cell.content) {
+              for (const elem of cell.content) {
+                if (elem.paragraph) {
+                  const text = extractTextFromElement(elem);
+                  html += escapeHtml(text);
+                }
+              }
+            }
+            html += '</td>';
+          }
+        }
+        html += '</tr>';
+      }
+    }
+    html += '</tbody></table>';
+    return html;
   }
 
 

@@ -68,11 +68,13 @@ function BinderNode({ item, depth }: BinderNodeProps) {
   }
 
   function handleContextMenu(e: React.MouseEvent) {
+    console.log('Context menu triggered on:', item.title);
     e.preventDefault();
     e.stopPropagation();
     selectItem(item.id);
     setContextMenuPos({ x: e.clientX, y: e.clientY });
     setShowContextMenu(true);
+    console.log('Menu should be visible now');
   }
 
   function handleDelete() {
@@ -196,7 +198,7 @@ function BinderNode({ item, depth }: BinderNodeProps) {
       {showContextMenu && (
         <div
           className="fixed bg-[#2d3748] border border-[#0f3460] rounded text-xs text-gray-200 shadow-lg z-50"
-          style={{ top: `${contextMenuPos.y}px`, left: `${contextMenuPos.x}px` }}
+          style={{ top: `${contextMenuPos.y}px`, left: `${contextMenuPos.x}px`, minWidth: '150px' }}
           onClick={(e) => e.stopPropagation()}
         >
           {item.id === 'trash' && item.children.length > 0 && (
