@@ -72,4 +72,6 @@ export interface AppState {
   takeSnapshot: (id: string, label: string) => void;
   restoreSnapshot: (itemId: string, snapshotId: string) => void;
   deleteSnapshot: (itemId: string, snapshotId: string) => void;
+  emptyTrash: () => void;
+  permanentlyDeleteItem: (id: string) => void;
 }
