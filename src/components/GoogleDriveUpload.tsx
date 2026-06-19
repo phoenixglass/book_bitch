@@ -13,14 +13,18 @@ export function GoogleDriveUpload() {
       window.gapi.load('client', async () => {
         try {
           console.log('Initializing gapi.client with CLIENT_ID:', CLIENT_ID);
+          console.log('SCOPES:', SCOPES);
           await window.gapi.client.init({
             clientId: CLIENT_ID,
             scope: SCOPES,
           });
           console.log('gapi.client initialized successfully');
           resolve(true);
-        } catch (error) {
-          console.error('Failed to initialize gapi.client:', error);
+        } catch (error: any) {
+          console.error('Failed to initialize gapi.client');
+          console.error('Error message:', error?.message);
+          console.error('Error details:', JSON.stringify(error, null, 2));
+          console.error('Full error object:', error);
           resolve(false);
         }
       });
