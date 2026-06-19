@@ -4,30 +4,34 @@ import { useAppStore } from '../store/appStore';
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 const SCOPES = 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/spreadsheets.readonly https://www.googleapis.com/auth/documents.readonly';
 
+let cachedAccessToken: string | null = null;
+
 export function GoogleDriveUpload() {
   const { addItem, updateItem, selectItem } = useAppStore();
   const [isLoading, setIsLoading] = useState(false);
 
-  async function initializeGoogleAPI() {
-    return new Promise((resolve) => {
-      window.gapi.load('client', async () => {
-        try {
-          console.log('Initializing gapi.client with CLIENT_ID:', CLIENT_ID);
-          console.log('SCOPES:', SCOPES);
-          await window.gapi.client.init({
-            clientId: CLIENT_ID,
-            scope: SCOPES,
-          });
-          console.log('gapi.client initialized successfully');
-          resolve(true);
-        } catch (error: any) {
-          console.error('Failed to initialize gapi.client');
-          console.error('Error message:', error?.message);
-          console.error('Error details:', JSON.stringify(error, null, 2));
-          console.error('Full error object:', error);
-          resolve(false);
-        }
+  async function getAccessToken(): Promise<string> {
+    return new Promise((resolve, reject) => {
+      if (!window.google?.accounts?.oauth2) {
+        reject(new Error('Google OAuth library not loaded'));
+        return;
+      }
+
+      const client = window.google.accounts.oauth2.initCodeClient({
+        client_id: CLIENT_ID,
+        scope: SCOPES,
+        ux_mode: 'popup',
+        callback: (response: any) => {
+          // Exchange code for token (this requires a backend)
+          // For now, we'll use the token directly if available
+          resolve(response.access_token || '');
+        },
+        error_callback: (error: any) => {
+          reject(error);
+        },
       });
+
+      client.requestAccessToken();
     });
   }
 
@@ -40,47 +44,42 @@ export function GoogleDriveUpload() {
     try {
       setIsLoading(true);
 
-      // Ensure gapi is available
-      if (!window.gapi) {
-        throw new Error('Google API library not loaded. Please refresh the page.');
+      // Ensure google accounts library is available
+      if (!window.google?.accounts?.oauth2) {
+        throw new Error('Google OAuth library not loaded. Please refresh the page.');
       }
 
-      const initResult = await initializeGoogleAPI();
-      if (!initResult) {
-        throw new Error('Failed to initialize Google API');
+      // Get access token
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error('Failed to get access token from Google');
       }
 
-      const auth = window.gapi.auth2.getAuthInstance();
-      if (!auth) {
-        throw new Error('Failed to get auth instance');
-      }
-
-      if (!auth.isSignedIn.get()) {
-        await auth.signIn();
-      }
+      cachedAccessToken = accessToken;
 
       // Open Google Drive picker
-      showGoogleDrivePicker();
+      showGoogleDrivePicker(accessToken);
     } catch (error) {
       console.error('Google Drive auth error:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error('Full error:', { errorMessage, gapiExists: !!window.gapi, clientId: !!CLIENT_ID });
       alert(`Failed to authenticate with Google Drive: ${errorMessage}`);
     } finally {
       setIsLoading(false);
     }
   }
 
-  async function showGoogleDrivePicker() {
-    return new Promise((resolve) => {
+  async function showGoogleDrivePicker(accessToken: string) {
+    return new Promise<void>((resolve) => {
       window.gapi.load('picker', () => {
         const picker = new window.google.picker.PickerBuilder()
           .addView(window.google.picker.ViewId.DOCS)
-          .setOAuthToken(window.gapi.auth2.getAuthInstance().currentUser.get().getAuthResponse().id_token)
-          .setCallback(handlePickerResult)
+          .setOAuthToken(accessToken)
+          .setCallback((data: any) => {
+            handlePickerResult(data);
+            resolve();
+          })
           .build();
         picker.setVisible(true);
-        resolve(picker);
       });
     });
   }
@@ -122,7 +121,7 @@ export function GoogleDriveUpload() {
         `https://docs.googleapis.com/v1/documents/${file.id}`,
         {
           headers: {
-            Authorization: `Bearer ${window.gapi.auth2.getAuthInstance().currentUser.get().getAuthResponse().id_token}`,
+            Authorization: `Bearer ${cachedAccessToken}`,
           },
         }
       );
@@ -325,7 +324,7 @@ export function GoogleDriveUpload() {
         `https://sheets.googleapis.com/v4/spreadsheets/${file.id}?fields=sheets(properties(sheetId,title))`,
         {
           headers: {
-            Authorization: `Bearer ${window.gapi.auth2.getAuthInstance().currentUser.get().getAuthResponse().id_token}`,
+            Authorization: `Bearer ${cachedAccessToken}`,
           },
         }
       );
@@ -352,7 +351,7 @@ export function GoogleDriveUpload() {
             const sheetUrl = `https://docs.google.com/spreadsheets/d/${file.id}/export?format=csv&gid=${sheetId}`;
             const sheetResponse = await fetch(sheetUrl, {
               headers: {
-                Authorization: `Bearer ${window.gapi.auth2.getAuthInstance().currentUser.get().getAuthResponse().id_token}`,
+                Authorization: `Bearer ${cachedAccessToken}`,
               },
             });
             const csvContent = await sheetResponse.text();
@@ -439,7 +438,7 @@ export function GoogleDriveUpload() {
       `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
       {
         headers: {
-          Authorization: `Bearer ${window.gapi.auth2.getAuthInstance().currentUser.get().getAuthResponse().id_token}`,
+          Authorization: `Bearer ${cachedAccessToken}`,
         },
       }
     );
@@ -462,6 +461,12 @@ export function GoogleDriveUpload() {
 declare global {
   interface Window {
     gapi: any;
-    google: any;
+    google: any & {
+      accounts: {
+        oauth2: {
+          initCodeClient: (config: any) => any;
+        };
+      };
+    };
   }
 }
