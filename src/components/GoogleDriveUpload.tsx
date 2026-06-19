@@ -196,7 +196,6 @@ export function GoogleDriveUpload() {
 
     if (element.paragraph) {
       const paragraph = element.paragraph;
-      const elementId = element.paragraph.paragraphStyle?.namedStyleType;
 
       // Look for named ranges that contain this element
       for (const range of namedRanges) {
