@@ -117,274 +117,42 @@ export function GoogleDriveUpload() {
 
   async function handleGoogleDoc(file: any) {
     try {
-      // Fetch the document using Google Docs API
-      const docResponse = await fetch(
-        `https://docs.googleapis.com/v1/documents/${file.id}`,
-        {
-          headers: {
-            Authorization: `Bearer ${cachedAccessToken}`,
-          },
-        }
-      );
-      const docData = await docResponse.json();
-
-      // Parse tabs/sections from the document
-      const tabs = parseDocumentTabs(docData);
-
-      if (tabs.length === 0) {
-        // No tabs found, try to export as HTML
-        try {
-          const htmlContent = await exportGoogleDocAsHtml(file.id);
-          addItem(null, 'document');
-          const lastBinder = useAppStore.getState().binder;
-          const lastDoc = lastBinder[lastBinder.length - 1];
-          if (lastDoc && lastDoc.id !== 'trash') {
-            updateItem(lastDoc.id, { content: htmlContent, title: file.name });
-            selectItem(lastDoc.id);
-          }
-        } catch (error) {
-          console.error('Failed to export Google Doc as HTML:', error);
-          throw new Error(`Could not export Google Doc: ${file.name}`);
-        }
-        return;
-      }
-
-      // Create a folder for the document
-      addItem(null, 'folder');
+      // Simply export the Google Doc as HTML
+      const htmlContent = await exportGoogleDocAsHtml(file.id);
+      addItem(null, 'document');
       const lastBinder = useAppStore.getState().binder;
-      const folderItem = lastBinder[lastBinder.length - 1];
-
-      if (folderItem && folderItem.id !== 'trash') {
-        updateItem(folderItem.id, { title: file.name });
-
-        // Create chapters for each tab
-        for (const tab of tabs) {
-          try {
-            // Convert tab content to HTML
-            const htmlContent = docElementsToHtml(tab.content);
-
-            // Create document for this tab
-            addItem(folderItem.id, 'document');
-            const state = useAppStore.getState();
-            const parentFolder = findItemInArray(state.binder, folderItem.id);
-            if (parentFolder && parentFolder.children.length > 0) {
-              const newChapter = parentFolder.children[parentFolder.children.length - 1];
-              updateItem(newChapter.id, {
-                content: htmlContent,
-                title: tab.title,
-              });
-            }
-          } catch (error) {
-            console.error(`Failed to import tab ${tab.title}:`, error);
-          }
-        }
-
-        selectItem(folderItem.id);
+      const lastDoc = lastBinder[lastBinder.length - 1];
+      if (lastDoc && lastDoc.id !== 'trash') {
+        updateItem(lastDoc.id, { content: htmlContent, title: file.name });
+        selectItem(lastDoc.id);
       }
     } catch (error) {
-      console.error('Failed to process Google Doc:', error);
+      console.error('Failed to import Google Doc:', error);
     }
   }
 
-  function parseDocumentTabs(docData: any): Array<{ title: string; content: any[] }> {
-    const tabs: Array<{ title: string; content: any[] }> = [];
-    const body = docData.body?.content || [];
-
-    let currentTab: { title: string; content: any[] } | null = null;
-
-    for (const element of body) {
-      // Check if this element is a tab marker (typically a paragraph with specific styling)
-      // Tabs in Google Docs are marked by named ranges or specific structural elements
-      const tabTitle = extractTabTitle(element, docData);
-
-      if (tabTitle) {
-        // This is a tab header
-        if (currentTab) {
-          tabs.push(currentTab);
-        }
-        currentTab = { title: tabTitle, content: [] };
-      } else if (currentTab) {
-        // Add content to current tab
-        currentTab.content.push(element);
-      }
-    }
-
-    // Push the last tab
-    if (currentTab) {
-      tabs.push(currentTab);
-    }
-
-    return tabs;
-  }
-
-  function extractTabTitle(element: any, docData: any): string | null {
-    // Check if element is marked as a tab in named ranges
-    const namedRanges = docData.namedRanges || [];
-
-    if (element.paragraph) {
-      const paragraph = element.paragraph;
-
-      // Look for named ranges that contain this element
-      for (const range of namedRanges) {
-        if (range.name && (range.name.startsWith('tab_') || range.name.startsWith('Tab_'))) {
-          // Check if this element is at the start of the range
-          if (range.range && range.range.startIndex) {
-            // Found a tab marker
-            return range.name.replace(/^[Tt]ab_/, '').replace(/_/g, ' ');
-          }
-        }
-      }
-
-      // Alternative: check if paragraph has a specific style indicating a tab
-      if (paragraph.paragraphStyle?.namedStyleType === 'HEADING_1') {
-        const text = extractTextFromParagraph(paragraph);
-        // Check if this looks like a tab title (all caps or specific pattern)
-        if (text && text.length > 0) {
-          return text;
-        }
-      }
-    }
-
-    return null;
-  }
-
-  function extractTextFromParagraph(paragraph: any): string {
-    let text = '';
-    if (paragraph.elements) {
-      for (const elem of paragraph.elements) {
-        if (elem.textRun) {
-          text += elem.textRun.content;
-        }
-      }
-    }
-    return text.trim();
-  }
-
-  function docElementsToHtml(elements: any[]): string {
-    if (!elements || elements.length === 0) return '';
-
-    let html = '';
-    for (const element of elements) {
-      if (element.paragraph) {
-        html += paragraphToHtml(element.paragraph);
-      } else if (element.table) {
-        html += tableToHtml(element.table);
-      } else if (element.pageBreak) {
-        html += '<hr style="page-break-after: always;">';
-      }
-    }
-    return html;
-  }
-
-  function paragraphToHtml(paragraph: any): string {
-    let html = '<p>';
-    if (paragraph.elements) {
-      for (const elem of paragraph.elements) {
-        if (elem.textRun) {
-          const text = escapeHtml(elem.textRun.content);
-          const style = elem.textRun.textStyle || {};
-          let styledText = text;
-
-          if (style.bold) styledText = `<strong>${styledText}</strong>`;
-          if (style.italic) styledText = `<em>${styledText}</em>`;
-          if (style.underline) styledText = `<u>${styledText}</u>`;
-
-          html += styledText;
-        }
-      }
-    }
-    html += '</p>';
-    return html;
-  }
-
-  function tableToHtml(table: any): string {
-    let html = '<table style="border-collapse: collapse; width: 100%;">';
-    if (table.tableRows) {
-      for (const row of table.tableRows) {
-        html += '<tr>';
-        if (row.tableCells) {
-          for (const cell of row.tableCells) {
-            html += '<td style="border: 1px solid #ccc; padding: 8px;">';
-            if (cell.content) {
-              for (const elem of cell.content) {
-                if (elem.paragraph) {
-                  const pText = extractTextFromParagraph(elem.paragraph);
-                  html += escapeHtml(pText);
-                }
-              }
-            }
-            html += '</td>';
-          }
-        }
-        html += '</tr>';
-      }
-    }
-    html += '</table>';
-    return html;
-  }
 
   async function handleGoogleSheet(file: any) {
     try {
-      // Fetch spreadsheet metadata to get all sheets
-      const metadataResponse = await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${file.id}?fields=sheets(properties(sheetId,title))`,
-        {
-          headers: {
-            Authorization: `Bearer ${cachedAccessToken}`,
-          },
-        }
-      );
-      const metadata = await metadataResponse.json();
-      const sheets = metadata.sheets || [];
+      // Just export the entire spreadsheet as CSV and convert to HTML
+      const csvUrl = `https://docs.google.com/spreadsheets/d/${file.id}/export?format=csv`;
+      const response = await fetch(csvUrl, {
+        headers: {
+          Authorization: `Bearer ${cachedAccessToken}`,
+        },
+      });
+      const csvContent = await response.text();
+      const htmlContent = csvToHtml(csvContent);
 
-      if (sheets.length === 0) return;
-
-      // Create a folder for the spreadsheet
-      addItem(null, 'folder');
+      addItem(null, 'document');
       const lastBinder = useAppStore.getState().binder;
-      const folderItem = lastBinder[lastBinder.length - 1];
-
-      if (folderItem && folderItem.id !== 'trash') {
-        updateItem(folderItem.id, { title: file.name });
-
-        // Create chapters for each sheet
-        for (const sheet of sheets) {
-          const sheetTitle = sheet.properties.title;
-          const sheetId = sheet.properties.sheetId;
-
-          try {
-            // Fetch sheet data as CSV
-            const sheetUrl = `https://docs.google.com/spreadsheets/d/${file.id}/export?format=csv&gid=${sheetId}`;
-            const sheetResponse = await fetch(sheetUrl, {
-              headers: {
-                Authorization: `Bearer ${cachedAccessToken}`,
-              },
-            });
-            const csvContent = await sheetResponse.text();
-
-            // Convert CSV to HTML table
-            const htmlContent = csvToHtml(csvContent);
-
-            // Create document for this sheet
-            addItem(folderItem.id, 'document');
-            const state = useAppStore.getState();
-            const parentFolder = findItemInArray(state.binder, folderItem.id);
-            if (parentFolder && parentFolder.children.length > 0) {
-              const newChapter = parentFolder.children[parentFolder.children.length - 1];
-              updateItem(newChapter.id, {
-                content: htmlContent,
-                title: sheetTitle,
-              });
-            }
-          } catch (error) {
-            console.error(`Failed to import sheet ${sheetTitle}:`, error);
-          }
-        }
-
-        selectItem(folderItem.id);
+      const lastDoc = lastBinder[lastBinder.length - 1];
+      if (lastDoc && lastDoc.id !== 'trash') {
+        updateItem(lastDoc.id, { content: htmlContent, title: file.name });
+        selectItem(lastDoc.id);
       }
     } catch (error) {
-      console.error('Failed to process Google Sheet:', error);
+      console.error('Failed to import Google Sheet:', error);
     }
   }
 
@@ -430,14 +198,6 @@ export function GoogleDriveUpload() {
     return text.replace(/[&<>"']/g, (m) => map[m]);
   }
 
-  function findItemInArray(items: any[], id: string): any {
-    for (const item of items) {
-      if (item.id === id) return item;
-      const found = findItemInArray(item.children || [], id);
-      if (found) return found;
-    }
-    return null;
-  }
 
   async function exportGoogleDocAsHtml(docId: string): Promise<string> {
     const response = await fetch(
