@@ -132,14 +132,19 @@ export function GoogleDriveUpload() {
       const tabs = parseDocumentTabs(docData);
 
       if (tabs.length === 0) {
-        // No tabs found, import as single document
-        const content = await downloadGoogleDriveFile(file.id);
-        addItem(null, 'document');
-        const lastBinder = useAppStore.getState().binder;
-        const lastDoc = lastBinder[lastBinder.length - 1];
-        if (lastDoc && lastDoc.id !== 'trash') {
-          updateItem(lastDoc.id, { content, title: file.name });
-          selectItem(lastDoc.id);
+        // No tabs found, try to export as HTML
+        try {
+          const htmlContent = await exportGoogleDocAsHtml(file.id);
+          addItem(null, 'document');
+          const lastBinder = useAppStore.getState().binder;
+          const lastDoc = lastBinder[lastBinder.length - 1];
+          if (lastDoc && lastDoc.id !== 'trash') {
+            updateItem(lastDoc.id, { content: htmlContent, title: file.name });
+            selectItem(lastDoc.id);
+          }
+        } catch (error) {
+          console.error('Failed to export Google Doc as HTML:', error);
+          throw new Error(`Could not export Google Doc: ${file.name}`);
         }
         return;
       }
@@ -434,6 +439,21 @@ export function GoogleDriveUpload() {
     return null;
   }
 
+  async function exportGoogleDocAsHtml(docId: string): Promise<string> {
+    const response = await fetch(
+      `https://docs.google.com/feeds/download/documents/export/Export?id=${docId}&exportFormat=html`,
+      {
+        headers: {
+          Authorization: `Bearer ${cachedAccessToken}`,
+        },
+      }
+    );
+    if (!response.ok) {
+      throw new Error(`Failed to export doc: ${response.statusText}`);
+    }
+    return response.text();
+  }
+
   async function downloadGoogleDriveFile(fileId: string): Promise<string> {
     const response = await fetch(
       `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
@@ -443,6 +463,9 @@ export function GoogleDriveUpload() {
         },
       }
     );
+    if (!response.ok) {
+      throw new Error(`Failed to download file: ${response.statusText}`);
+    }
     return response.text();
   }
 
