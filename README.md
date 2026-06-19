@@ -38,3 +38,4 @@ Open http://localhost:5173 in your browser.
 npm run build
 npm run preview
 ```
+An app to organize novel chapters and timeline
