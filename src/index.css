@@ -1,0 +1,122 @@
+@import "tailwindcss";
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  overflow: hidden;
+}
+
+#root {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* TipTap editor styles */
+.ProseMirror {
+  outline: none;
+  min-height: 100%;
+  padding: 2rem;
+  font-size: 1rem;
+  line-height: 1.7;
+  color: #e0e0e0;
+}
+
+.ProseMirror p {
+  margin: 0 0 0.75em;
+}
+
+.ProseMirror h1 { font-size: 2em; font-weight: 700; margin: 1em 0 0.5em; color: #fff; }
+.ProseMirror h2 { font-size: 1.5em; font-weight: 600; margin: 0.8em 0 0.4em; color: #fff; }
+.ProseMirror h3 { font-size: 1.25em; font-weight: 600; margin: 0.7em 0 0.3em; color: #fff; }
+
+.ProseMirror ul, .ProseMirror ol {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+
+.ProseMirror blockquote {
+  border-left: 3px solid #6b46c1;
+  padding-left: 1em;
+  color: #a0aec0;
+  margin: 0.5em 0;
+}
+
+.ProseMirror code {
+  background: #2d3748;
+  border-radius: 3px;
+  padding: 0.1em 0.3em;
+  font-family: monospace;
+  font-size: 0.875em;
+}
+
+.ProseMirror pre {
+  background: #2d3748;
+  border-radius: 6px;
+  padding: 0.75em 1em;
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+
+.ProseMirror pre code {
+  background: none;
+  padding: 0;
+}
+
+.ProseMirror mark {
+  background: #f6e05e;
+  color: #1a202c;
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+.ProseMirror ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+
+.ProseMirror ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5em;
+}
+
+.ProseMirror ul[data-type="taskList"] li > label {
+  margin-top: 2px;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #4a4a6a; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #6b6b9a; }
+
+/* Drag-over indicator */
+.drag-over {
+  background: rgba(107, 70, 193, 0.2) !important;
+}
+
+/* Composition mode */
+.composition-mode {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: #0a0a14;
+  display: flex;
+  flex-direction: column;
+}
+
+.composition-mode .ProseMirror {
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 4rem 2rem;
+  font-size: 1.125rem;
+  color: #d4d4d4;
+}
