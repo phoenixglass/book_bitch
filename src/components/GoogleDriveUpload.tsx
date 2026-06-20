@@ -1,7 +1,11 @@
 import { useDriveImport } from '../hooks/useDriveImport';
 
-export function GoogleDriveUpload() {
-  const { isLoading, importFromDrive } = useDriveImport();
+interface Props {
+  targetSection?: 'manuscript' | 'fragments' | 'omitted';
+}
+
+export function GoogleDriveUpload({ targetSection = 'manuscript' }: Props) {
+  const { isLoading, importFromDrive } = useDriveImport(targetSection);
 
   return (
     <button
