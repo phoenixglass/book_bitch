@@ -20,6 +20,7 @@ import { MoodboardView } from './components/MoodboardView';
 import { HistoryView } from './components/HistoryView';
 import { GlobalSearch } from './components/GlobalSearch';
 import { ReferencePane } from './components/ReferencePane';
+import { AIPanel } from './components/AIPanel';
 import { useAppStore, findItem } from './store/appStore';
 
 function App() {
@@ -34,6 +35,7 @@ function App() {
     splitScreenOpen,
     searchOpen,
     setSearchOpen,
+    aiPanelOpen,
   } = useAppStore();
 
   const [compileOpen, setCompileOpen] = useState(false);
@@ -135,6 +137,9 @@ function App() {
 
             {/* Inspector */}
             {!compositionMode && inspectorOpen && <Inspector />}
+
+            {/* AI Panel */}
+            {!compositionMode && aiPanelOpen && <AIPanel />}
           </>
         )}
 

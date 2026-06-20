@@ -25,6 +25,7 @@ import type {
   SplitRefTarget,
   AISettings,
   AIMode,
+  AIResult,
   ManuscriptSettings,
 } from '../types';
 
@@ -226,6 +227,8 @@ export const useAppStore = create<AppState>()(
         mode: 'disabled' as AIMode,
         allowDrafting: false,
       } as AISettings,
+      aiPanelOpen: false,
+      pendingAIResult: null as AIResult | null,
 
       // ── Manuscript format settings ────────────────────────────────────────
       manuscriptSettings: {
@@ -994,6 +997,14 @@ export const useAppStore = create<AppState>()(
 
       setAISettings: (patch) => {
         set((s) => ({ aiSettings: { ...s.aiSettings, ...patch } }));
+      },
+
+      setAIPanelOpen: (open) => {
+        set({ aiPanelOpen: open });
+      },
+
+      setPendingAIResult: (result) => {
+        set({ pendingAIResult: result });
       },
 
       // ── Manuscript Format ─────────────────────────────────────────────────
