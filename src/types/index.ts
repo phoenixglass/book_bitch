@@ -428,6 +428,7 @@ export interface AppState {
   splitRefPinned: boolean;
   searchOpen: boolean;
   searchQuery: string;
+  pendingSelectId: string | null;
 
   // AI
   aiSettings: AISettings;
@@ -457,6 +458,7 @@ export interface AppState {
   setSplitRefTarget: (target: SplitRefTarget | null) => void;
   setSearchOpen: (open: boolean, query?: string) => void;
   setSearchQuery: (query: string) => void;
+  setPendingSelectId: (id: string | null) => void;
 
   // ─── Tags ──────────────────────────────────────────────────────────────────
   addTag: (name: string, color?: string) => Tag;

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useAppStore } from '../store/appStore';
+import { useAppStore, findItem } from '../store/appStore';
 import { TagInput } from './TagInput';
 import type { BinderItem, Label, Status, SceneMetadata } from '../types';
 
@@ -15,14 +15,6 @@ const LABEL_COLORS: Record<string, string> = {
 
 type Tab = 'synopsis' | 'scene' | 'notes' | 'metadata' | 'snapshots';
 
-function findItem(items: BinderItem[], id: string): BinderItem | null {
-  for (const item of items) {
-    if (item.id === id) return item;
-    const found = findItem(item.children, id);
-    if (found) return found;
-  }
-  return null;
-}
 
 function StrField({
   label, value, onChange, placeholder, rows,

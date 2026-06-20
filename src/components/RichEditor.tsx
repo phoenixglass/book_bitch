@@ -45,13 +45,14 @@ export function RichEditor({ itemId, content, compositionMode }: EditorProps) {
     },
   });
 
-  // Keep editor in sync if selected item changes
+  // Sync editor when item changes or when content changes externally (e.g. snapshot restore)
   useEffect(() => {
     if (editor && editor.getHTML() !== content) {
       editor.commands.setContent(content);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [itemId]);
+  // content is intentional dep: snapshot restores change content without changing itemId
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemId, content]);
 
   const wordCount = editor?.storage.characterCount?.words() ?? 0;
 

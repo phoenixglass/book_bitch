@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useAppStore } from '../store/appStore';
 import { TagInput } from './TagInput';
 import type { MoodboardItem } from '../types';
@@ -121,8 +121,15 @@ function MoodboardDetail({ item, onClose }: { item: MoodboardItem; onClose: () =
 }
 
 export function MoodboardView() {
-  const { moodboardItems, addMoodboardItem } = useAppStore();
+  const { moodboardItems, addMoodboardItem, pendingSelectId, setPendingSelectId } = useAppStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (pendingSelectId) {
+      setSelectedId(pendingSelectId);
+      setPendingSelectId(null);
+    }
+  }, [pendingSelectId, setPendingSelectId]);
   const [filterText, setFilterText] = useState('');
   const [viewGrid, setViewGrid] = useState(true);
 

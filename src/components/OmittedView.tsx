@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useAppStore } from '../store/appStore';
 import { TagInput } from './TagInput';
 import type { OmittedMaterial, OmissionStatus } from '../types';
@@ -162,8 +162,15 @@ function OmittedDetail({ item, onClose }: { item: OmittedMaterial; onClose: () =
 }
 
 export function OmittedView() {
-  const { omittedMaterial, addOmittedMaterial } = useAppStore();
+  const { omittedMaterial, addOmittedMaterial, pendingSelectId, setPendingSelectId } = useAppStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (pendingSelectId) {
+      setSelectedId(pendingSelectId);
+      setPendingSelectId(null);
+    }
+  }, [pendingSelectId, setPendingSelectId]);
   const [filterStatus, setFilterStatus] = useState<string>('');
   const [filterText, setFilterText] = useState('');
 
