@@ -151,6 +151,7 @@ export interface Fragment {
   relatedPlaces: string[];
   relatedThemes: string[];
   possiblePlacement: string;
+  notes: string;
   source: string;
   status: FragmentStatus;
   attachedToSceneId?: string;
@@ -439,7 +440,15 @@ export interface AISettings {
 
 // ─── AI Actions & Results ─────────────────────────────────────────────────────
 
-export type AIActionType = 'questions' | 'summarize' | 'metadata' | 'tags';
+export type AIActionType =
+  | 'questions'
+  | 'summarize'
+  | 'metadata'
+  | 'tags'
+  | 'placement'
+  | 'codex-suggest'
+  | 'extract-questions'
+  | 'refine-question';
 
 export interface AIQuestionSuggestion {
   text: string;
@@ -494,7 +503,69 @@ export interface AITagsOutput {
   applied?: string[];
 }
 
-export type AIOutput = AIQuestionsOutput | AISummarizeOutput | AIMetadataOutput | AITagsOutput;
+export interface AIPlacementOutput {
+  type: 'placement';
+  suggestions: string[];
+  possibleScenes: string[];
+  rationale: string;
+  truncated?: boolean;
+}
+
+export interface AICodexSuggestOutput {
+  type: 'codex-suggest';
+  fieldSuggestions: Array<{ field: string; value: string; reason: string }>;
+  contradictions: string[];
+  openQuestions: string[];
+  truncated?: boolean;
+}
+
+export interface AIExtractQuestionsOutput {
+  type: 'extract-questions';
+  questions: AIQuestionSuggestion[];
+  truncated?: boolean;
+}
+
+export interface AIRefineQuestionOutput {
+  type: 'refine-question';
+  refined: string;
+  suggestedCategory: QuestionCategory;
+  suggestedPriority: 'low' | 'medium' | 'high';
+  rationale: string;
+  relatedQuestions: string[];
+  truncated?: boolean;
+}
+
+export type AIOutput =
+  | AIQuestionsOutput
+  | AISummarizeOutput
+  | AIMetadataOutput
+  | AITagsOutput
+  | AIPlacementOutput
+  | AICodexSuggestOutput
+  | AIExtractQuestionsOutput
+  | AIRefineQuestionOutput;
+
+// ─── AI Context Model ─────────────────────────────────────────────────────────
+
+export type AIObjectType =
+  | 'scene'
+  | 'fragment'
+  | 'omitted_material'
+  | 'notebook_entry'
+  | 'codex_entry'
+  | 'question'
+  | 'moodboard_item';
+
+export interface SelectedAIContext {
+  objectType: AIObjectType;
+  objectId: string;
+  title: string;
+  content: string;
+  notes?: string;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+  area: AppArea;
+}
 
 export interface AIResult {
   id: string;
@@ -551,6 +622,7 @@ export interface AppState {
   aiSettings: AISettings;
   aiPanelOpen: boolean;
   pendingAIResult: AIResult | null;
+  aiContextObject: { type: AIObjectType; id: string } | null;
 
   // Manuscript format settings
   manuscriptSettings: ManuscriptSettings;
@@ -656,6 +728,7 @@ export interface AppState {
   setAISettings: (patch: Partial<AISettings>) => void;
   setAIPanelOpen: (open: boolean) => void;
   setPendingAIResult: (result: AIResult | null) => void;
+  setAIContextObject: (obj: { type: AIObjectType; id: string } | null) => void;
 
   // ─── Manuscript Format ─────────────────────────────────────────────────────
   updateManuscriptSettings: (patch: Partial<ManuscriptSettings>) => void;

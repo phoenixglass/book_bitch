@@ -435,9 +435,14 @@ export function FragmentsView() {
     pendingSelectId,
     setPendingSelectId,
     setArea,
+    setAIContextObject,
   } = useAppStore();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAIContextObject(selectedId ? { type: 'fragment', id: selectedId } : null);
+  }, [selectedId, setAIContextObject]);
   const [filterStatus, setFilterStatus] = useState('');
   const [filterType, setFilterType] = useState('');
   const [filterText, setFilterText] = useState('');

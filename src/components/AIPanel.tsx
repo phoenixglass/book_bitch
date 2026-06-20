@@ -2,12 +2,18 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAppStore, findItem } from '../store/appStore';
 import type {
   AIActionType,
+  AIObjectType,
   AIQuestionsOutput,
   AISummarizeOutput,
   AIMetadataOutput,
   AITagsOutput,
+  AIPlacementOutput,
+  AICodexSuggestOutput,
+  AIExtractQuestionsOutput,
+  AIRefineQuestionOutput,
   AIOutput,
   QuestionCategory,
+  SelectedAIContext,
 } from '../types';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -27,24 +33,70 @@ function wordCount(html: string): number {
   return stripHTML(html).split(/\s+/).filter(Boolean).length;
 }
 
-// ── Available actions per AI mode ────────────────────────────────────────────
+// ── Object type labels ────────────────────────────────────────────────────────
+
+const OBJECT_TYPE_LABELS: Record<AIObjectType, string> = {
+  scene: 'Scene',
+  fragment: 'Fragment',
+  omitted_material: 'Omitted Material',
+  notebook_entry: 'Notebook Entry',
+  codex_entry: 'Codex Entry',
+  question: 'Project Question',
+  moodboard_item: 'Moodboard Item',
+};
+
+// ── Action definitions per object type ───────────────────────────────────────
 
 type ActionDef = { value: AIActionType; label: string; desc: string };
 
-const ALL_ACTIONS: ActionDef[] = [
-  { value: 'questions', label: 'Ask Me Questions', desc: 'Generate craft questions about this scene' },
-  { value: 'summarize', label: 'Summarize', desc: 'Produce a concise summary with key details' },
-  { value: 'metadata', label: 'Generate Metadata', desc: 'Suggest synopsis, POV, location, tone, tags' },
-  { value: 'tags', label: 'Suggest Tags', desc: 'Recommend tags for organisation' },
-];
+const ACTIONS_BY_TYPE: Record<AIObjectType, ActionDef[]> = {
+  scene: [
+    { value: 'questions', label: 'Ask Me Questions', desc: 'Generate craft questions about this scene' },
+    { value: 'summarize', label: 'Summarize Scene', desc: 'Produce a concise summary with key details' },
+    { value: 'metadata', label: 'Generate Metadata', desc: 'Suggest synopsis, POV, location, tone, tags' },
+    { value: 'tags', label: 'Suggest Tags', desc: 'Recommend tags for organisation' },
+  ],
+  fragment: [
+    { value: 'questions', label: 'Ask Me Questions', desc: 'Generate craft questions about this fragment' },
+    { value: 'summarize', label: 'Summarize Fragment', desc: 'Produce a concise summary of this fragment' },
+    { value: 'tags', label: 'Suggest Tags', desc: 'Recommend tags for organisation' },
+    { value: 'placement', label: 'Find Possible Use', desc: 'Suggest where this fragment might fit in the manuscript' },
+  ],
+  omitted_material: [
+    { value: 'questions', label: 'Ask Me Questions', desc: 'Generate craft questions about this omitted material' },
+    { value: 'summarize', label: 'Summarize', desc: 'Produce a concise summary of this omitted material' },
+    { value: 'tags', label: 'Suggest Tags', desc: 'Recommend tags for organisation' },
+    { value: 'placement', label: 'Restoration Analysis', desc: 'Analyse why this material may matter structurally' },
+  ],
+  notebook_entry: [
+    { value: 'summarize', label: 'Summarize Note', desc: 'Produce a concise summary of this notebook entry' },
+    { value: 'tags', label: 'Suggest Tags', desc: 'Recommend tags for organisation' },
+    { value: 'extract-questions', label: 'Extract Questions', desc: 'Pull out open questions from this note' },
+  ],
+  codex_entry: [
+    { value: 'questions', label: 'Ask Me Questions', desc: 'Generate craft questions about this codex entry' },
+    { value: 'summarize', label: 'Summarize Entry', desc: 'Produce a concise summary of this codex entry' },
+    { value: 'tags', label: 'Suggest Tags', desc: 'Recommend tags for organisation' },
+    { value: 'codex-suggest', label: 'Suggest Missing Fields', desc: 'Identify missing or incomplete information in this entry' },
+  ],
+  question: [
+    { value: 'refine-question', label: 'Refine Question', desc: 'Sharpen the wording and suggest category/priority' },
+    { value: 'summarize', label: 'Summarize Notes', desc: 'Produce a concise summary of this question\'s notes and answer' },
+    { value: 'tags', label: 'Suggest Tags', desc: 'Recommend tags for organisation' },
+  ],
+  moodboard_item: [
+    { value: 'summarize', label: 'Summarize Description', desc: 'Produce a concise summary of this item\'s description and notes' },
+    { value: 'tags', label: 'Suggest Tags', desc: 'Recommend tags for organisation' },
+  ],
+};
 
-function availableActions(mode: string): ActionDef[] {
+function availableActionsForType(objectType: AIObjectType, mode: string): ActionDef[] {
   if (mode === 'disabled') return [];
-  if (mode === 'questions_only') return ALL_ACTIONS.filter((a) => a.value === 'questions');
-  if (mode === 'analysis_only') return ALL_ACTIONS.filter((a) => ['questions', 'summarize'].includes(a.value));
-  if (mode === 'summarization') return ALL_ACTIONS.filter((a) => ['questions', 'summarize'].includes(a.value));
+  const all = ACTIONS_BY_TYPE[objectType] ?? [];
+  if (mode === 'questions_only') return all.filter((a) => a.value === 'questions' || a.value === 'refine-question' || a.value === 'extract-questions');
+  if (mode === 'analysis_only' || mode === 'summarization') return all.filter((a) => ['questions', 'summarize', 'refine-question', 'extract-questions'].includes(a.value));
   // metadata_assistance, continuity_checking, full
-  return ALL_ACTIONS;
+  return all;
 }
 
 const QUESTION_CATEGORIES = [
@@ -68,16 +120,170 @@ interface AIStatusInfo {
   model?: string;
 }
 
-// ── Sub-components for each result type ──────────────────────────────────────
+// ── Context builder ───────────────────────────────────────────────────────────
+
+function useAIContext(): SelectedAIContext | null {
+  const {
+    area,
+    selectedId,
+    binder,
+    aiContextObject,
+    fragments,
+    omittedMaterial,
+    notebookEntries,
+    codexEntries,
+    questions,
+    moodboardItems,
+  } = useAppStore();
+
+  if (area === 'manuscript' && selectedId) {
+    const item = findItem(binder, selectedId);
+    if (item?.type === 'document') {
+      return {
+        objectType: 'scene',
+        objectId: item.id,
+        title: item.title,
+        content: item.content,
+        notes: item.notes,
+        tags: item.sceneMetadata?.tags,
+        metadata: item.sceneMetadata as Record<string, unknown>,
+        area,
+      };
+    }
+    return null;
+  }
+
+  if (!aiContextObject) return null;
+
+  const { type, id } = aiContextObject;
+
+  if (type === 'fragment') {
+    const f = fragments.find((x) => x.id === id);
+    if (!f) return null;
+    return {
+      objectType: 'fragment',
+      objectId: f.id,
+      title: f.title,
+      content: f.content,
+      notes: f.notes,
+      tags: f.tags,
+      metadata: {
+        fragmentType: f.fragmentType,
+        status: f.status,
+        possiblePlacement: f.possiblePlacement,
+        relatedCharacters: f.relatedCharacters,
+        relatedPlaces: f.relatedPlaces,
+        relatedThemes: f.relatedThemes,
+      },
+      area,
+    };
+  }
+
+  if (type === 'omitted_material') {
+    const o = omittedMaterial.find((x) => x.id === id);
+    if (!o) return null;
+    return {
+      objectType: 'omitted_material',
+      objectId: o.id,
+      title: o.title,
+      content: o.content,
+      notes: o.notes,
+      tags: o.tags,
+      metadata: {
+        omissionStatus: o.omissionStatus,
+        reason: o.reason,
+        sourceSceneTitle: o.sourceSceneTitle,
+        relatedCharacters: o.relatedCharacters,
+        relatedThemes: o.relatedThemes,
+      },
+      area,
+    };
+  }
+
+  if (type === 'notebook_entry') {
+    const n = notebookEntries.find((x) => x.id === id);
+    if (!n) return null;
+    return {
+      objectType: 'notebook_entry',
+      objectId: n.id,
+      title: n.title,
+      content: n.content,
+      tags: n.tags,
+      area,
+    };
+  }
+
+  if (type === 'codex_entry') {
+    const c = codexEntries.find((x) => x.id === id);
+    if (!c) return null;
+    return {
+      objectType: 'codex_entry',
+      objectId: c.id,
+      title: c.name,
+      content: c.description,
+      notes: c.notes,
+      tags: c.tags,
+      metadata: {
+        codexType: c.codexType,
+        aliases: c.aliases,
+        role: c.role,
+        relationships: c.relationships,
+        physicalDetails: c.physicalDetails,
+        atmosphere: c.atmosphere,
+        meaning: c.meaning,
+        customFields: c.customFields,
+      },
+      area,
+    };
+  }
+
+  if (type === 'question') {
+    const q = questions.find((x) => x.id === id);
+    if (!q) return null;
+    const combined = [q.text, q.notes, q.answer].filter(Boolean).join('\n\n');
+    return {
+      objectType: 'question',
+      objectId: q.id,
+      title: q.text.slice(0, 80) + (q.text.length > 80 ? '…' : ''),
+      content: combined,
+      notes: q.notes,
+      tags: [],
+      metadata: {
+        category: q.category,
+        priority: q.priority,
+        questionStatus: q.questionStatus,
+        answer: q.answer,
+      },
+      area,
+    };
+  }
+
+  if (type === 'moodboard_item') {
+    const m = moodboardItems.find((x) => x.id === id);
+    if (!m) return null;
+    const combined = [m.description, m.notes].filter(Boolean).join('\n\n');
+    return {
+      objectType: 'moodboard_item',
+      objectId: m.id,
+      title: m.title,
+      content: combined,
+      notes: m.notes,
+      tags: m.tags,
+      area,
+    };
+  }
+
+  return null;
+}
+
+// ── Result components ─────────────────────────────────────────────────────────
 
 function QuestionsResult({
   output,
-  sourceId,
-  sourceTitle,
+  ctx,
 }: {
   output: AIQuestionsOutput;
-  sourceId?: string;
-  sourceTitle: string;
+  ctx: SelectedAIContext;
 }) {
   const { addQuestion } = useAppStore();
   const [saved, setSaved] = useState<Set<number>>(new Set());
@@ -89,11 +295,11 @@ function QuestionsResult({
       category: q.category as QuestionCategory,
       priority: q.priority,
       questionStatus: 'open',
-      relatedSceneIds: sourceId ? [sourceId] : [],
-      relatedFragmentIds: [],
-      relatedOmittedIds: [],
-      relatedCodexIds: [],
-      relatedNotebookIds: [],
+      relatedSceneIds: ctx.objectType === 'scene' ? [ctx.objectId] : [],
+      relatedFragmentIds: ctx.objectType === 'fragment' ? [ctx.objectId] : [],
+      relatedOmittedIds: ctx.objectType === 'omitted_material' ? [ctx.objectId] : [],
+      relatedCodexIds: ctx.objectType === 'codex_entry' ? [ctx.objectId] : [],
+      relatedNotebookIds: ctx.objectType === 'notebook_entry' ? [ctx.objectId] : [],
       answer: '',
       notes: q.reason ? `AI reason: ${q.reason}` : '',
     });
@@ -103,7 +309,7 @@ function QuestionsResult({
   return (
     <div className="flex flex-col gap-2">
       <p className="text-xs text-gray-500">
-        {output.questions.length} question{output.questions.length !== 1 ? 's' : ''} about "{sourceTitle}"
+        {output.questions.length} question{output.questions.length !== 1 ? 's' : ''} about "{ctx.title}"
         {output.truncated && (
           <span className="ml-1 text-amber-500">(content was truncated)</span>
         )}
@@ -145,20 +351,56 @@ function QuestionsResult({
 
 function SummarizeResult({
   output,
-  sourceId,
+  ctx,
 }: {
   output: AISummarizeOutput;
-  sourceId?: string;
+  ctx: SelectedAIContext;
 }) {
-  const { updateItem, addQuestion } = useAppStore();
-  const [synopsisSaved, setSynopsisSaved] = useState(false);
+  const { updateItem, updateFragment, updateOmittedMaterial, updateCodexEntry, updateQuestion, updateMoodboardItem, addNotebookEntry, addQuestion } = useAppStore();
+  const [summarySaved, setSummarySaved] = useState(false);
   const [questionsSaved, setQuestionsSaved] = useState<Set<number>>(new Set());
 
-  function handleSaveSynopsis() {
-    if (!sourceId) return;
-    updateItem(sourceId, { synopsis: output.summary });
-    setSynopsisSaved(true);
+  function handleSaveSummary() {
+    const summary = output.summary;
+    switch (ctx.objectType) {
+      case 'scene':
+        updateItem(ctx.objectId, { synopsis: summary });
+        break;
+      case 'fragment':
+        updateFragment(ctx.objectId, { notes: summary });
+        break;
+      case 'omitted_material':
+        updateOmittedMaterial(ctx.objectId, { notes: summary });
+        break;
+      case 'notebook_entry':
+        addNotebookEntry({ title: `Summary: ${ctx.title}`, content: summary, tags: [] });
+        break;
+      case 'codex_entry':
+        updateCodexEntry(ctx.objectId, { notes: summary });
+        break;
+      case 'question':
+        updateQuestion(ctx.objectId, { notes: summary });
+        break;
+      case 'moodboard_item':
+        updateMoodboardItem(ctx.objectId, { notes: summary });
+        break;
+    }
+    setSummarySaved(true);
   }
+
+  const saveLabel = ctx.objectType === 'scene'
+    ? 'Save as Synopsis'
+    : ctx.objectType === 'notebook_entry'
+    ? 'Save as New Notebook Entry'
+    : ctx.objectType === 'question'
+    ? 'Save to Question Notes'
+    : 'Save to Notes';
+
+  const savedLabel = ctx.objectType === 'scene'
+    ? '✓ Saved as Synopsis'
+    : ctx.objectType === 'notebook_entry'
+    ? '✓ Saved as New Entry'
+    : '✓ Saved to Notes';
 
   function handleSaveQuestion(text: string, idx: number) {
     addQuestion({
@@ -166,11 +408,11 @@ function SummarizeResult({
       category: 'plot',
       priority: 'medium',
       questionStatus: 'open',
-      relatedSceneIds: sourceId ? [sourceId] : [],
-      relatedFragmentIds: [],
-      relatedOmittedIds: [],
-      relatedCodexIds: [],
-      relatedNotebookIds: [],
+      relatedSceneIds: ctx.objectType === 'scene' ? [ctx.objectId] : [],
+      relatedFragmentIds: ctx.objectType === 'fragment' ? [ctx.objectId] : [],
+      relatedOmittedIds: ctx.objectType === 'omitted_material' ? [ctx.objectId] : [],
+      relatedCodexIds: ctx.objectType === 'codex_entry' ? [ctx.objectId] : [],
+      relatedNotebookIds: ctx.objectType === 'notebook_entry' ? [ctx.objectId] : [],
       answer: '',
       notes: '',
     });
@@ -186,19 +428,17 @@ function SummarizeResult({
       <div>
         <p className="text-xs text-gray-500 mb-1 font-semibold uppercase tracking-wider">Summary</p>
         <p className="text-xs text-gray-200 leading-relaxed">{output.summary}</p>
-        {sourceId && (
-          <button
-            onClick={handleSaveSynopsis}
-            disabled={synopsisSaved}
-            className={`mt-2 px-2 py-0.5 rounded text-[11px] transition-colors ${
-              synopsisSaved
-                ? 'bg-green-900/40 text-green-400 cursor-default'
-                : 'bg-purple-900/40 text-purple-300 hover:bg-purple-800/40 hover:text-white'
-            }`}
-          >
-            {synopsisSaved ? '✓ Saved as Synopsis' : 'Save as Synopsis'}
-          </button>
-        )}
+        <button
+          onClick={handleSaveSummary}
+          disabled={summarySaved}
+          className={`mt-2 px-2 py-0.5 rounded text-[11px] transition-colors ${
+            summarySaved
+              ? 'bg-green-900/40 text-green-400 cursor-default'
+              : 'bg-purple-900/40 text-purple-300 hover:bg-purple-800/40 hover:text-white'
+          }`}
+        >
+          {summarySaved ? savedLabel : saveLabel}
+        </button>
       </div>
 
       {output.bulletPoints.length > 0 && (
@@ -290,10 +530,10 @@ const METADATA_DISPLAY_FIELDS: { key: keyof AIMetadataOutput; label: string; for
 
 function MetadataResult({
   output,
-  sourceId,
+  ctx,
 }: {
   output: AIMetadataOutput;
-  sourceId?: string;
+  ctx: SelectedAIContext;
 }) {
   const { updateItem, addQuestion, binder } = useAppStore();
   const [accepted, setAccepted] = useState<Record<string, boolean>>({});
@@ -314,19 +554,12 @@ function MetadataResult({
   }
 
   function applyAccepted() {
-    if (!sourceId) return;
-
-    const currentScene = findItem(binder, sourceId);
+    const currentScene = findItem(binder, ctx.objectId);
     const patch: Record<string, unknown> = {};
     const metaPatch: Record<string, unknown> = { ...(currentScene?.sceneMetadata ?? {}) };
     let hasMeta = false;
 
-    // synopsis goes on the BinderItem itself, not in sceneMetadata
-    if (accepted.synopsis) {
-      patch.synopsis = output.synopsis;
-    }
-
-    // All other fields merge into sceneMetadata (preserving unaffected fields)
+    if (accepted.synopsis) patch.synopsis = output.synopsis;
     if (accepted.povCharacter) { metaPatch.povCharacter = output.povCharacter; hasMeta = true; }
     if (accepted.charactersPresent) { metaPatch.charactersPresent = output.charactersPresent; hasMeta = true; }
     if (accepted.location) { metaPatch.location = output.location; hasMeta = true; }
@@ -338,16 +571,12 @@ function MetadataResult({
     if (accepted.sceneFunction) { metaPatch.sceneFunction = output.sceneFunction; hasMeta = true; }
     if (accepted.whatChanged) { metaPatch.whatChanged = output.whatChanged; hasMeta = true; }
     if (accepted.suggestedTags) { metaPatch.tags = output.suggestedTags; hasMeta = true; }
-
-    if (hasMeta) {
-      patch.sceneMetadata = metaPatch;
-    }
+    if (hasMeta) patch.sceneMetadata = metaPatch;
 
     if (Object.keys(patch).length > 0) {
-      updateItem(sourceId, patch as Parameters<typeof updateItem>[1]);
+      updateItem(ctx.objectId, patch as Parameters<typeof updateItem>[1]);
     }
 
-    // Save unanswered questions if accepted
     if (accepted.unansweredQuestions) {
       output.unansweredQuestions.forEach((q) => {
         addQuestion({
@@ -355,7 +584,7 @@ function MetadataResult({
           category: 'other',
           priority: 'medium',
           questionStatus: 'open',
-          relatedSceneIds: sourceId ? [sourceId] : [],
+          relatedSceneIds: [ctx.objectId],
           relatedFragmentIds: [],
           relatedOmittedIds: [],
           relatedCodexIds: [],
@@ -435,54 +664,70 @@ function MetadataResult({
         })}
       </div>
 
-      {sourceId && (
-        <button
-          onClick={applyAccepted}
-          disabled={!anyAccepted || applied}
-          className={`mt-1 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-            applied
-              ? 'bg-green-900/40 text-green-400 cursor-default'
-              : anyAccepted
-              ? 'bg-purple-700 text-white hover:bg-purple-600'
-              : 'bg-[#2d3748] text-gray-500 cursor-default'
-          }`}
-        >
-          {applied ? '✓ Applied to Scene' : `Apply Selected (${Object.values(accepted).filter(Boolean).length})`}
-        </button>
-      )}
+      <button
+        onClick={applyAccepted}
+        disabled={!anyAccepted || applied}
+        className={`mt-1 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+          applied
+            ? 'bg-green-900/40 text-green-400 cursor-default'
+            : anyAccepted
+            ? 'bg-purple-700 text-white hover:bg-purple-600'
+            : 'bg-[#2d3748] text-gray-500 cursor-default'
+        }`}
+      >
+        {applied ? '✓ Applied to Scene' : `Apply Selected (${Object.values(accepted).filter(Boolean).length})`}
+      </button>
     </div>
   );
 }
 
 function TagsResult({
   output,
-  sourceId,
+  ctx,
 }: {
   output: AITagsOutput;
-  sourceId?: string;
+  ctx: SelectedAIContext;
 }) {
-  const { updateItem, getOrCreateTag, binder } = useAppStore();
+  const { updateItem, updateFragment, updateOmittedMaterial, updateNotebookEntry, updateCodexEntry, updateMoodboardItem, getOrCreateTag, binder, fragments, omittedMaterial, notebookEntries, codexEntries, moodboardItems } = useAppStore();
   const [applied, setApplied] = useState<Set<string>>(new Set());
 
-  const scene = sourceId ? findItem(binder, sourceId) : null;
-  const currentTags = scene?.sceneMetadata?.tags ?? [];
+  function getCurrentTags(): string[] {
+    switch (ctx.objectType) {
+      case 'scene': return findItem(binder, ctx.objectId)?.sceneMetadata?.tags ?? [];
+      case 'fragment': return fragments.find(f => f.id === ctx.objectId)?.tags ?? [];
+      case 'omitted_material': return omittedMaterial.find(o => o.id === ctx.objectId)?.tags ?? [];
+      case 'notebook_entry': return notebookEntries.find(n => n.id === ctx.objectId)?.tags ?? [];
+      case 'codex_entry': return codexEntries.find(c => c.id === ctx.objectId)?.tags ?? [];
+      case 'moodboard_item': return moodboardItems.find(m => m.id === ctx.objectId)?.tags ?? [];
+      default: return [];
+    }
+  }
 
   function applyTag(tagName: string) {
-    if (!sourceId) return;
     const trimmed = tagName.trim().toLowerCase();
+    const currentTags = getCurrentTags();
     if (currentTags.includes(trimmed)) return;
     getOrCreateTag(trimmed);
     const newTags = [...currentTags, trimmed];
-    updateItem(sourceId, {
-      sceneMetadata: {
-        ...(scene?.sceneMetadata ?? {}),
-        tags: newTags,
-      },
-    });
+
+    switch (ctx.objectType) {
+      case 'scene': {
+        const scene = findItem(binder, ctx.objectId);
+        updateItem(ctx.objectId, { sceneMetadata: { ...(scene?.sceneMetadata ?? {}), tags: newTags } });
+        break;
+      }
+      case 'fragment': updateFragment(ctx.objectId, { tags: newTags }); break;
+      case 'omitted_material': updateOmittedMaterial(ctx.objectId, { tags: newTags }); break;
+      case 'notebook_entry': updateNotebookEntry(ctx.objectId, { tags: newTags }); break;
+      case 'codex_entry': updateCodexEntry(ctx.objectId, { tags: newTags }); break;
+      case 'moodboard_item': updateMoodboardItem(ctx.objectId, { tags: newTags }); break;
+    }
+
     setApplied((prev) => new Set(prev).add(trimmed));
   }
 
   const hasAny = output.existingMatches.length > 0 || output.newSuggestions.length > 0;
+  const currentTags = getCurrentTags();
 
   if (!hasAny) {
     return <p className="text-xs text-gray-500 italic">No tag suggestions generated.</p>;
@@ -504,7 +749,7 @@ function TagsResult({
                 <button
                   key={tag}
                   onClick={() => applyTag(tag)}
-                  disabled={isApplied || !sourceId}
+                  disabled={isApplied}
                   className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
                     isApplied
                       ? 'bg-green-900/30 text-green-400 cursor-default'
@@ -530,7 +775,7 @@ function TagsResult({
                 <button
                   key={tag}
                   onClick={() => applyTag(normalized)}
-                  disabled={isApplied || !sourceId}
+                  disabled={isApplied}
                   className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
                     isApplied
                       ? 'bg-green-900/30 text-green-400 cursor-default'
@@ -544,12 +789,383 @@ function TagsResult({
           </div>
         </div>
       )}
+    </div>
+  );
+}
 
-      {!sourceId && (
-        <p className="text-[11px] text-gray-500 italic">
-          No scene selected — tags cannot be applied automatically.
-        </p>
+function PlacementResult({
+  output,
+  ctx,
+}: {
+  output: AIPlacementOutput;
+  ctx: SelectedAIContext;
+}) {
+  const { updateFragment, updateOmittedMaterial } = useAppStore();
+  const [saved, setSaved] = useState(false);
+
+  function handleSave() {
+    const notes = [
+      output.rationale,
+      output.suggestions.length > 0 ? 'Placement suggestions:\n' + output.suggestions.map(s => `• ${s}`).join('\n') : '',
+      output.possibleScenes.length > 0 ? 'Possible scenes: ' + output.possibleScenes.join(', ') : '',
+    ].filter(Boolean).join('\n\n');
+
+    if (ctx.objectType === 'fragment') {
+      updateFragment(ctx.objectId, { possiblePlacement: notes });
+    } else if (ctx.objectType === 'omitted_material') {
+      updateOmittedMaterial(ctx.objectId, { notes });
+    }
+    setSaved(true);
+  }
+
+  const saveLabel = ctx.objectType === 'fragment' ? 'Save to Possible Placement' : 'Save to Notes';
+
+  return (
+    <div className="flex flex-col gap-3">
+      {output.truncated && (
+        <p className="text-[11px] text-amber-500">Content was truncated before analysis.</p>
       )}
+
+      {output.rationale && (
+        <div>
+          <p className="text-xs text-gray-500 mb-1 font-semibold uppercase tracking-wider">Analysis</p>
+          <p className="text-xs text-gray-200 leading-relaxed">{output.rationale}</p>
+        </div>
+      )}
+
+      {output.suggestions.length > 0 && (
+        <div>
+          <p className="text-xs text-gray-500 mb-1 font-semibold uppercase tracking-wider">
+            {ctx.objectType === 'omitted_material' ? 'Restoration Possibilities' : 'Placement Suggestions'}
+          </p>
+          <ul className="flex flex-col gap-1">
+            {output.suggestions.map((s, i) => (
+              <li key={i} className="text-xs text-gray-300 flex gap-1">
+                <span className="text-purple-500 shrink-0">·</span>
+                {s}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {output.possibleScenes.length > 0 && (
+        <div>
+          <p className="text-[10px] text-gray-500 mb-0.5">Possible scene connections</p>
+          <p className="text-xs text-gray-300">{output.possibleScenes.join(', ')}</p>
+        </div>
+      )}
+
+      {(ctx.objectType === 'fragment' || ctx.objectType === 'omitted_material') && (
+        <button
+          onClick={handleSave}
+          disabled={saved}
+          className={`px-2 py-0.5 rounded text-[11px] transition-colors ${
+            saved
+              ? 'bg-green-900/40 text-green-400 cursor-default'
+              : 'bg-purple-900/40 text-purple-300 hover:bg-purple-800/40 hover:text-white'
+          }`}
+        >
+          {saved ? '✓ Saved' : saveLabel}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function CodexSuggestResult({
+  output,
+  ctx,
+}: {
+  output: AICodexSuggestOutput;
+  ctx: SelectedAIContext;
+}) {
+  const { updateCodexEntry, addQuestion } = useAppStore();
+  const [accepted, setAccepted] = useState<Set<number>>(new Set());
+  const [applied, setApplied] = useState(false);
+  const [questionsSaved, setQuestionsSaved] = useState<Set<number>>(new Set());
+
+  function toggleAccept(i: number) {
+    setAccepted(prev => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  }
+
+  function handleApply() {
+    const selectedSuggestions = output.fieldSuggestions.filter((_, i) => accepted.has(i));
+    if (selectedSuggestions.length === 0) return;
+    const customFieldPatch: Record<string, string> = {};
+    selectedSuggestions.forEach(s => { customFieldPatch[s.field] = s.value; });
+    updateCodexEntry(ctx.objectId, {
+      customFields: customFieldPatch,
+      notes: selectedSuggestions.map(s => `[${s.field}] ${s.value}`).join('\n') + '\n(from AI suggestion)',
+    });
+    setApplied(true);
+  }
+
+  function handleSaveQuestion(text: string, idx: number) {
+    addQuestion({
+      text,
+      category: 'other',
+      priority: 'medium',
+      questionStatus: 'open',
+      relatedSceneIds: [],
+      relatedFragmentIds: [],
+      relatedOmittedIds: [],
+      relatedCodexIds: [ctx.objectId],
+      relatedNotebookIds: [],
+      answer: '',
+      notes: '',
+    });
+    setQuestionsSaved(prev => new Set(prev).add(idx));
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {output.truncated && (
+        <p className="text-[11px] text-amber-500">Content was truncated before analysis.</p>
+      )}
+
+      {output.fieldSuggestions.length > 0 && (
+        <div>
+          <p className="text-xs text-gray-500 mb-1 font-semibold uppercase tracking-wider">
+            Suggested Fields
+          </p>
+          <p className="text-[11px] text-gray-500 mb-2">Check fields to accept, then click Apply.</p>
+          <div className="flex flex-col gap-1.5">
+            {output.fieldSuggestions.map((s, i) => (
+              <label
+                key={i}
+                className={`flex items-start gap-2 p-1.5 rounded cursor-pointer transition-colors ${
+                  accepted.has(i)
+                    ? 'bg-purple-900/20 border border-purple-800/40'
+                    : 'border border-transparent hover:border-[#2d3748]'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={accepted.has(i)}
+                  onChange={() => toggleAccept(i)}
+                  className="accent-purple-500 mt-0.5 shrink-0"
+                />
+                <div>
+                  <p className="text-[10px] text-purple-400">{s.field}</p>
+                  <p className="text-xs text-gray-200">{s.value}</p>
+                  {s.reason && <p className="text-[10px] text-gray-500 italic">{s.reason}</p>}
+                </div>
+              </label>
+            ))}
+          </div>
+          <button
+            onClick={handleApply}
+            disabled={accepted.size === 0 || applied}
+            className={`mt-2 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+              applied
+                ? 'bg-green-900/40 text-green-400 cursor-default'
+                : accepted.size > 0
+                ? 'bg-purple-700 text-white hover:bg-purple-600'
+                : 'bg-[#2d3748] text-gray-500 cursor-default'
+            }`}
+          >
+            {applied ? '✓ Applied to Codex Entry' : `Apply Selected (${accepted.size})`}
+          </button>
+        </div>
+      )}
+
+      {output.contradictions.length > 0 && (
+        <div>
+          <p className="text-xs text-gray-500 mb-1 font-semibold uppercase tracking-wider">
+            Potential Contradictions
+          </p>
+          {output.contradictions.map((c, i) => (
+            <p key={i} className="text-xs text-amber-300 leading-relaxed mb-1">⚠ {c}</p>
+          ))}
+        </div>
+      )}
+
+      {output.openQuestions.length > 0 && (
+        <div>
+          <p className="text-xs text-gray-500 mb-1 font-semibold uppercase tracking-wider">
+            Open Questions
+          </p>
+          {output.openQuestions.map((q, i) => (
+            <div key={i} className="flex items-start gap-1.5 mb-1">
+              <p className="text-xs text-gray-300 flex-1">{q}</p>
+              <button
+                onClick={() => handleSaveQuestion(q, i)}
+                disabled={questionsSaved.has(i)}
+                className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] transition-colors ${
+                  questionsSaved.has(i)
+                    ? 'bg-green-900/30 text-green-400 cursor-default'
+                    : 'bg-[#2d3748] text-gray-400 hover:text-white'
+                }`}
+              >
+                {questionsSaved.has(i) ? '✓' : '+ Q'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExtractQuestionsResult({
+  output,
+  ctx,
+}: {
+  output: AIExtractQuestionsOutput;
+  ctx: SelectedAIContext;
+}) {
+  const { addQuestion } = useAppStore();
+  const [saved, setSaved] = useState<Set<number>>(new Set());
+
+  function handleSave(idx: number) {
+    const q = output.questions[idx];
+    addQuestion({
+      text: q.text,
+      category: q.category as QuestionCategory,
+      priority: q.priority,
+      questionStatus: 'open',
+      relatedSceneIds: [],
+      relatedFragmentIds: [],
+      relatedOmittedIds: [],
+      relatedCodexIds: [],
+      relatedNotebookIds: [ctx.objectId],
+      answer: '',
+      notes: q.reason ? `Extracted from notebook: ${q.reason}` : 'Extracted from notebook entry',
+    });
+    setSaved(prev => new Set(prev).add(idx));
+  }
+
+  if (output.questions.length === 0) {
+    return <p className="text-xs text-gray-500 italic">No distinct questions found in this note.</p>;
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-xs text-gray-500">
+        {output.questions.length} question{output.questions.length !== 1 ? 's' : ''} extracted
+        {output.truncated && <span className="ml-1 text-amber-500">(content was truncated)</span>}
+      </p>
+      {output.questions.map((q, i) => (
+        <div key={i} className="border border-[#2d3748] rounded p-2 flex flex-col gap-1 bg-[#1a1a2e]">
+          <p className="text-xs text-gray-200 leading-relaxed">{q.text}</p>
+          <div className="flex items-center gap-1 flex-wrap">
+            <span className="text-[10px] text-purple-400 bg-purple-900/20 rounded px-1.5 py-0.5">
+              {q.category.replace('_', ' ')}
+            </span>
+            <span className={`text-[10px] rounded px-1.5 py-0.5 ${
+              q.priority === 'high' ? 'text-red-400 bg-red-900/20' :
+              q.priority === 'medium' ? 'text-amber-400 bg-amber-900/20' :
+              'text-gray-400 bg-gray-800'
+            }`}>
+              {q.priority}
+            </span>
+          </div>
+          {q.reason && <p className="text-[10px] text-gray-500 italic">{q.reason}</p>}
+          <button
+            onClick={() => handleSave(i)}
+            disabled={saved.has(i)}
+            className={`self-start mt-1 px-2 py-0.5 rounded text-[11px] transition-colors ${
+              saved.has(i)
+                ? 'bg-green-900/40 text-green-400 cursor-default'
+                : 'bg-purple-900/40 text-purple-300 hover:bg-purple-800/40 hover:text-white'
+            }`}
+          >
+            {saved.has(i) ? '✓ Saved to Question Bank' : '+ Save to Question Bank'}
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RefineQuestionResult({
+  output,
+  ctx,
+}: {
+  output: AIRefineQuestionOutput;
+  ctx: SelectedAIContext;
+}) {
+  const { updateQuestion } = useAppStore();
+  const [applied, setApplied] = useState(false);
+
+  function handleApply() {
+    updateQuestion(ctx.objectId, {
+      text: output.refined,
+      category: output.suggestedCategory,
+      priority: output.suggestedPriority,
+    });
+    setApplied(true);
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {output.truncated && (
+        <p className="text-[11px] text-amber-500">Content was truncated before analysis.</p>
+      )}
+
+      <div>
+        <p className="text-xs text-gray-500 mb-1 font-semibold uppercase tracking-wider">Refined Question</p>
+        <p className="text-xs text-gray-200 leading-relaxed border border-[#2d3748] rounded p-2 bg-[#1a1a2e]">
+          {output.refined}
+        </p>
+      </div>
+
+      <div className="flex gap-3 flex-wrap">
+        <div>
+          <p className="text-[10px] text-gray-500">Category</p>
+          <span className="text-[11px] text-purple-400 bg-purple-900/20 rounded px-1.5 py-0.5">
+            {output.suggestedCategory.replace('_', ' ')}
+          </span>
+        </div>
+        <div>
+          <p className="text-[10px] text-gray-500">Priority</p>
+          <span className={`text-[11px] rounded px-1.5 py-0.5 ${
+            output.suggestedPriority === 'high' ? 'text-red-400 bg-red-900/20' :
+            output.suggestedPriority === 'medium' ? 'text-amber-400 bg-amber-900/20' :
+            'text-gray-400 bg-gray-800'
+          }`}>
+            {output.suggestedPriority}
+          </span>
+        </div>
+      </div>
+
+      {output.rationale && (
+        <div>
+          <p className="text-[10px] text-gray-500 mb-0.5">Rationale</p>
+          <p className="text-xs text-gray-400 italic">{output.rationale}</p>
+        </div>
+      )}
+
+      {output.relatedQuestions.length > 0 && (
+        <div>
+          <p className="text-[10px] text-gray-500 mb-0.5">Related Questions to Explore</p>
+          <ul className="flex flex-col gap-0.5">
+            {output.relatedQuestions.map((q, i) => (
+              <li key={i} className="text-xs text-gray-400 flex gap-1">
+                <span className="text-purple-500 shrink-0">·</span>{q}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <button
+        onClick={handleApply}
+        disabled={applied}
+        className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+          applied
+            ? 'bg-green-900/40 text-green-400 cursor-default'
+            : 'bg-purple-700 text-white hover:bg-purple-600'
+        }`}
+      >
+        {applied ? '✓ Applied to Question' : 'Apply Refined Question'}
+      </button>
     </div>
   );
 }
@@ -562,10 +1178,10 @@ export function AIPanel() {
     setAISettings,
     aiPanelOpen,
     setAIPanelOpen,
-    selectedId,
-    binder,
     projectTags,
   } = useAppStore();
+
+  const ctx = useAIContext();
 
   const [aiStatus, setAIStatus] = useState<AIStatusInfo | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
@@ -577,24 +1193,19 @@ export function AIPanel() {
   const [privacyAcknowledged, setPrivacyAcknowledged] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
-  const selectedItem = selectedId ? findItem(binder, selectedId) : null;
-  const isDocument = selectedItem?.type === 'document';
+  const actions = ctx ? availableActionsForType(ctx.objectType, aiSettings.mode) : [];
 
-  const actions = availableActions(aiSettings.mode);
-
-  // Ensure current action is valid for current mode
   useEffect(() => {
     if (actions.length > 0 && !actions.find((a) => a.value === action)) {
       setAction(actions[0].value);
     }
-  }, [aiSettings.mode, action, actions]);
+  }, [ctx?.objectType, aiSettings.mode, action, actions]);
 
-  // Reset result when action or selected scene changes
   useEffect(() => {
     setResult(null);
     setError(null);
     setRunState('idle');
-  }, [action, selectedId]);
+  }, [action, ctx?.objectId]);
 
   const checkAIStatus = useCallback(() => {
     setStatusLoading(true);
@@ -615,13 +1226,13 @@ export function AIPanel() {
   }, [aiPanelOpen, checkAIStatus]);
 
   async function handleRun() {
-    if (!selectedItem || !aiStatus?.configured || aiSettings.mode === 'disabled') return;
+    if (!ctx || !aiStatus?.configured || aiSettings.mode === 'disabled') return;
 
-    const content = selectedItem.content;
+    const content = ctx.content;
     const wc = wordCount(content);
 
     if (wc < 5) {
-      setError('This scene has too little content to analyse. Add some text first.');
+      setError(`This ${OBJECT_TYPE_LABELS[ctx.objectType].toLowerCase()} has too little content to analyse. Add some text first.`);
       setRunState('error');
       return;
     }
@@ -631,29 +1242,39 @@ export function AIPanel() {
     setResult(null);
 
     try {
-      const endpoint = `/api/ai/${action}`;
+      const endpoint = action === 'extract-questions' ? 'questions' : action;
       const body: Record<string, unknown> = {
-        title: selectedItem.title,
+        title: ctx.title,
         content,
-        synopsis: selectedItem.synopsis || undefined,
+        objectType: ctx.objectType,
         mode: aiSettings.mode,
         allowDrafting: aiSettings.allowDrafting,
       };
 
-      if (action === 'questions' && category !== 'any') {
-        body.category = category;
-      }
-
-      if (action === 'summarize') {
-        body.objectType = 'scene';
+      if (action === 'questions' || action === 'extract-questions') {
+        if (category !== 'any') body.category = category;
+        body.extractFromNote = action === 'extract-questions';
       }
 
       if (action === 'tags') {
-        body.objectType = 'scene';
         body.allProjectTags = projectTags.map((t) => t.name);
       }
 
-      const res = await fetch(endpoint, {
+      if (action === 'codex-suggest') {
+        body.codexType = (ctx.metadata?.codexType as string) ?? '';
+        body.existingNotes = ctx.notes ?? '';
+        body.existingFields = ctx.metadata ?? {};
+      }
+
+      if (action === 'refine-question') {
+        body.questionText = ctx.title;
+        body.currentCategory = (ctx.metadata?.category as string) ?? '';
+        body.currentPriority = (ctx.metadata?.priority as string) ?? '';
+        body.notes = ctx.notes ?? '';
+        body.answer = (ctx.metadata?.answer as string) ?? '';
+      }
+
+      const res = await fetch(`/api/ai/${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -665,8 +1286,8 @@ export function AIPanel() {
         throw new Error((data.error as string) || `Server returned ${res.status}`);
       }
 
-      // Tag the output with its type
-      const output = { ...data, type: action } as AIOutput;
+      const outputType = action;
+      const output = { ...data, type: outputType } as AIOutput;
       setResult(output);
       setRunState('done');
     } catch (err) {
@@ -680,9 +1301,12 @@ export function AIPanel() {
   const canRun =
     aiStatus?.configured &&
     aiSettings.mode !== 'disabled' &&
-    isDocument &&
+    !!ctx &&
+    actions.length > 0 &&
     runState !== 'loading' &&
     privacyAcknowledged;
+
+  const objectLabel = ctx ? OBJECT_TYPE_LABELS[ctx.objectType] : null;
 
   return (
     <div className="w-80 shrink-0 flex flex-col bg-[#16213e] border-l border-[#0f3460] overflow-hidden">
@@ -796,24 +1420,30 @@ export function AIPanel() {
             </div>
           )}
 
-          {/* No scene selected */}
-          {aiStatus?.configured && aiSettings.mode !== 'disabled' && !isDocument && (
+          {/* No object selected */}
+          {aiStatus?.configured && aiSettings.mode !== 'disabled' && !ctx && (
             <div className="border border-[#2d3748] rounded p-3 bg-[#1a1a2e]">
-              <p className="text-xs text-gray-400">
-                Select a scene in the binder to use AI assistance.
+              <p className="text-xs text-gray-400 mb-1">No item selected.</p>
+              <p className="text-[11px] text-gray-600 leading-relaxed">
+                Select a scene, fragment, notebook entry, codex entry, or project question to use AI assistance.
               </p>
             </div>
           )}
 
           {/* Main controls */}
-          {aiStatus?.configured && aiSettings.mode !== 'disabled' && isDocument && (
+          {aiStatus?.configured && aiSettings.mode !== 'disabled' && ctx && (
             <>
-              {/* Current scene scope */}
+              {/* Selected object scope */}
               <div className="border border-[#2d3748] rounded p-2 bg-[#1a1a2e]">
-                <p className="text-[10px] text-gray-500 mb-0.5">Analysing</p>
-                <p className="text-xs text-gray-200 font-medium truncate">{selectedItem.title}</p>
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <span className="text-[10px] text-purple-400 bg-purple-900/20 rounded px-1.5 py-0.5">
+                    {objectLabel}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-200 font-medium truncate">{ctx.title}</p>
                 <p className="text-[10px] text-gray-500 mt-0.5">
-                  {wordCount(selectedItem.content).toLocaleString()} words · scene
+                  {wordCount(ctx.content).toLocaleString()} words
+                  {ctx.tags && ctx.tags.length > 0 && ` · ${ctx.tags.length} tag${ctx.tags.length !== 1 ? 's' : ''}`}
                 </p>
               </div>
 
@@ -821,7 +1451,7 @@ export function AIPanel() {
               {!privacyAcknowledged && (
                 <div className="border border-blue-800/40 rounded p-2 bg-blue-900/10">
                   <p className="text-[11px] text-gray-300 leading-relaxed mb-2">
-                    This action will send the selected scene text to{' '}
+                    This action will send the selected {objectLabel?.toLowerCase()} text to{' '}
                     <strong className="text-white">{aiStatus.provider}</strong> for analysis.
                     Text is not stored by the app after the request.
                   </p>
@@ -837,29 +1467,40 @@ export function AIPanel() {
               {privacyAcknowledged && (
                 <>
                   {/* Action picker */}
-                  <div>
-                    <p className="text-[10px] text-gray-500 mb-1 uppercase tracking-wider">Action</p>
-                    <div className="flex flex-col gap-1">
-                      {actions.map((a) => (
-                        <label key={a.value} className="flex items-start gap-2 cursor-pointer group">
-                          <input
-                            type="radio"
-                            name="ai-action"
-                            value={a.value}
-                            checked={action === a.value}
-                            onChange={() => setAction(a.value)}
-                            className="accent-purple-500 mt-0.5 shrink-0"
-                          />
-                          <div>
-                            <span className="text-xs text-gray-300 group-hover:text-white transition-colors">
-                              {a.label}
-                            </span>
-                            <p className="text-[10px] text-gray-500">{a.desc}</p>
-                          </div>
-                        </label>
-                      ))}
+                  {actions.length > 0 ? (
+                    <div>
+                      <p className="text-[10px] text-gray-500 mb-1 uppercase tracking-wider">Available Actions</p>
+                      <div className="flex flex-col gap-1">
+                        {actions.map((a) => (
+                          <label key={a.value} className="flex items-start gap-2 cursor-pointer group">
+                            <input
+                              type="radio"
+                              name="ai-action"
+                              value={a.value}
+                              checked={action === a.value}
+                              onChange={() => setAction(a.value)}
+                              className="accent-purple-500 mt-0.5 shrink-0"
+                            />
+                            <div>
+                              <span className="text-xs text-gray-300 group-hover:text-white transition-colors">
+                                {a.label}
+                              </span>
+                              <p className="text-[10px] text-gray-500">{a.desc}</p>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="border border-[#2d3748] rounded p-2 bg-[#1a1a2e]">
+                      <p className="text-xs text-gray-500">
+                        No AI actions are available for this object type in the current mode.{' '}
+                        <button onClick={() => setShowSettings(true)} className="text-purple-400 underline">
+                          Change mode.
+                        </button>
+                      </p>
+                    </div>
+                  )}
 
                   {/* Category picker for questions */}
                   {action === 'questions' && (
@@ -881,6 +1522,13 @@ export function AIPanel() {
                     </div>
                   )}
 
+                  {/* Scene-only action note */}
+                  {ctx.objectType !== 'scene' && (
+                    <p className="text-[10px] text-gray-600">
+                      ⓘ Generate Metadata is a scene-only action and is not shown here.
+                    </p>
+                  )}
+
                   {/* No-drafting indicator */}
                   {aiSettings.mode !== 'full' && (
                     <p className="text-[10px] text-gray-600">
@@ -889,23 +1537,25 @@ export function AIPanel() {
                   )}
 
                   {/* Run button */}
-                  <button
-                    onClick={handleRun}
-                    disabled={!canRun}
-                    className={`w-full py-2 rounded text-sm font-medium transition-colors ${
-                      canRun
-                        ? 'bg-purple-700 text-white hover:bg-purple-600'
-                        : 'bg-[#2d3748] text-gray-500 cursor-default'
-                    }`}
-                  >
-                    {runState === 'loading' ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <span className="animate-spin text-base">⟳</span> Running…
-                      </span>
-                    ) : (
-                      <>Run: {actions.find((a) => a.value === action)?.label ?? action}</>
-                    )}
-                  </button>
+                  {actions.length > 0 && (
+                    <button
+                      onClick={handleRun}
+                      disabled={!canRun}
+                      className={`w-full py-2 rounded text-sm font-medium transition-colors ${
+                        canRun
+                          ? 'bg-purple-700 text-white hover:bg-purple-600'
+                          : 'bg-[#2d3748] text-gray-500 cursor-default'
+                      }`}
+                    >
+                      {runState === 'loading' ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <span className="animate-spin text-base">⟳</span> Running…
+                        </span>
+                      ) : (
+                        <>Run: {actions.find((a) => a.value === action)?.label ?? action}</>
+                      )}
+                    </button>
+                  )}
                 </>
               )}
             </>
@@ -926,7 +1576,7 @@ export function AIPanel() {
           )}
 
           {/* Results */}
-          {runState === 'done' && result && (
+          {runState === 'done' && result && ctx && (
             <div className="border-t border-[#0f3460] pt-3">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider">
@@ -941,29 +1591,28 @@ export function AIPanel() {
               </div>
 
               {result.type === 'questions' && (
-                <QuestionsResult
-                  output={result as AIQuestionsOutput}
-                  sourceId={selectedId ?? undefined}
-                  sourceTitle={selectedItem?.title ?? 'Scene'}
-                />
+                <QuestionsResult output={result as AIQuestionsOutput} ctx={ctx} />
               )}
               {result.type === 'summarize' && (
-                <SummarizeResult
-                  output={result as AISummarizeOutput}
-                  sourceId={selectedId ?? undefined}
-                />
+                <SummarizeResult output={result as AISummarizeOutput} ctx={ctx} />
               )}
               {result.type === 'metadata' && (
-                <MetadataResult
-                  output={result as AIMetadataOutput}
-                  sourceId={selectedId ?? undefined}
-                />
+                <MetadataResult output={result as AIMetadataOutput} ctx={ctx} />
               )}
               {result.type === 'tags' && (
-                <TagsResult
-                  output={result as AITagsOutput}
-                  sourceId={selectedId ?? undefined}
-                />
+                <TagsResult output={result as AITagsOutput} ctx={ctx} />
+              )}
+              {result.type === 'placement' && (
+                <PlacementResult output={result as AIPlacementOutput} ctx={ctx} />
+              )}
+              {result.type === 'codex-suggest' && (
+                <CodexSuggestResult output={result as AICodexSuggestOutput} ctx={ctx} />
+              )}
+              {result.type === 'extract-questions' && (
+                <ExtractQuestionsResult output={result as AIExtractQuestionsOutput} ctx={ctx} />
+              )}
+              {result.type === 'refine-question' && (
+                <RefineQuestionResult output={result as AIRefineQuestionOutput} ctx={ctx} />
               )}
             </div>
           )}

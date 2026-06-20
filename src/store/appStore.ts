@@ -25,6 +25,7 @@ import type {
   SplitRefTarget,
   AISettings,
   AIMode,
+  AIObjectType,
   AIResult,
   ManuscriptSettings,
 } from '../types';
@@ -229,6 +230,7 @@ export const useAppStore = create<AppState>()(
       } as AISettings,
       aiPanelOpen: false,
       pendingAIResult: null as AIResult | null,
+      aiContextObject: null as { type: AIObjectType; id: string } | null,
 
       // ── Manuscript format settings ────────────────────────────────────────
       manuscriptSettings: {
@@ -461,6 +463,7 @@ export const useAppStore = create<AppState>()(
           relatedPlaces: [],
           relatedThemes: [],
           possiblePlacement: '',
+          notes: '',
           source: '',
           status: 'unsorted' as FragmentStatus,
           createdAt: now(),
@@ -1316,6 +1319,10 @@ export const useAppStore = create<AppState>()(
 
       setPendingAIResult: (result) => {
         set({ pendingAIResult: result });
+      },
+
+      setAIContextObject: (obj) => {
+        set({ aiContextObject: obj });
       },
 
       // ── Manuscript Format ─────────────────────────────────────────────────

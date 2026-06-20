@@ -116,8 +116,12 @@ function NotebookDetail({ entry, onClose }: { entry: NotebookEntry; onClose: () 
 }
 
 export function NotebookView() {
-  const { notebookEntries, addNotebookEntry, pendingSelectId, setPendingSelectId } = useAppStore();
+  const { notebookEntries, addNotebookEntry, pendingSelectId, setPendingSelectId, setAIContextObject } = useAppStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAIContextObject(selectedId ? { type: 'notebook_entry', id: selectedId } : null);
+  }, [selectedId, setAIContextObject]);
 
   useEffect(() => {
     if (pendingSelectId) {

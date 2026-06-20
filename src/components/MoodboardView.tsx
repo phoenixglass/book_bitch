@@ -121,8 +121,12 @@ function MoodboardDetail({ item, onClose }: { item: MoodboardItem; onClose: () =
 }
 
 export function MoodboardView() {
-  const { moodboardItems, addMoodboardItem, pendingSelectId, setPendingSelectId } = useAppStore();
+  const { moodboardItems, addMoodboardItem, pendingSelectId, setPendingSelectId, setAIContextObject } = useAppStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAIContextObject(selectedId ? { type: 'moodboard_item', id: selectedId } : null);
+  }, [selectedId, setAIContextObject]);
 
   useEffect(() => {
     if (pendingSelectId) {

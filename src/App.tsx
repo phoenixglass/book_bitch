@@ -65,94 +65,98 @@ function App() {
         {/* Left icon nav (always visible, hidden in composition mode) */}
         {!compositionMode && <SideNav />}
 
-        {/* Manuscript area */}
-        {area === 'manuscript' && (
-          <>
-            {/* Binder sidebar */}
-            {!compositionMode && <Binder />}
+        {/* Content area — all views */}
+        <div className="flex flex-1 overflow-hidden">
 
-            {/* Compile button strip */}
-            {!compositionMode && (
-              <div className="flex flex-col flex-1 overflow-hidden">
-                <div className="flex items-center px-3 py-1 bg-[#0d1117] border-b border-[#0f3460] shrink-0">
-                  <button
-                    onClick={() => setCompileOpen(true)}
-                    className="flex items-center gap-1 text-xs text-gray-400 hover:text-white hover:bg-[#2d3748] px-2 py-1 rounded transition-colors"
-                  >
-                    📦 Compile & Export
-                  </button>
-                </div>
+          {/* Manuscript area */}
+          {area === 'manuscript' && (
+            <>
+              {/* Binder sidebar */}
+              {!compositionMode && <Binder />}
 
-                {/* Editor + optional reference pane */}
-                <div className="flex flex-1 overflow-hidden">
-                  {/* Center editor / view */}
-                  <div className="flex-1 flex flex-col overflow-hidden">
-                    {viewMode === 'editor' && selectedItem?.type === 'document' && (
-                      <RichEditor
-                        key={selectedItem.id}
-                        itemId={selectedItem.id}
-                        content={selectedItem.content}
-                        compositionMode={compositionMode}
-                      />
-                    )}
-
-                    {viewMode === 'editor' && !selectedItem && (
-                      <div className="flex-1 flex flex-col items-center justify-center text-gray-600">
-                        <div className="text-6xl mb-4">✍️</div>
-                        <p className="text-xl mb-2">Book Bitch</p>
-                        <p className="text-sm">Select a document from the binder to start writing.</p>
-                      </div>
-                    )}
-
-                    {viewMode === 'editor' && selectedItem?.type === 'folder' && (
-                      <div className="flex-1 flex flex-col items-center justify-center text-gray-600">
-                        <div className="text-5xl mb-4">📁</div>
-                        <p className="text-xl mb-2">{selectedItem.title}</p>
-                        <p className="text-sm">Select a document inside this folder.</p>
-                      </div>
-                    )}
-
-                    {viewMode === 'corkboard' && <Corkboard />}
-                    {viewMode === 'outline' && <Outline />}
-                    {viewMode === 'scene-cards' && <SceneCards />}
-                    {viewMode === 'timeline' && <TimelineView />}
-                    {viewMode === 'dashboard' && <DashboardView />}
-                    {viewMode === 'structural-map' && <StructuralMap />}
+              {/* Compile button strip */}
+              {!compositionMode && (
+                <div className="flex flex-col flex-1 overflow-hidden">
+                  <div className="flex items-center px-3 py-1 bg-[#0d1117] border-b border-[#0f3460] shrink-0">
+                    <button
+                      onClick={() => setCompileOpen(true)}
+                      className="flex items-center gap-1 text-xs text-gray-400 hover:text-white hover:bg-[#2d3748] px-2 py-1 rounded transition-colors"
+                    >
+                      📦 Compile & Export
+                    </button>
                   </div>
 
-                  {/* Reference pane (split-screen) */}
-                  {splitScreenOpen && viewMode === 'editor' && <ReferencePane />}
+                  {/* Editor + optional reference pane */}
+                  <div className="flex flex-1 overflow-hidden">
+                    {/* Center editor / view */}
+                    <div className="flex-1 flex flex-col overflow-hidden">
+                      {viewMode === 'editor' && selectedItem?.type === 'document' && (
+                        <RichEditor
+                          key={selectedItem.id}
+                          itemId={selectedItem.id}
+                          content={selectedItem.content}
+                          compositionMode={compositionMode}
+                        />
+                      )}
+
+                      {viewMode === 'editor' && !selectedItem && (
+                        <div className="flex-1 flex flex-col items-center justify-center text-gray-600">
+                          <div className="text-6xl mb-4">✍️</div>
+                          <p className="text-xl mb-2">Book Bitch</p>
+                          <p className="text-sm">Select a document from the binder to start writing.</p>
+                        </div>
+                      )}
+
+                      {viewMode === 'editor' && selectedItem?.type === 'folder' && (
+                        <div className="flex-1 flex flex-col items-center justify-center text-gray-600">
+                          <div className="text-5xl mb-4">📁</div>
+                          <p className="text-xl mb-2">{selectedItem.title}</p>
+                          <p className="text-sm">Select a document inside this folder.</p>
+                        </div>
+                      )}
+
+                      {viewMode === 'corkboard' && <Corkboard />}
+                      {viewMode === 'outline' && <Outline />}
+                      {viewMode === 'scene-cards' && <SceneCards />}
+                      {viewMode === 'timeline' && <TimelineView />}
+                      {viewMode === 'dashboard' && <DashboardView />}
+                      {viewMode === 'structural-map' && <StructuralMap />}
+                    </div>
+
+                    {/* Reference pane (split-screen) */}
+                    {splitScreenOpen && viewMode === 'editor' && <ReferencePane />}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Composition (focus) mode — full screen editor */}
-            {compositionMode && selectedItem?.type === 'document' && (
-              <RichEditor
-                key={selectedItem.id}
-                itemId={selectedItem.id}
-                content={selectedItem.content}
-                compositionMode={compositionMode}
-              />
-            )}
+              {/* Composition (focus) mode — full screen editor */}
+              {compositionMode && selectedItem?.type === 'document' && (
+                <RichEditor
+                  key={selectedItem.id}
+                  itemId={selectedItem.id}
+                  content={selectedItem.content}
+                  compositionMode={compositionMode}
+                />
+              )}
 
-            {/* Inspector */}
-            {!compositionMode && inspectorOpen && <Inspector />}
+              {/* Inspector */}
+              {!compositionMode && inspectorOpen && <Inspector />}
+            </>
+          )}
 
-            {/* AI Panel */}
-            {!compositionMode && aiPanelOpen && <AIPanel />}
-          </>
-        )}
+          {/* Non-manuscript areas */}
+          {area === 'fragments' && <FragmentsView />}
+          {area === 'omitted' && <OmittedView />}
+          {area === 'notebook' && <NotebookView />}
+          {area === 'codex' && <CodexView />}
+          {area === 'questions' && <QuestionsView />}
+          {area === 'moodboard' && <MoodboardView />}
+          {area === 'history' && <HistoryView />}
+          {area === 'trash' && <TrashView />}
 
-        {/* Non-manuscript areas */}
-        {area === 'fragments' && <FragmentsView />}
-        {area === 'omitted' && <OmittedView />}
-        {area === 'notebook' && <NotebookView />}
-        {area === 'codex' && <CodexView />}
-        {area === 'questions' && <QuestionsView />}
-        {area === 'moodboard' && <MoodboardView />}
-        {area === 'history' && <HistoryView />}
-        {area === 'trash' && <TrashView />}
+          {/* AI Panel — available in all areas */}
+          {!compositionMode && aiPanelOpen && <AIPanel />}
+        </div>
       </div>
 
       {/* Composition mode exit button */}
