@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useAppStore } from '../store/appStore';
-import type { ObjectType } from '../types';
+import type { ObjectType, BinderItem } from '../types';
 
 interface SearchResult {
   id: string;
@@ -35,7 +35,7 @@ function snippet(text: string, query: string, len = 120) {
   return (start > 0 ? '…' : '') + text.slice(start, end) + (end < text.length ? '…' : '');
 }
 
-function collectScenes(items: typeof useAppStore.getState.prototype.binder): { id: string; title: string; content: string; tags: string[] }[] {
+function collectScenes(items: BinderItem[]): { id: string; title: string; content: string; tags: string[] }[] {
   const scenes: { id: string; title: string; content: string; tags: string[] }[] = [];
   for (const item of items) {
     if (item.id === 'trash') continue;
@@ -50,7 +50,7 @@ function collectScenes(items: typeof useAppStore.getState.prototype.binder): { i
 export function GlobalSearch({ onClose }: { onClose: () => void }) {
   const {
     binder, fragments, omittedMaterial, notebookEntries, codexEntries, questions, moodboardItems,
-    selectItem, setArea, setViewMode, searchQuery, setSearchQuery,
+    selectItem, setArea, setViewMode, searchQuery, setSearchQuery, setPendingSelectId,
   } = useAppStore();
 
   const [query, setQuery] = useState(searchQuery);
@@ -131,21 +131,27 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
         setViewMode('editor');
         break;
       case 'fragment':
+        setPendingSelectId(result.id);
         setArea('fragments');
         break;
       case 'omitted_material':
+        setPendingSelectId(result.id);
         setArea('omitted');
         break;
       case 'notebook_entry':
+        setPendingSelectId(result.id);
         setArea('notebook');
         break;
       case 'codex_entry':
+        setPendingSelectId(result.id);
         setArea('codex');
         break;
       case 'question':
+        setPendingSelectId(result.id);
         setArea('questions');
         break;
       case 'moodboard_item':
+        setPendingSelectId(result.id);
         setArea('moodboard');
         break;
     }

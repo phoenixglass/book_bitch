@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useAppStore } from '../store/appStore';
 import { TagInput } from './TagInput';
 import type { NotebookEntry } from '../types';
@@ -116,8 +116,15 @@ function NotebookDetail({ entry, onClose }: { entry: NotebookEntry; onClose: () 
 }
 
 export function NotebookView() {
-  const { notebookEntries, addNotebookEntry } = useAppStore();
+  const { notebookEntries, addNotebookEntry, pendingSelectId, setPendingSelectId } = useAppStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (pendingSelectId) {
+      setSelectedId(pendingSelectId);
+      setPendingSelectId(null);
+    }
+  }, [pendingSelectId, setPendingSelectId]);
   const [filterText, setFilterText] = useState('');
   const [showArchived, setShowArchived] = useState(false);
 

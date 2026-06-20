@@ -321,7 +321,7 @@ function BinderNode({ item, depth, parentId, index, onResync }: BinderNodeProps)
 }
 
 export function Binder() {
-  const { binder, addItem, updateItem, selectItem } = useAppStore();
+  const { binder, addItem, updateItem } = useAppStore();
   const { resyncDriveFolder } = useDriveImport();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -357,11 +357,9 @@ export function Binder() {
       }
 
       addItem(null, 'document');
-      const lastBinder = useAppStore.getState().binder;
-      const lastDoc = lastBinder[lastBinder.length - 1];
-      if (lastDoc && lastDoc.id !== 'trash') {
-        updateItem(lastDoc.id, { content, title: fileName });
-        selectItem(lastDoc.id);
+      const newId = useAppStore.getState().selectedId;
+      if (newId) {
+        updateItem(newId, { content, title: fileName });
       }
     }
     event.currentTarget.value = '';

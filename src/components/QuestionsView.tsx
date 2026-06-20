@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useAppStore } from '../store/appStore';
 import { TagInput } from './TagInput';
 import type { Question, QuestionCategory, QuestionStatus } from '../types';
@@ -264,8 +264,15 @@ function AskMeQuestionsPanel({ onAdd }: { onAdd: (text: string, category: Questi
 }
 
 export function QuestionsView() {
-  const { questions, addQuestion } = useAppStore();
+  const { questions, addQuestion, pendingSelectId, setPendingSelectId } = useAppStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (pendingSelectId) {
+      setSelectedId(pendingSelectId);
+      setPendingSelectId(null);
+    }
+  }, [pendingSelectId, setPendingSelectId]);
   const [filterStatus, setFilterStatus] = useState<string>('');
   const [filterCategory, setFilterCategory] = useState<string>('');
   const [filterText, setFilterText] = useState('');

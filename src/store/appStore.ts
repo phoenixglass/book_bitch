@@ -218,6 +218,7 @@ export const useAppStore = create<AppState>()(
       splitRefPinned: false,
       searchOpen: false,
       searchQuery: '',
+      pendingSelectId: null as string | null,
 
       // ── AI settings ──────────────────────────────────────────────────────
       aiSettings: {
@@ -231,10 +232,18 @@ export const useAppStore = create<AppState>()(
 
       addItem: (parentId, type) => {
         const newItem = makeDocument({ type });
-        set((s) => ({
-          binder: insertItemInTree(s.binder, parentId, newItem, 9999),
-          selectedId: newItem.id,
-        }));
+        set((s) => {
+          // When inserting at root level, place before Trash
+          let idx = 9999;
+          if (parentId === null) {
+            const trashIdx = s.binder.findIndex((b) => b.id === 'trash');
+            if (trashIdx >= 0) idx = trashIdx;
+          }
+          return {
+            binder: insertItemInTree(s.binder, parentId, newItem, idx),
+            selectedId: newItem.id,
+          };
+        });
         get().recordEvent({
           eventType: 'created',
           objectType: 'scene',
@@ -385,6 +394,8 @@ export const useAppStore = create<AppState>()(
         set({ searchOpen: open, ...(query !== undefined ? { searchQuery: query } : {}) }),
 
       setSearchQuery: (query) => set({ searchQuery: query }),
+
+      setPendingSelectId: (id) => set({ pendingSelectId: id }),
 
       // ── Tags ─────────────────────────────────────────────────────────────
 
@@ -643,9 +654,10 @@ export const useAppStore = create<AppState>()(
         set((s) => ({
           omittedMaterial: [...s.omittedMaterial, omitted],
         }));
-        get().removeItem(sceneId);
+        // Use permanentlyDeleteItem to remove scene from binder without sending to Trash
+        get().permanentlyDeleteItem(sceneId);
         get().recordEvent({
-          eventType: 'deleted',
+          eventType: 'moved',
           objectType: 'scene',
           objectId: sceneId,
           objectTitle: scene.title,

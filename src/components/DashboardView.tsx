@@ -62,7 +62,7 @@ function BarChart({ data, label }: { data: Record<string, number>; label: string
 export function DashboardView() {
   const {
     binder, fragments, omittedMaterial, notebookEntries,
-    codexEntries, questions, projectTarget, setArea,
+    codexEntries, questions, projectTarget, setArea, setViewMode,
   } = useAppStore();
 
   const stats = useMemo(() => {
@@ -160,22 +160,29 @@ export function DashboardView() {
           <StatCard
             label="Missing synopsis" value={stats.noSynopsis}
             warn={stats.noSynopsis > 0}
-            sub={stats.noSynopsis > 0 ? 'scenes without a synopsis' : undefined}
+            sub={stats.noSynopsis > 0 ? 'click to view in outline' : undefined}
+            onClick={stats.noSynopsis > 0 ? () => { setArea('manuscript'); setViewMode('outline'); } : undefined}
           />
           <StatCard
             label="No POV assigned" value={stats.noPov}
             warn={stats.noPov > 0}
+            sub={stats.noPov > 0 ? 'click to view scenes' : undefined}
+            onClick={stats.noPov > 0 ? () => { setArea('manuscript'); setViewMode('scene-cards'); } : undefined}
           />
           <StatCard
             label="No timeline placement" value={stats.noTimeline}
             warn={stats.noTimeline > 0}
+            sub={stats.noTimeline > 0 ? 'click to view timeline' : undefined}
+            onClick={stats.noTimeline > 0 ? () => { setArea('manuscript'); setViewMode('timeline'); } : undefined}
           />
           <StatCard
             label="No status" value={stats.noStatus}
+            onClick={stats.noStatus > 0 ? () => { setArea('manuscript'); setViewMode('scene-cards'); } : undefined}
           />
           <StatCard
             label="Stale (7+ days)" value={stats.stale}
-            sub="scenes not updated recently"
+            sub={stats.stale > 0 ? 'not updated in 7+ days' : 'all scenes recently updated'}
+            onClick={stats.stale > 0 ? () => { setArea('manuscript'); setViewMode('outline'); } : undefined}
           />
 
           <StatCard

@@ -137,7 +137,7 @@ function FolderGroup({ folder }: FolderGroupProps) {
 export function Corkboard() {
   const { binder } = useAppStore();
 
-  const foldersToShow = binder.filter((b) => b.type === 'folder');
+  const foldersToShow = binder.filter((b) => b.type === 'folder' && b.id !== 'trash');
   const allDocs = binder.flatMap((b) => b.type === 'document' ? [b] : []);
 
   return (

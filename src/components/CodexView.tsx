@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useAppStore } from '../store/appStore';
 import { TagInput } from './TagInput';
 import type { CodexEntry, CodexType } from '../types';
@@ -262,8 +262,15 @@ function CodexDetail({ entry, onClose }: { entry: CodexEntry; onClose: () => voi
 }
 
 export function CodexView() {
-  const { codexEntries, addCodexEntry } = useAppStore();
+  const { codexEntries, addCodexEntry, pendingSelectId, setPendingSelectId } = useAppStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (pendingSelectId) {
+      setSelectedId(pendingSelectId);
+      setPendingSelectId(null);
+    }
+  }, [pendingSelectId, setPendingSelectId]);
   const [filterType, setFilterType] = useState<string>('');
   const [filterText, setFilterText] = useState('');
 
