@@ -136,11 +136,10 @@ export function useDriveImport() {
   // Creates a folder + one document per tab, named by tab title
   async function importByTabs(driveFileId: string, docName: string, tabs: any[]) {
     addItem(null, 'folder');
-    const binderSnap = useAppStore.getState().binder;
-    const folder = binderSnap[binderSnap.length - 1];
-    if (!folder || folder.id === 'trash') return;
+    const folderId = useAppStore.getState().selectedId;
+    if (!folderId) return;
 
-    updateItem(folder.id, { title: docName, driveFileId, expanded: true });
+    updateItem(folderId, { title: docName, driveFileId, expanded: true });
 
     for (const tab of tabs) {
       const tabTitle =
@@ -148,15 +147,14 @@ export function useDriveImport() {
       const elements: any[] = tab.documentTab?.body?.content || [];
       const html = docElementsToHtml(elements);
 
-      addItem(folder.id, 'document');
-      const parent = findItem(useAppStore.getState().binder, folder.id);
-      if (parent && parent.children.length > 0) {
-        const newDoc = parent.children[parent.children.length - 1];
-        updateItem(newDoc.id, { title: tabTitle, content: html });
+      addItem(folderId, 'document');
+      const docId = useAppStore.getState().selectedId;
+      if (docId) {
+        updateItem(docId, { title: tabTitle, content: html });
       }
     }
 
-    selectItem(folder.id);
+    selectItem(folderId);
   }
 
   // Splits doc body by HEADING_1; uses full HTML export to preserve all formatting
@@ -172,11 +170,10 @@ export function useDriveImport() {
       // Single document — use HTML export for full formatting fidelity
       const html = await exportDocAsHtml(driveFileId);
       addItem(null, 'document');
-      const binderSnap = useAppStore.getState().binder;
-      const lastDoc = binderSnap[binderSnap.length - 1];
-      if (lastDoc && lastDoc.id !== 'trash') {
-        updateItem(lastDoc.id, { title: docName, content: html, driveFileId });
-        selectItem(lastDoc.id);
+      const docId = useAppStore.getState().selectedId;
+      if (docId) {
+        updateItem(docId, { title: docName, content: html, driveFileId });
+        selectItem(docId);
       }
       return;
     }
@@ -186,23 +183,21 @@ export function useDriveImport() {
     const chapterHtmls = splitHtmlByH1(fullHtml, chapters.map((c) => c.title));
 
     addItem(null, 'folder');
-    const binderSnap = useAppStore.getState().binder;
-    const folder = binderSnap[binderSnap.length - 1];
-    if (!folder || folder.id === 'trash') return;
+    const folderId = useAppStore.getState().selectedId;
+    if (!folderId) return;
 
-    updateItem(folder.id, { title: docName, driveFileId, expanded: true });
+    updateItem(folderId, { title: docName, driveFileId, expanded: true });
 
     for (let i = 0; i < chapters.length; i++) {
       const html = chapterHtmls[i] ?? docElementsToHtml(chapters[i].elements);
-      addItem(folder.id, 'document');
-      const parent = findItem(useAppStore.getState().binder, folder.id);
-      if (parent && parent.children.length > 0) {
-        const newDoc = parent.children[parent.children.length - 1];
-        updateItem(newDoc.id, { title: chapters[i].title, content: html });
+      addItem(folderId, 'document');
+      const docId = useAppStore.getState().selectedId;
+      if (docId) {
+        updateItem(docId, { title: chapters[i].title, content: html });
       }
     }
 
-    selectItem(folder.id);
+    selectItem(folderId);
   }
 
   // ── Re-sync ───────────────────────────────────────────────────────────────
@@ -221,10 +216,9 @@ export function useDriveImport() {
             tab.tabProperties?.title || `Tab ${(tab.tabProperties?.index ?? 0) + 1}`;
           const html = docElementsToHtml(tab.documentTab?.body?.content || []);
           addItem(folderId, 'document');
-          const parent = findItem(useAppStore.getState().binder, folderId);
-          if (parent && parent.children.length > 0) {
-            const newDoc = parent.children[parent.children.length - 1];
-            updateItem(newDoc.id, { title: tabTitle, content: html });
+          const docId = useAppStore.getState().selectedId;
+          if (docId) {
+            updateItem(docId, { title: tabTitle, content: html });
           }
         }
       } else {
@@ -239,10 +233,9 @@ export function useDriveImport() {
         for (let i = 0; i < chapters.length; i++) {
           const html = chapterHtmls[i] ?? docElementsToHtml(chapters[i].elements);
           addItem(folderId, 'document');
-          const parent = findItem(useAppStore.getState().binder, folderId);
-          if (parent && parent.children.length > 0) {
-            const newDoc = parent.children[parent.children.length - 1];
-            updateItem(newDoc.id, { title: chapters[i].title, content: html });
+          const docId = useAppStore.getState().selectedId;
+          if (docId) {
+            updateItem(docId, { title: chapters[i].title, content: html });
           }
         }
       }
@@ -266,11 +259,10 @@ export function useDriveImport() {
     const html = csvToHtml(csv);
 
     addItem(null, 'document');
-    const binderSnap = useAppStore.getState().binder;
-    const lastDoc = binderSnap[binderSnap.length - 1];
-    if (lastDoc && lastDoc.id !== 'trash') {
-      updateItem(lastDoc.id, { title: file.name, content: html });
-      selectItem(lastDoc.id);
+    const docId = useAppStore.getState().selectedId;
+    if (docId) {
+      updateItem(docId, { title: file.name, content: html });
+      selectItem(docId);
     }
   }
 
@@ -284,11 +276,10 @@ export function useDriveImport() {
     const content = await res.text();
 
     addItem(null, 'document');
-    const binderSnap = useAppStore.getState().binder;
-    const lastDoc = binderSnap[binderSnap.length - 1];
-    if (lastDoc && lastDoc.id !== 'trash') {
-      updateItem(lastDoc.id, { title: file.name, content });
-      selectItem(lastDoc.id);
+    const docId = useAppStore.getState().selectedId;
+    if (docId) {
+      updateItem(docId, { title: file.name, content });
+      selectItem(docId);
     }
   }
 
