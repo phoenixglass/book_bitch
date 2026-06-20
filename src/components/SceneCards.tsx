@@ -2,6 +2,19 @@ import { useState, useMemo } from 'react';
 import { useAppStore } from '../store/appStore';
 import type { BinderItem, SceneMetadata, Status } from '../types';
 
+function findParentOf(
+  items: BinderItem[],
+  id: string,
+  parentId: string | null = null,
+): { parentId: string | null; index: number } | null {
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].id === id) return { parentId, index: i };
+    const found = findParentOf(items[i].children, id, items[i].id);
+    if (found) return found;
+  }
+  return null;
+}
+
 const STATUS_COLORS: Record<Status, string> = {
   'No Status': '#4a5568',
   'To Do': '#63b3ed',
@@ -46,10 +59,12 @@ interface SceneCardProps {
   onOpen: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  onDrop: (draggedId: string, targetId: string, position: 'before' | 'after') => void;
 }
 
-function SceneCard({ item, isExpanded, onToggleExpand, onOpen, onDuplicate, onDelete }: SceneCardProps) {
+function SceneCard({ item, isExpanded, onToggleExpand, onOpen, onDuplicate, onDelete, onDrop }: SceneCardProps) {
   const { updateItem } = useAppStore();
+  const [dropIndicator, setDropIndicator] = useState<'left' | 'right' | null>(null);
   const meta = item.sceneMetadata ?? {} as Partial<SceneMetadata>;
   const wordCount = countWords(item.content);
   const [editingTitle, setEditingTitle] = useState(false);
@@ -64,10 +79,45 @@ function SceneCard({ item, isExpanded, onToggleExpand, onOpen, onDuplicate, onDe
     updateItem(item.id, { sceneMetadata: { ...meta, ...patch } });
   }
 
+  function handleDragStart(e: React.DragEvent) {
+    e.dataTransfer.setData('text/plain', item.id);
+    e.dataTransfer.effectAllowed = 'move';
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setDropIndicator(e.clientX - rect.left < rect.width / 2 ? 'left' : 'right');
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    const draggedId = e.dataTransfer.getData('text/plain');
+    if (draggedId && draggedId !== item.id) {
+      onDrop(draggedId, item.id, dropIndicator === 'left' ? 'before' : 'after');
+    }
+    setDropIndicator(null);
+  }
+
+  const borderClass =
+    dropIndicator === 'left'
+      ? 'border-l-4 border-l-purple-500'
+      : dropIndicator === 'right'
+      ? 'border-r-4 border-r-purple-500'
+      : '';
+
   return (
-    <div className="bg-[#16213e] border border-[#0f3460] rounded-lg overflow-hidden hover:border-[#6b46c1]/50 transition-colors">
+    <div
+      draggable
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
+      onDragLeave={() => setDropIndicator(null)}
+      onDrop={handleDrop}
+      className={`bg-[#16213e] border border-[#0f3460] rounded-lg overflow-hidden hover:border-[#6b46c1]/50 transition-colors ${borderClass}`}
+    >
       {/* Card header */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-[#0f3460]">
+        <span className="text-gray-600 cursor-grab active:cursor-grabbing text-xs shrink-0" title="Drag to reorder">⠿</span>
         <div
           className="w-2 h-2 rounded-full shrink-0"
           style={{ background: STATUS_COLORS[item.status] }}
@@ -235,7 +285,7 @@ type SortField = 'title' | 'status' | 'wordCount' | 'manuscript' | 'chrono' | 'u
 type SortDir = 'asc' | 'desc';
 
 export function SceneCards() {
-  const { binder, selectItem, addItem, updateItem, removeItem, setViewMode } = useAppStore();
+  const { binder, selectItem, addItem, updateItem, removeItem, setViewMode, moveItem } = useAppStore();
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [sortField, setSortField] = useState<SortField>('manuscript');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
@@ -290,6 +340,18 @@ export function SceneCards() {
   function toggleSort(field: SortField) {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortField(field); setSortDir('asc'); }
+  }
+
+  function handleCardDrop(draggedId: string, targetId: string, position: 'before' | 'after') {
+    const targetPos = findParentOf(binder, targetId);
+    if (!targetPos) return;
+    const desiredIdx = position === 'before' ? targetPos.index : targetPos.index + 1;
+    const draggedPos = findParentOf(binder, draggedId);
+    let insertIdx = desiredIdx;
+    if (draggedPos && draggedPos.parentId === targetPos.parentId && draggedPos.index < desiredIdx) {
+      insertIdx--;
+    }
+    moveItem(draggedId, targetPos.parentId, Math.max(0, insertIdx));
   }
 
   function handleDuplicate(item: BinderItem) {
@@ -386,6 +448,7 @@ export function SceneCards() {
               onDelete={() => {
                 if (window.confirm(`Move "${item.title}" to Trash?`)) removeItem(item.id);
               }}
+              onDrop={handleCardDrop}
             />
           ))}
         </div>

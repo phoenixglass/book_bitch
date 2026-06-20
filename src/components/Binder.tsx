@@ -3,6 +3,7 @@ import { useAppStore } from '../store/appStore';
 import { GoogleDriveUpload } from './GoogleDriveUpload';
 import { useDriveImport } from '../hooks/useDriveImport';
 import type { BinderItem } from '../types';
+import mammoth from 'mammoth';
 
 const LABEL_COLORS: Record<string, string> = {
   none: 'transparent',
@@ -20,13 +21,28 @@ function isItemInTrash(binder: BinderItem[], itemId: string): boolean {
   return trash.children.some((child) => child.id === itemId);
 }
 
+function findDraggedPosition(
+  items: BinderItem[],
+  id: string,
+  parentId: string | null = null,
+): { parentId: string | null; index: number } | null {
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].id === id) return { parentId, index: i };
+    const found = findDraggedPosition(items[i].children, id, items[i].id);
+    if (found) return found;
+  }
+  return null;
+}
+
 interface BinderNodeProps {
   item: BinderItem;
   depth: number;
+  parentId: string | null;
+  index: number;
   onResync?: (folderId: string, driveFileId: string) => void;
 }
 
-function BinderNode({ item, depth, onResync }: BinderNodeProps) {
+function BinderNode({ item, depth, parentId, index, onResync }: BinderNodeProps) {
   const {
     selectedId,
     selectItem,
@@ -40,7 +56,7 @@ function BinderNode({ item, depth, onResync }: BinderNodeProps) {
 
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(item.title);
-  const [dragOver, setDragOver] = useState(false);
+  const [dropIndicator, setDropIndicator] = useState<'above' | 'below' | 'inside' | null>(null);
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
 
@@ -54,29 +70,67 @@ function BinderNode({ item, depth, onResync }: BinderNodeProps) {
 
   function handleDragStart(e: React.DragEvent) {
     e.dataTransfer.setData('text/plain', item.id);
+    e.dataTransfer.effectAllowed = 'move';
     e.stopPropagation();
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const draggedId = e.dataTransfer.getData('text/plain');
+    if (draggedId === item.id) return;
+
+    const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+    const relY = e.clientY - rect.top;
+    const pct = relY / rect.height;
+
+    if (isFolder) {
+      if (pct < 0.25) setDropIndicator('above');
+      else if (pct > 0.75) setDropIndicator('below');
+      else setDropIndicator('inside');
+    } else {
+      setDropIndicator(pct < 0.5 ? 'above' : 'below');
+    }
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setDropIndicator(null);
+    }
   }
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     e.stopPropagation();
-    setDragOver(false);
     const draggedId = e.dataTransfer.getData('text/plain');
-    if (draggedId && draggedId !== item.id && isFolder) {
-      useAppStore
-        .getState()
-        .moveItem(draggedId, item.id, item.children.length);
+    if (!draggedId || draggedId === item.id) {
+      setDropIndicator(null);
+      return;
     }
+
+    const store = useAppStore.getState();
+
+    if (dropIndicator === 'inside' && isFolder) {
+      store.moveItem(draggedId, item.id, item.children.length);
+    } else {
+      const desiredIdx = dropIndicator === 'above' ? index : index + 1;
+      const pos = findDraggedPosition(store.binder, draggedId);
+      let insertIdx = desiredIdx;
+      if (pos && pos.parentId === parentId && pos.index < desiredIdx) {
+        insertIdx--;
+      }
+      store.moveItem(draggedId, parentId, Math.max(0, insertIdx));
+    }
+
+    setDropIndicator(null);
   }
 
   function handleContextMenu(e: React.MouseEvent) {
-    console.log('Context menu triggered on:', item.title);
     e.preventDefault();
     e.stopPropagation();
     selectItem(item.id);
     setContextMenuPos({ x: e.clientX, y: e.clientY });
     setShowContextMenu(true);
-    console.log('Menu should be visible now');
   }
 
   function handleDelete() {
@@ -93,16 +147,22 @@ function BinderNode({ item, depth, onResync }: BinderNodeProps) {
     setShowContextMenu(false);
   }
 
+  const indicatorClass =
+    dropIndicator === 'above'
+      ? 'border-t-2 border-purple-500'
+      : dropIndicator === 'below'
+      ? 'border-b-2 border-purple-500'
+      : dropIndicator === 'inside'
+      ? 'ring-2 ring-purple-500 ring-inset'
+      : '';
+
   return (
     <div>
       <div
         draggable
         onDragStart={handleDragStart}
-        onDragOver={(e) => {
-          e.preventDefault();
-          if (isFolder) setDragOver(true);
-        }}
-        onDragLeave={() => setDragOver(false)}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onClick={() => selectItem(item.id)}
         onContextMenu={handleContextMenu}
@@ -114,9 +174,14 @@ function BinderNode({ item, depth, onResync }: BinderNodeProps) {
           isSelected
             ? 'bg-[#6b46c1] text-white'
             : 'text-gray-300 hover:bg-[#2d3748]'
-        } ${dragOver ? 'drag-over' : ''}`}
+        } ${indicatorClass}`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
       >
+        {/* Drag handle */}
+        <span className="text-gray-600 hover:text-gray-400 cursor-grab active:cursor-grabbing text-xs shrink-0" title="Drag to reorder">
+          ⠿
+        </span>
+
         {/* Expand toggle */}
         {isFolder ? (
           <button
@@ -185,8 +250,8 @@ function BinderNode({ item, depth, onResync }: BinderNodeProps) {
       {/* Children */}
       {isFolder && item.expanded && (
         <div>
-          {item.children.map((child) => (
-            <BinderNode key={child.id} item={child} depth={depth + 1} onResync={onResync} />
+          {item.children.map((child, i) => (
+            <BinderNode key={child.id} item={child} depth={depth + 1} parentId={item.id} index={i} onResync={onResync} />
           ))}
           {item.children.length === 0 && (
             <div
@@ -266,14 +331,36 @@ export function Binder() {
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const text = await file.text();
+      const fileName = file.name.replace(/\.[^/.]+$/, '');
+      let content = '';
+
+      if (file.name.endsWith('.docx')) {
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await mammoth.convertToHtml({ arrayBuffer });
+        content = result.value;
+      } else if (file.name.endsWith('.html') || file.name.endsWith('.htm')) {
+        const raw = await file.text();
+        // Extract body content if it's a full HTML document
+        const bodyMatch = raw.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+        content = bodyMatch ? bodyMatch[1] : raw;
+      } else if (file.name.endsWith('.md')) {
+        const raw = await file.text();
+        content = markdownToHtml(raw);
+      } else {
+        // .txt and other plain text
+        const raw = await file.text();
+        content = raw
+          .split(/\n\n+/)
+          .map((para) => `<p>${para.replace(/\n/g, '<br>').trim()}</p>`)
+          .filter((p) => p !== '<p></p>')
+          .join('');
+      }
 
       addItem(null, 'document');
       const lastBinder = useAppStore.getState().binder;
       const lastDoc = lastBinder[lastBinder.length - 1];
       if (lastDoc && lastDoc.id !== 'trash') {
-        const fileName = file.name.replace(/\.[^/.]+$/, '');
-        updateItem(lastDoc.id, { content: text, title: fileName });
+        updateItem(lastDoc.id, { content, title: fileName });
         selectItem(lastDoc.id);
       }
     }
@@ -303,7 +390,7 @@ export function Binder() {
             📄+
           </button>
           <label
-            title="Upload file from computer"
+            title="Upload file from computer (.txt, .md, .html, .docx)"
             className="text-xs text-gray-400 hover:text-white px-1 cursor-pointer"
           >
             ⬆️
@@ -311,7 +398,7 @@ export function Binder() {
               ref={fileInputRef}
               type="file"
               multiple
-              accept=".txt,.md,.html"
+              accept=".txt,.md,.html,.htm,.docx"
               onChange={handleFileUpload}
               className="hidden"
             />
@@ -322,10 +409,64 @@ export function Binder() {
 
       {/* Tree */}
       <div className="flex-1 overflow-y-auto py-1">
-        {binder.map((item) => (
-          <BinderNode key={item.id} item={item} depth={0} onResync={resyncDriveFolder} />
+        {binder.map((item, i) => (
+          <BinderNode key={item.id} item={item} depth={0} parentId={null} index={i} onResync={resyncDriveFolder} />
         ))}
       </div>
     </div>
   );
+}
+
+function markdownToHtml(md: string): string {
+  const lines = md.split('\n');
+  const out: string[] = [];
+  let inList = false;
+  let listType = '';
+
+  function flushList() {
+    if (inList) {
+      out.push(`</${listType}>`);
+      inList = false;
+      listType = '';
+    }
+  }
+
+  for (const line of lines) {
+    const h3 = line.match(/^### (.+)/);
+    const h2 = line.match(/^## (.+)/);
+    const h1 = line.match(/^# (.+)/);
+    const ul = line.match(/^[-*+] (.+)/);
+    const ol = line.match(/^\d+\. (.+)/);
+    const hr = line.match(/^---+$/);
+    const blockquote = line.match(/^> (.+)/);
+
+    if (h1) { flushList(); out.push(`<h1>${inlineMarkdown(h1[1])}</h1>`); }
+    else if (h2) { flushList(); out.push(`<h2>${inlineMarkdown(h2[1])}</h2>`); }
+    else if (h3) { flushList(); out.push(`<h3>${inlineMarkdown(h3[1])}</h3>`); }
+    else if (ul) {
+      if (!inList || listType !== 'ul') { flushList(); out.push('<ul>'); inList = true; listType = 'ul'; }
+      out.push(`<li>${inlineMarkdown(ul[1])}</li>`);
+    }
+    else if (ol) {
+      if (!inList || listType !== 'ol') { flushList(); out.push('<ol>'); inList = true; listType = 'ol'; }
+      out.push(`<li>${inlineMarkdown(ol[1])}</li>`);
+    }
+    else if (hr) { flushList(); out.push('<hr>'); }
+    else if (blockquote) { flushList(); out.push(`<blockquote>${inlineMarkdown(blockquote[1])}</blockquote>`); }
+    else if (line.trim() === '') { flushList(); }
+    else { flushList(); out.push(`<p>${inlineMarkdown(line)}</p>`); }
+  }
+
+  flushList();
+  return out.join('');
+}
+
+function inlineMarkdown(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/__(.+?)__/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/_(.+?)_/g, '<em>$1</em>')
+    .replace(/~~(.+?)~~/g, '<s>$1</s>')
+    .replace(/`(.+?)`/g, '<code>$1</code>');
 }
