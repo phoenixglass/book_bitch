@@ -18,6 +18,7 @@ import { CodexView } from './components/CodexView';
 import { QuestionsView } from './components/QuestionsView';
 import { MoodboardView } from './components/MoodboardView';
 import { HistoryView } from './components/HistoryView';
+import { TrashView } from './components/TrashView';
 import { GlobalSearch } from './components/GlobalSearch';
 import { ReferencePane } from './components/ReferencePane';
 import { AIPanel } from './components/AIPanel';
@@ -151,6 +152,7 @@ function App() {
         {area === 'questions' && <QuestionsView />}
         {area === 'moodboard' && <MoodboardView />}
         {area === 'history' && <HistoryView />}
+        {area === 'trash' && <TrashView />}
       </div>
 
       {/* Composition mode exit button */}
