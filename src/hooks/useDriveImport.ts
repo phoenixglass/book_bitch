@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useAppStore, findItem } from '../store/appStore';
+import { useAppStore } from '../store/appStore';
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 const SCOPES =
