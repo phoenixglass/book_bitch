@@ -1,5 +1,6 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, Fragment } from 'react';
 import { useAppStore } from '../store/appStore';
+import { findItem } from '../store/appStore';
 import { GoogleDriveUpload } from './GoogleDriveUpload';
 import { useDriveImport } from '../hooks/useDriveImport';
 import type { BinderItem } from '../types';
@@ -13,6 +14,56 @@ const LABEL_COLORS: Record<string, string> = {
   blue: '#63b3ed',
   purple: '#b794f4',
 };
+
+interface DropZoneProps {
+  parentId: string | null;
+  index: number;
+}
+
+function DropZone({ parentId, index }: DropZoneProps) {
+  const [active, setActive] = useState(false);
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setActive(false);
+    const draggedId = e.dataTransfer.getData('text/plain');
+    if (!draggedId) return;
+
+    const store = useAppStore.getState();
+    const siblings =
+      parentId === null
+        ? store.binder
+        : (findItem(store.binder, parentId)?.children ?? []);
+
+    const currentIdx = siblings.findIndex((c) => c.id === draggedId);
+    const insertIdx =
+      currentIdx !== -1 && currentIdx < index ? index - 1 : index;
+
+    if (insertIdx !== currentIdx) {
+      store.moveItem(draggedId, parentId, insertIdx);
+    }
+  }
+
+  return (
+    <div
+      className="px-2 py-1"
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setActive(true);
+      }}
+      onDragLeave={() => setActive(false)}
+      onDrop={handleDrop}
+    >
+      <div
+        className={`h-0.5 rounded-full transition-colors duration-100 ${
+          active ? 'bg-[#6b46c1]' : 'bg-transparent'
+        }`}
+      />
+    </div>
+  );
+}
 
 function isItemInTrash(binder: BinderItem[], itemId: string): boolean {
   const trash = binder.find((item) => item.id === 'trash');
@@ -185,8 +236,12 @@ function BinderNode({ item, depth, onResync }: BinderNodeProps) {
       {/* Children */}
       {isFolder && item.expanded && (
         <div>
-          {item.children.map((child) => (
-            <BinderNode key={child.id} item={child} depth={depth + 1} onResync={onResync} />
+          <DropZone parentId={item.id} index={0} />
+          {item.children.map((child, i) => (
+            <Fragment key={child.id}>
+              <BinderNode item={child} depth={depth + 1} onResync={onResync} />
+              <DropZone parentId={item.id} index={i + 1} />
+            </Fragment>
           ))}
           {item.children.length === 0 && (
             <div
@@ -322,8 +377,12 @@ export function Binder() {
 
       {/* Tree */}
       <div className="flex-1 overflow-y-auto py-1">
-        {binder.map((item) => (
-          <BinderNode key={item.id} item={item} depth={0} onResync={resyncDriveFolder} />
+        <DropZone parentId={null} index={0} />
+        {binder.map((item, i) => (
+          <Fragment key={item.id}>
+            <BinderNode item={item} depth={0} onResync={resyncDriveFolder} />
+            <DropZone parentId={null} index={i + 1} />
+          </Fragment>
         ))}
       </div>
     </div>
