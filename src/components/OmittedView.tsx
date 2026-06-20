@@ -363,9 +363,14 @@ export function OmittedView() {
     pendingSelectId,
     setPendingSelectId,
     setArea,
+    setAIContextObject,
   } = useAppStore();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAIContextObject(selectedId ? { type: 'omitted_material', id: selectedId } : null);
+  }, [selectedId, setAIContextObject]);
   const [filterStatus, setFilterStatus] = useState('');
   const [filterText, setFilterText] = useState('');
   const [draggingId, setDraggingId] = useState<string | null>(null);

@@ -24,17 +24,28 @@ aiRouter.post('/questions', async (req: Request, res: Response) => {
     return;
   }
 
-  const { title, content, synopsis, category, mode = 'questions_only', allowDrafting = false } = req.body as {
+  const {
+    title,
+    content,
+    synopsis,
+    category,
+    objectType = 'scene',
+    extractFromNote = false,
+    mode = 'questions_only',
+    allowDrafting = false,
+  } = req.body as {
     title?: string;
     content?: string;
     synopsis?: string;
     category?: string;
+    objectType?: string;
+    extractFromNote?: boolean;
     mode?: string;
     allowDrafting?: boolean;
   };
 
   if (!content && !synopsis) {
-    res.status(400).json({ error: 'No content provided. Select a scene with text to analyze.' });
+    res.status(400).json({ error: 'No content provided. Select an item with text to analyze.' });
     return;
   }
 
@@ -46,10 +57,24 @@ aiRouter.post('/questions', async (req: Request, res: Response) => {
     ? `Focus your questions on the category: ${category}.`
     : 'Cover a range of craft categories.';
 
+  const objectLabel = ({
+    scene: 'scene',
+    fragment: 'fragment',
+    omitted_material: 'omitted material item',
+    notebook_entry: 'notebook entry',
+    codex_entry: 'codex entry',
+    question: 'project question',
+    moodboard_item: 'moodboard item',
+  } as Record<string, string>)[objectType] ?? objectType;
+
+  const taskDesc = extractFromNote
+    ? `Your task: extract 4–8 open questions that are explicitly or implicitly present in the provided ${objectLabel}. These are questions the author raises, implies, or leaves unresolved.`
+    : `Your task: generate 5–8 insightful craft questions about the ${objectLabel} provided.`;
+
   const systemPrompt = [
-    'You are a writing coach helping a novelist think more deeply about their work.',
+    `You are a writing coach helping a novelist think more deeply about their work.`,
     preamble,
-    'Your task: generate 5–8 insightful craft questions about the scene or text provided.',
+    taskDesc,
     'Rules:',
     '- Ask questions only. Never draft prose, dialogue, or scene content.',
     '- Make questions specific to the provided text, not generic.',
@@ -72,10 +97,10 @@ aiRouter.post('/questions', async (req: Request, res: Response) => {
     .join('\n');
 
   const userPrompt = [
-    `Scene title: ${title ?? 'Untitled'}`,
+    `${objectLabel.charAt(0).toUpperCase() + objectLabel.slice(1)} title: ${title ?? 'Untitled'}`,
     synopsis ? `Synopsis: ${synopsis}` : '',
     '',
-    'Scene text:',
+    `${objectLabel.charAt(0).toUpperCase() + objectLabel.slice(1)} text:`,
     truncatedText,
     truncated ? '\n[Note: content was truncated]' : '',
   ]
@@ -329,6 +354,253 @@ aiRouter.post('/codex-extract', async (req: Request, res: Response) => {
       return;
     }
     res.json({ entries: parsed.entries, truncated });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(502).json({ error: `AI call failed: ${msg}` });
+  }
+});
+
+// ── POST /api/ai/placement ───────────────────────────────────────────────────
+
+aiRouter.post('/placement', async (req: Request, res: Response) => {
+  const config = getAIConfig();
+  if (!config) {
+    res.status(503).json({ error: 'AI is not configured. Add an API key in environment settings.' });
+    return;
+  }
+
+  const { title, content, objectType = 'fragment', mode = 'analysis_only', allowDrafting = false } = req.body as {
+    title?: string;
+    content?: string;
+    objectType?: string;
+    mode?: string;
+    allowDrafting?: boolean;
+  };
+
+  if (!content) {
+    res.status(400).json({ error: 'No content provided.' });
+    return;
+  }
+
+  const plainText = stripHTML(content);
+  const { text: truncatedText, truncated } = truncate(plainText);
+  const preamble = modePreamble(mode, allowDrafting);
+
+  const isOmitted = objectType === 'omitted_material';
+
+  const systemPrompt = [
+    `You are a writing assistant helping a novelist evaluate ${isOmitted ? 'omitted material' : 'a fragment'} for potential use or restoration.`,
+    preamble,
+    isOmitted
+      ? 'Your task: analyse the structural and thematic significance of this cut material, and suggest whether and how it might be restored or repurposed.'
+      : 'Your task: suggest where and how this fragment might be placed or used within the manuscript.',
+    'Rules:',
+    '- Do not draft new prose. Analyse only.',
+    '- Be specific to the content provided.',
+    '- Consider structural, thematic, and narrative reasons.',
+    '',
+    'Return ONLY valid JSON in this exact structure:',
+    JSON.stringify({
+      rationale: '2–3 sentence analysis of the material\'s strengths and potential narrative role',
+      suggestions: ['Specific placement or use suggestion 1', 'Suggestion 2'],
+      possibleScenes: ['Description of scene type or moment this might fit'],
+    }),
+  ].filter(Boolean).join('\n');
+
+  const userPrompt = [
+    `Title: ${title ?? 'Untitled'}`,
+    `Type: ${objectType}`,
+    '',
+    'Content:',
+    truncatedText,
+  ].join('\n');
+
+  try {
+    const raw = await callAI(config, systemPrompt, userPrompt);
+    const parsed = extractJSON(raw) as { rationale: string; suggestions: string[]; possibleScenes: string[] };
+    if (!parsed || typeof parsed.rationale !== 'string') {
+      res.status(502).json({ error: 'AI returned an unexpected format. Try again.' });
+      return;
+    }
+    res.json({ ...parsed, truncated });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(502).json({ error: `AI call failed: ${msg}` });
+  }
+});
+
+// ── POST /api/ai/codex-suggest ───────────────────────────────────────────────
+
+aiRouter.post('/codex-suggest', async (req: Request, res: Response) => {
+  const config = getAIConfig();
+  if (!config) {
+    res.status(503).json({ error: 'AI is not configured. Add an API key in environment settings.' });
+    return;
+  }
+
+  const {
+    title,
+    content,
+    codexType = 'custom',
+    existingNotes = '',
+    existingFields = {},
+    mode = 'analysis_only',
+    allowDrafting = false,
+  } = req.body as {
+    title?: string;
+    content?: string;
+    codexType?: string;
+    existingNotes?: string;
+    existingFields?: Record<string, unknown>;
+    mode?: string;
+    allowDrafting?: boolean;
+  };
+
+  if (!content && !existingNotes) {
+    res.status(400).json({ error: 'No content provided.' });
+    return;
+  }
+
+  const plainDesc = stripHTML(content ?? '');
+  const { text: truncatedDesc, truncated } = truncate([plainDesc, existingNotes].filter(Boolean).join('\n\n'));
+  const preamble = modePreamble(mode, allowDrafting);
+
+  const existingSummary = Object.entries(existingFields)
+    .filter(([, v]) => v && typeof v === 'string' && (v as string).trim())
+    .map(([k, v]) => `${k}: ${v}`)
+    .join('\n');
+
+  const systemPrompt = [
+    `You are a writing assistant helping a novelist enrich their world-bible codex entry for a ${codexType}.`,
+    preamble,
+    'Your task: identify missing or incomplete information and suggest what might be worth developing.',
+    'Rules:',
+    '- Base suggestions ONLY on gaps evident from the existing entry.',
+    '- Do NOT invent facts not implied by the text.',
+    '- Identify contradictions or unresolved questions if present.',
+    '- Field suggestions should be specific to the codex entry type.',
+    '',
+    'Return ONLY valid JSON in this exact structure:',
+    JSON.stringify({
+      fieldSuggestions: [
+        { field: 'field name', value: 'suggested content based on existing text', reason: 'why this matters' },
+      ],
+      contradictions: ['Any apparent contradiction or inconsistency in the entry'],
+      openQuestions: ['An unresolved question raised by this entry'],
+    }),
+  ].filter(Boolean).join('\n');
+
+  const userPrompt = [
+    `Codex entry: ${title ?? 'Untitled'}`,
+    `Type: ${codexType}`,
+    existingSummary ? `\nExisting fields:\n${existingSummary}` : '',
+    '',
+    'Description and notes:',
+    truncatedDesc,
+  ].filter(Boolean).join('\n');
+
+  try {
+    const raw = await callAI(config, systemPrompt, userPrompt);
+    const parsed = extractJSON(raw) as {
+      fieldSuggestions: Array<{ field: string; value: string; reason: string }>;
+      contradictions: string[];
+      openQuestions: string[];
+    };
+    if (!parsed || !Array.isArray(parsed.fieldSuggestions)) {
+      res.status(502).json({ error: 'AI returned an unexpected format. Try again.' });
+      return;
+    }
+    res.json({ ...parsed, truncated });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(502).json({ error: `AI call failed: ${msg}` });
+  }
+});
+
+// ── POST /api/ai/refine-question ─────────────────────────────────────────────
+
+aiRouter.post('/refine-question', async (req: Request, res: Response) => {
+  const config = getAIConfig();
+  if (!config) {
+    res.status(503).json({ error: 'AI is not configured. Add an API key in environment settings.' });
+    return;
+  }
+
+  const {
+    title,
+    content,
+    questionText,
+    currentCategory = '',
+    currentPriority = '',
+    notes = '',
+    answer = '',
+    mode = 'analysis_only',
+    allowDrafting = false,
+  } = req.body as {
+    title?: string;
+    content?: string;
+    questionText?: string;
+    currentCategory?: string;
+    currentPriority?: string;
+    notes?: string;
+    answer?: string;
+    mode?: string;
+    allowDrafting?: boolean;
+  };
+
+  const qText = questionText ?? title ?? content ?? '';
+  if (!qText.trim()) {
+    res.status(400).json({ error: 'No question text provided.' });
+    return;
+  }
+
+  const preamble = modePreamble(mode, allowDrafting);
+  const context = [
+    notes ? `Author notes: ${notes}` : '',
+    answer ? `Partial answer: ${answer}` : '',
+  ].filter(Boolean).join('\n');
+
+  const systemPrompt = [
+    'You are a writing coach helping a novelist clarify and sharpen their craft questions.',
+    preamble,
+    'Your task: refine the provided question to make it more focused, specific, and generative.',
+    'Rules:',
+    '- Do not answer the question. Improve its phrasing only.',
+    '- A good question is specific, non-rhetorical, and opens up rather than closes down thinking.',
+    '- Suggest the most appropriate category and priority.',
+    '- Suggest 1–3 related questions the author might also want to explore.',
+    '',
+    'Return ONLY valid JSON in this exact structure:',
+    JSON.stringify({
+      refined: 'The refined, sharpened version of the question',
+      suggestedCategory: 'plot|character|timeline|research|structure|theme|continuity|worldbuilding|emotional_logic|other',
+      suggestedPriority: 'low|medium|high',
+      rationale: 'One sentence explaining what was sharpened and why',
+      relatedQuestions: ['A related question worth exploring'],
+    }),
+  ].filter(Boolean).join('\n');
+
+  const userPrompt = [
+    `Original question: ${qText}`,
+    currentCategory ? `Current category: ${currentCategory}` : '',
+    currentPriority ? `Current priority: ${currentPriority}` : '',
+    context,
+  ].filter(Boolean).join('\n');
+
+  try {
+    const raw = await callAI(config, systemPrompt, userPrompt);
+    const parsed = extractJSON(raw) as {
+      refined: string;
+      suggestedCategory: string;
+      suggestedPriority: string;
+      rationale: string;
+      relatedQuestions: string[];
+    };
+    if (!parsed || typeof parsed.refined !== 'string') {
+      res.status(502).json({ error: 'AI returned an unexpected format. Try again.' });
+      return;
+    }
+    res.json({ ...parsed, truncated: false });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(502).json({ error: `AI call failed: ${msg}` });

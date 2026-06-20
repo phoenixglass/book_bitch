@@ -233,7 +233,7 @@ function AskMeQuestionsPanel({ onAdd }: { onAdd: (text: string, category: Questi
   return (
     <div className="border border-[#0f3460] rounded p-3 bg-[#16213e]">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-xs text-gray-400 font-semibold">Ask Me Questions</span>
+        <span className="text-xs text-gray-400 font-semibold">Craft Question Templates</span>
         <select
           value={category}
           onChange={(e) => { setCategory(e.target.value as QuestionCategory); setShown(ASK_ME_TEMPLATES[e.target.value as QuestionCategory].slice(0, 3)); }}
@@ -258,14 +258,18 @@ function AskMeQuestionsPanel({ onAdd }: { onAdd: (text: string, category: Questi
           </div>
         ))}
       </div>
-      <p className="text-[10px] text-gray-600 mt-2">These questions do not write for you. They ask you to think.</p>
+      <p className="text-[10px] text-gray-600 mt-2">These are static templates, not AI-generated. They ask you to think — no API required.</p>
     </div>
   );
 }
 
 export function QuestionsView() {
-  const { questions, addQuestion, pendingSelectId, setPendingSelectId } = useAppStore();
+  const { questions, addQuestion, pendingSelectId, setPendingSelectId, setAIContextObject } = useAppStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAIContextObject(selectedId ? { type: 'question', id: selectedId } : null);
+  }, [selectedId, setAIContextObject]);
 
   useEffect(() => {
     if (pendingSelectId) {
@@ -320,7 +324,7 @@ export function QuestionsView() {
                 onClick={() => setShowAskMe(!showAskMe)}
                 className={`text-xs px-2 py-0.5 rounded transition-colors ${showAskMe ? 'bg-purple-700 text-white' : 'text-gray-400 hover:text-white hover:bg-[#2d3748]'}`}
               >
-                Ask me
+                Templates
               </button>
               <button
                 onClick={() => handleAddQuestion()}

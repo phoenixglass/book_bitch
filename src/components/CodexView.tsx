@@ -286,8 +286,12 @@ function CodexDetail({ entry, onClose }: { entry: CodexEntry; onClose: () => voi
 }
 
 export function CodexView() {
-  const { codexEntries, addCodexEntry, pendingSelectId, setPendingSelectId, binder } = useAppStore();
+  const { codexEntries, addCodexEntry, pendingSelectId, setPendingSelectId, binder, setAIContextObject } = useAppStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAIContextObject(selectedId ? { type: 'codex_entry', id: selectedId } : null);
+  }, [selectedId, setAIContextObject]);
 
   useEffect(() => {
     if (pendingSelectId) {
