@@ -414,6 +414,75 @@ export interface AISettings {
   apiKey?: string;
 }
 
+// ─── AI Actions & Results ─────────────────────────────────────────────────────
+
+export type AIActionType = 'questions' | 'summarize' | 'metadata' | 'tags';
+
+export interface AIQuestionSuggestion {
+  text: string;
+  category: QuestionCategory;
+  priority: 'low' | 'medium' | 'high';
+  reason: string;
+}
+
+export interface AIQuestionsOutput {
+  type: 'questions';
+  questions: AIQuestionSuggestion[];
+  truncated?: boolean;
+}
+
+export interface AISummarizeOutput {
+  type: 'summarize';
+  summary: string;
+  bulletPoints: string[];
+  characters: string[];
+  places: string[];
+  motifs: string[];
+  suggestedTags: string[];
+  unansweredQuestions: string[];
+  truncated?: boolean;
+}
+
+export interface AIMetadataOutput {
+  type: 'metadata';
+  synopsis: string;
+  povCharacter: string;
+  charactersPresent: string[];
+  location: string;
+  timelineDateClue: string;
+  emotionalTemperature: number;
+  tensionLevel: number;
+  themes: string[];
+  motifs: string[];
+  sceneFunction: string;
+  whatChanged: string;
+  unansweredQuestions: string[];
+  suggestedTags: string[];
+  truncated?: boolean;
+  // tracks which fields the user has accepted (undefined = not yet decided)
+  accepted?: Partial<Record<string, boolean>>;
+}
+
+export interface AITagsOutput {
+  type: 'tags';
+  existingMatches: string[];
+  newSuggestions: string[];
+  truncated?: boolean;
+  applied?: string[];
+}
+
+export type AIOutput = AIQuestionsOutput | AISummarizeOutput | AIMetadataOutput | AITagsOutput;
+
+export interface AIResult {
+  id: string;
+  actionType: AIActionType;
+  sourceTitle: string;
+  sourceType: 'scene' | 'fragment' | 'codex' | 'notebook' | 'question' | 'omitted';
+  sourceId?: string;
+  createdAt: number;
+  output: AIOutput;
+}
+
 // ─── Split Screen ─────────────────────────────────────────────────────────────
 
 export interface SplitRefTarget {
@@ -457,6 +526,8 @@ export interface AppState {
 
   // AI
   aiSettings: AISettings;
+  aiPanelOpen: boolean;
+  pendingAIResult: AIResult | null;
 
   // Manuscript format settings
   manuscriptSettings: ManuscriptSettings;
@@ -543,6 +614,8 @@ export interface AppState {
 
   // ─── AI ────────────────────────────────────────────────────────────────────
   setAISettings: (patch: Partial<AISettings>) => void;
+  setAIPanelOpen: (open: boolean) => void;
+  setPendingAIResult: (result: AIResult | null) => void;
 
   // ─── Manuscript Format ─────────────────────────────────────────────────────
   updateManuscriptSettings: (patch: Partial<ManuscriptSettings>) => void;
