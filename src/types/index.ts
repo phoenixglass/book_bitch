@@ -372,6 +372,31 @@ export interface SavedFilter {
   createdAt: number;
 }
 
+// ─── Manuscript Format Settings ──────────────────────────────────────────────
+
+export interface ManuscriptSettings {
+  // Author contact info (for title page)
+  authorName: string;
+  authorEmail: string;
+  authorPhone: string;
+  authorAddress: string;
+  // Book metadata
+  bookTitle: string; // overrides projectTitle when set
+  subtitle: string;
+  genre: string;
+  // Export options
+  sceneBreakStyle: '#' | '***';
+  includeEndMarker: boolean;
+  includeChapterTitles: boolean;
+  includeTitlePage: boolean;
+  includePageNumbers: boolean;
+  // Optional content
+  includeSynopsis: boolean;
+  synopsisContent: string;
+  includeQueryLetter: boolean;
+  queryLetterContent: string;
+}
+
 // ─── AI Settings ─────────────────────────────────────────────────────────────
 
 export type AIMode =
@@ -432,6 +457,9 @@ export interface AppState {
 
   // AI
   aiSettings: AISettings;
+
+  // Manuscript format settings
+  manuscriptSettings: ManuscriptSettings;
 
   // ─── Existing actions ──────────────────────────────────────────────────────
   setProjectTitle: (title: string) => void;
@@ -514,6 +542,9 @@ export interface AppState {
 
   // ─── AI ────────────────────────────────────────────────────────────────────
   setAISettings: (patch: Partial<AISettings>) => void;
+
+  // ─── Manuscript Format ─────────────────────────────────────────────────────
+  updateManuscriptSettings: (patch: Partial<ManuscriptSettings>) => void;
 
   // ─── Export / Backup ───────────────────────────────────────────────────────
   exportProjectBackup: () => void;

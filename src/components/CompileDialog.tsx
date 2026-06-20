@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAppStore } from '../store/appStore';
+import { ManuscriptExportDialog } from './ManuscriptExportDialog';
 import type { BinderItem } from '../types';
 
 function stripHtml(html: string): string {
@@ -66,6 +67,7 @@ export function CompileDialog({ onClose }: CompileDialogProps) {
     exportProjectBackup, importProjectBackup,
   } = useAppStore();
 
+  const [showManuscriptExport, setShowManuscriptExport] = useState(false);
   const [format, setFormat] = useState<ExportFormat>('txt');
   const [includeTitle, setIncludeTitle] = useState(true);
   const [includeSynopsis, setIncludeSynopsis] = useState(false);
@@ -178,6 +180,10 @@ ${parts.join('\n')}
     e.currentTarget.value = '';
   }
 
+  if (showManuscriptExport) {
+    return <ManuscriptExportDialog onClose={() => setShowManuscriptExport(false)} />;
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
       <div
@@ -187,6 +193,26 @@ ${parts.join('\n')}
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-white">Compile & Export</h2>
           <button onClick={onClose} className="text-gray-500 hover:text-white text-xl">✕</button>
+        </div>
+
+        {/* Standard Manuscript Format — primary export */}
+        <button
+          onClick={() => setShowManuscriptExport(true)}
+          className="flex items-center justify-between w-full bg-[#1e1b4b] border border-purple-700/50 hover:border-purple-500 rounded-lg px-4 py-3 text-left transition-colors group"
+        >
+          <div>
+            <p className="text-sm font-semibold text-purple-300 group-hover:text-white transition-colors">
+              Standard Manuscript Format
+            </p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Times New Roman 12pt · double-spaced · 1″ margins · exports as .docx
+            </p>
+          </div>
+          <span className="text-purple-500 group-hover:text-white transition-colors text-lg">→</span>
+        </button>
+
+        <div className="border-t border-[#0f3460] pt-2">
+          <p className="text-xs text-gray-600 mb-3">Other export formats</p>
         </div>
 
         <div className="flex flex-col gap-3 text-sm">
