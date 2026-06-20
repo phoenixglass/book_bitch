@@ -1,5 +1,9 @@
+import { useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import type { AppArea } from '../types';
+
+const BB_ITEM_TYPE = 'application/x-bb-item';
+const BB_TYPE_KEY = 'text/x-bb-type';
 
 const NAV_ITEMS: { area: AppArea; icon: string; label: string }[] = [
   { area: 'manuscript', icon: '📖', label: 'Manuscript' },
@@ -12,11 +16,79 @@ const NAV_ITEMS: { area: AppArea; icon: string; label: string }[] = [
   { area: 'history', icon: '🕰️', label: 'History' },
 ];
 
+function parseDragData(e: React.DragEvent): { type: string; id: string } | null {
+  try {
+    const raw = e.dataTransfer.getData(BB_ITEM_TYPE);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function getDragTypeFromEvent(e: React.DragEvent): string | null {
+  for (const t of ['fragment', 'scene', 'omitted']) {
+    if (e.dataTransfer.types.includes(`${BB_TYPE_KEY}-${t}`)) return t;
+  }
+  return null;
+}
+
 export function SideNav() {
-  const { area, setArea, setSearchOpen, questions, fragments } = useAppStore();
+  const {
+    area,
+    setArea,
+    setSearchOpen,
+    questions,
+    fragments,
+    omittedMaterial,
+    trashFragment,
+    trashOmitted,
+    removeItem,
+  } = useAppStore();
+
+  const [trashDragOver, setTrashDragOver] = useState(false);
 
   const openQuestionCount = questions.filter((q) => q.questionStatus === 'open').length;
-  const unsortedFragmentCount = fragments.filter((f) => f.status === 'unsorted').length;
+  const unsortedFragmentCount = fragments.filter(
+    (f) => f.status === 'unsorted' && !f.trashedAt,
+  ).length;
+  const totalTrashCount =
+    (useAppStore.getState().binder.find((b) => b.id === 'trash')?.children.length ?? 0) +
+    fragments.filter((f) => f.trashedAt).length +
+    omittedMaterial.filter((o) => o.trashedAt).length;
+
+  function handleTrashDragEnter(e: React.DragEvent) {
+    e.preventDefault();
+    const type = getDragTypeFromEvent(e);
+    if (type) setTrashDragOver(true);
+  }
+
+  function handleTrashDragLeave() {
+    setTrashDragOver(false);
+  }
+
+  function handleTrashDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  }
+
+  function handleTrashDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setTrashDragOver(false);
+    const data = parseDragData(e);
+    if (!data) {
+      // Fallback: text/plain = binder item ID
+      const id = e.dataTransfer.getData('text/plain');
+      if (id) removeItem(id);
+      return;
+    }
+    if (data.type === 'fragment') {
+      trashFragment(data.id);
+    } else if (data.type === 'omitted') {
+      trashOmitted(data.id);
+    } else if (data.type === 'scene') {
+      removeItem(data.id);
+    }
+  }
 
   return (
     <div className="w-14 shrink-0 bg-[#0d1117] border-r border-[#0f3460] flex flex-col items-center py-2 gap-1 select-none overflow-y-auto">
@@ -54,6 +126,30 @@ export function SideNav() {
         className="w-10 h-10 rounded-lg flex items-center justify-center text-xl text-gray-500 hover:text-gray-200 hover:bg-[#2d3748] transition-colors"
       >
         🔍
+      </button>
+
+      {/* Trash drop target */}
+      <button
+        title="Trash — drag items here to trash them"
+        onClick={() => setArea('trash')}
+        onDragEnter={handleTrashDragEnter}
+        onDragLeave={handleTrashDragLeave}
+        onDragOver={handleTrashDragOver}
+        onDrop={handleTrashDrop}
+        className={`relative w-10 h-10 rounded-lg flex items-center justify-center text-xl transition-colors ${
+          area === 'trash'
+            ? 'bg-[#6b46c1] text-white'
+            : trashDragOver
+            ? 'bg-red-900/60 text-red-300 ring-2 ring-red-500'
+            : 'text-gray-500 hover:text-gray-200 hover:bg-[#2d3748]'
+        }`}
+      >
+        🗑
+        {totalTrashCount > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 bg-red-600 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+            {totalTrashCount > 9 ? '9+' : totalTrashCount}
+          </span>
+        )}
       </button>
     </div>
   );

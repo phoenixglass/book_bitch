@@ -90,7 +90,22 @@ export type AppArea =
   | 'questions'
   | 'moodboard'
   | 'history'
-  | 'search';
+  | 'search'
+  | 'trash';
+
+// ─── Import Source Metadata ───────────────────────────────────────────────────
+
+export interface ImportSourceMeta {
+  fileName: string;
+  fileType: string; // 'docx' | 'txt' | 'md' | 'html' | 'google_doc'
+  sourceHeading?: string;
+  headingLevel?: number;
+  importedAt: number;
+  googleFileId?: string;
+  googleTabId?: string;
+  googleTabTitle?: string;
+  originalSection?: 'manuscript' | 'fragments' | 'omitted';
+}
 
 export interface ProjectTarget {
   wordTarget: number;
@@ -139,6 +154,10 @@ export interface Fragment {
   source: string;
   status: FragmentStatus;
   attachedToSceneId?: string;
+  // Ordering & trash
+  trashedAt?: number;
+  // Import provenance
+  importSource?: ImportSourceMeta;
   createdAt: number;
   updatedAt: number;
 }
@@ -168,6 +187,10 @@ export interface OmittedMaterial {
   relatedLocations: string[];
   omissionStatus: OmissionStatus;
   notes: string;
+  // Ordering & trash
+  trashedAt?: number;
+  // Import provenance
+  importSource?: ImportSourceMeta;
   createdAt: number;
   updatedAt: number;
 }
@@ -572,6 +595,14 @@ export interface AppState {
   attachFragmentToScene: (fragmentId: string, sceneId: string) => void;
   promoteFragmentToScene: (fragmentId: string, parentId: string) => string;
   sendFragmentToOmitted: (fragmentId: string, reason?: string) => void;
+  // New movement actions
+  moveFragmentToOmitted: (id: string, reason?: string) => void;
+  moveFragmentToManuscript: (id: string, parentId?: string) => string;
+  trashFragment: (id: string) => void;
+  restoreFragmentFromTrash: (id: string) => void;
+  permanentlyDeleteFragment: (id: string) => void;
+  reorderFragment: (draggedId: string, targetId: string, position: 'before' | 'after') => void;
+  importToFragments: (items: Array<{ title: string; content: string; importSource?: ImportSourceMeta }>) => string[];
 
   // ─── Omitted Material ──────────────────────────────────────────────────────
   addOmittedMaterial: (partial?: Partial<OmittedMaterial>) => string;
@@ -580,6 +611,15 @@ export interface AppState {
   sendSceneToOmitted: (sceneId: string, reason?: string) => void;
   sendSceneToFragments: (sceneId: string) => void;
   restoreOmittedToScene: (omittedId: string, parentId?: string) => string;
+  // New movement actions
+  moveOmittedToFragments: (id: string) => void;
+  moveOmittedToManuscript: (id: string, parentId?: string) => string;
+  trashOmitted: (id: string) => void;
+  restoreOmittedFromTrash: (id: string) => void;
+  permanentlyDeleteOmitted: (id: string) => void;
+  reorderOmitted: (draggedId: string, targetId: string, position: 'before' | 'after') => void;
+  importToOmitted: (items: Array<{ title: string; content: string; reason?: string; importSource?: ImportSourceMeta }>) => string[];
+  importToManuscript: (items: Array<{ title: string; content: string; importSource?: ImportSourceMeta }>, parentId?: string) => string[];
 
   // ─── Notebook ──────────────────────────────────────────────────────────────
   addNotebookEntry: (partial?: Partial<NotebookEntry>) => string;

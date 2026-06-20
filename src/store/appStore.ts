@@ -603,6 +603,160 @@ export const useAppStore = create<AppState>()(
         });
       },
 
+      moveFragmentToOmitted: (fragmentId, reason = '') => {
+        const frag = get().fragments.find((f) => f.id === fragmentId);
+        if (!frag) return;
+        const id = get().addOmittedMaterial({
+          title: frag.title,
+          content: frag.content,
+          reason: reason || 'Moved from Fragments',
+          tags: frag.tags,
+          importSource: frag.importSource,
+        });
+        set((s) => ({ fragments: s.fragments.filter((f) => f.id !== fragmentId) }));
+        get().recordEvent({
+          eventType: 'moved',
+          objectType: 'fragment',
+          objectId: fragmentId,
+          objectTitle: frag.title,
+          relatedObjectType: 'omitted_material',
+          relatedObjectId: id,
+          relatedObjectTitle: frag.title,
+          description: `Fragment "${frag.title}" moved to Omitted Material`,
+        });
+      },
+
+      moveFragmentToManuscript: (fragmentId, parentId = 'manuscript') => {
+        const frag = get().fragments.find((f) => f.id === fragmentId);
+        if (!frag) return '';
+        const newSceneId = makeId();
+        const newScene = makeDocument({
+          id: newSceneId,
+          title: frag.title,
+          content: frag.content,
+        });
+        set((s) => ({
+          binder: insertItemInTree(s.binder, parentId, newScene, 9999),
+          fragments: s.fragments.filter((f) => f.id !== fragmentId),
+          links: [
+            ...s.links,
+            {
+              id: makeId(),
+              sourceType: 'scene' as const,
+              sourceId: newSceneId,
+              targetType: 'fragment' as const,
+              targetId: fragmentId,
+              relationshipType: 'promoted_from' as const,
+              createdAt: now(),
+            },
+          ],
+        }));
+        get().recordEvent({
+          eventType: 'moved',
+          objectType: 'fragment',
+          objectId: fragmentId,
+          objectTitle: frag.title,
+          relatedObjectType: 'scene',
+          relatedObjectId: newSceneId,
+          relatedObjectTitle: frag.title,
+          description: `Fragment "${frag.title}" moved to Manuscript`,
+        });
+        return newSceneId;
+      },
+
+      trashFragment: (fragmentId) => {
+        const frag = get().fragments.find((f) => f.id === fragmentId);
+        if (!frag) return;
+        set((s) => ({
+          fragments: s.fragments.map((f) =>
+            f.id === fragmentId ? { ...f, trashedAt: now(), updatedAt: now() } : f,
+          ),
+        }));
+        get().recordEvent({
+          eventType: 'deleted',
+          objectType: 'fragment',
+          objectId: fragmentId,
+          objectTitle: frag.title,
+          description: `Fragment "${frag.title}" moved to Trash`,
+        });
+      },
+
+      restoreFragmentFromTrash: (fragmentId) => {
+        const frag = get().fragments.find((f) => f.id === fragmentId);
+        if (!frag) return;
+        set((s) => ({
+          fragments: s.fragments.map((f) =>
+            f.id === fragmentId ? { ...f, trashedAt: undefined, updatedAt: now() } : f,
+          ),
+        }));
+        get().recordEvent({
+          eventType: 'restored',
+          objectType: 'fragment',
+          objectId: fragmentId,
+          objectTitle: frag.title,
+          description: `Fragment "${frag.title}" restored from Trash`,
+        });
+      },
+
+      permanentlyDeleteFragment: (fragmentId) => {
+        const frag = get().fragments.find((f) => f.id === fragmentId);
+        get().recordEvent({
+          eventType: 'deleted',
+          objectType: 'fragment',
+          objectId: fragmentId,
+          objectTitle: frag?.title ?? fragmentId,
+          description: `Fragment "${frag?.title}" permanently deleted`,
+        });
+        set((s) => ({ fragments: s.fragments.filter((f) => f.id !== fragmentId) }));
+      },
+
+      reorderFragment: (draggedId, targetId, position) => {
+        set((s) => {
+          const list = [...s.fragments];
+          const fromIdx = list.findIndex((f) => f.id === draggedId);
+          if (fromIdx < 0) return s;
+          const [item] = list.splice(fromIdx, 1);
+          const toIdx = list.findIndex((f) => f.id === targetId);
+          if (toIdx < 0) { list.push(item); return { fragments: list }; }
+          const insertAt = position === 'before' ? toIdx : toIdx + 1;
+          list.splice(insertAt, 0, item);
+          return { fragments: list };
+        });
+      },
+
+      importToFragments: (items) => {
+        const ids: string[] = [];
+        for (const item of items) {
+          const id = makeId();
+          const frag: Fragment = {
+            id,
+            title: item.title || 'Untitled Fragment',
+            content: item.content,
+            fragmentType: 'other' as FragmentType,
+            tags: [],
+            relatedCharacters: [],
+            relatedPlaces: [],
+            relatedThemes: [],
+            possiblePlacement: '',
+            source: item.importSource?.fileName ?? '',
+            status: 'unsorted' as FragmentStatus,
+            importSource: item.importSource,
+            createdAt: now(),
+            updatedAt: now(),
+          };
+          set((s) => ({ fragments: [...s.fragments, frag] }));
+          get().recordEvent({
+            eventType: 'imported',
+            objectType: 'fragment',
+            objectId: id,
+            objectTitle: frag.title,
+            description: `Fragment "${frag.title}" imported from "${item.importSource?.fileName ?? 'file'}"`,
+          });
+          ids.push(id);
+        }
+        return ids;
+      },
+
       sendSceneToFragments: (sceneId) => {
         const scene = findItem(get().binder, sceneId);
         if (!scene || scene.type === 'folder') return;
@@ -711,6 +865,163 @@ export const useAppStore = create<AppState>()(
           relatedObjectTitle: scene.title,
           description: `Scene "${scene.title}" sent to Omitted Material`,
         });
+      },
+
+      moveOmittedToFragments: (omittedId) => {
+        const omitted = get().omittedMaterial.find((o) => o.id === omittedId);
+        if (!omitted) return;
+        const id = makeId();
+        const frag: Fragment = {
+          id,
+          title: omitted.title,
+          content: omitted.content,
+          fragmentType: 'other' as FragmentType,
+          tags: omitted.tags,
+          relatedCharacters: omitted.relatedCharacters,
+          relatedPlaces: [],
+          relatedThemes: omitted.relatedThemes,
+          possiblePlacement: '',
+          source: omitted.sourceSceneTitle ? `Omitted from: ${omitted.sourceSceneTitle}` : 'Omitted Material',
+          status: 'unsorted' as FragmentStatus,
+          importSource: omitted.importSource,
+          createdAt: now(),
+          updatedAt: now(),
+        };
+        set((s) => ({
+          fragments: [...s.fragments, frag],
+          omittedMaterial: s.omittedMaterial.filter((o) => o.id !== omittedId),
+        }));
+        get().recordEvent({
+          eventType: 'moved',
+          objectType: 'omitted_material',
+          objectId: omittedId,
+          objectTitle: omitted.title,
+          relatedObjectType: 'fragment',
+          relatedObjectId: id,
+          relatedObjectTitle: omitted.title,
+          description: `Omitted material "${omitted.title}" moved to Fragments`,
+        });
+      },
+
+      moveOmittedToManuscript: (omittedId, parentId = 'manuscript') => {
+        return get().restoreOmittedToScene(omittedId, parentId);
+      },
+
+      trashOmitted: (omittedId) => {
+        const omitted = get().omittedMaterial.find((o) => o.id === omittedId);
+        if (!omitted) return;
+        set((s) => ({
+          omittedMaterial: s.omittedMaterial.map((o) =>
+            o.id === omittedId ? { ...o, trashedAt: now(), updatedAt: now() } : o,
+          ),
+        }));
+        get().recordEvent({
+          eventType: 'deleted',
+          objectType: 'omitted_material',
+          objectId: omittedId,
+          objectTitle: omitted.title,
+          description: `Omitted material "${omitted.title}" moved to Trash`,
+        });
+      },
+
+      restoreOmittedFromTrash: (omittedId) => {
+        const omitted = get().omittedMaterial.find((o) => o.id === omittedId);
+        if (!omitted) return;
+        set((s) => ({
+          omittedMaterial: s.omittedMaterial.map((o) =>
+            o.id === omittedId ? { ...o, trashedAt: undefined, updatedAt: now() } : o,
+          ),
+        }));
+        get().recordEvent({
+          eventType: 'restored',
+          objectType: 'omitted_material',
+          objectId: omittedId,
+          objectTitle: omitted.title,
+          description: `Omitted material "${omitted.title}" restored from Trash`,
+        });
+      },
+
+      permanentlyDeleteOmitted: (omittedId) => {
+        const omitted = get().omittedMaterial.find((o) => o.id === omittedId);
+        get().recordEvent({
+          eventType: 'deleted',
+          objectType: 'omitted_material',
+          objectId: omittedId,
+          objectTitle: omitted?.title ?? omittedId,
+          description: `Omitted material "${omitted?.title}" permanently deleted`,
+        });
+        set((s) => ({ omittedMaterial: s.omittedMaterial.filter((o) => o.id !== omittedId) }));
+      },
+
+      reorderOmitted: (draggedId, targetId, position) => {
+        set((s) => {
+          const list = [...s.omittedMaterial];
+          const fromIdx = list.findIndex((o) => o.id === draggedId);
+          if (fromIdx < 0) return s;
+          const [item] = list.splice(fromIdx, 1);
+          const toIdx = list.findIndex((o) => o.id === targetId);
+          if (toIdx < 0) { list.push(item); return { omittedMaterial: list }; }
+          const insertAt = position === 'before' ? toIdx : toIdx + 1;
+          list.splice(insertAt, 0, item);
+          return { omittedMaterial: list };
+        });
+      },
+
+      importToOmitted: (items) => {
+        const ids: string[] = [];
+        for (const item of items) {
+          const id = makeId();
+          const omitted: OmittedMaterial = {
+            id,
+            title: item.title || 'Untitled',
+            content: item.content,
+            reason: item.reason || 'Imported as omitted material',
+            omissionDate: now(),
+            tags: [],
+            relatedCharacters: [],
+            relatedThemes: [],
+            relatedLocations: [],
+            omissionStatus: 'saved_for_later' as OmissionStatus,
+            notes: '',
+            importSource: item.importSource,
+            createdAt: now(),
+            updatedAt: now(),
+          };
+          set((s) => ({ omittedMaterial: [...s.omittedMaterial, omitted] }));
+          get().recordEvent({
+            eventType: 'imported',
+            objectType: 'omitted_material',
+            objectId: id,
+            objectTitle: omitted.title,
+            description: `Omitted material "${omitted.title}" imported from "${item.importSource?.fileName ?? 'file'}"`,
+          });
+          ids.push(id);
+        }
+        return ids;
+      },
+
+      importToManuscript: (items, parentId = 'manuscript') => {
+        const ids: string[] = [];
+        for (const item of items) {
+          const id = makeId();
+          const newScene = makeDocument({
+            id,
+            title: item.title || 'Untitled',
+            content: item.content,
+          });
+          set((s) => ({
+            binder: insertItemInTree(s.binder, parentId, newScene, 9999),
+          }));
+          get().recordEvent({
+            eventType: 'imported',
+            objectType: 'scene',
+            objectId: id,
+            objectTitle: item.title,
+            description: `Scene "${item.title}" imported from "${item.importSource?.fileName ?? 'file'}"`,
+          });
+          ids.push(id);
+        }
+        return ids;
       },
 
       restoreOmittedToScene: (omittedId, parentId = 'manuscript') => {

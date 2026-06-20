@@ -1,9 +1,11 @@
 import { useState, useRef } from 'react';
 import { useAppStore } from '../store/appStore';
 import { GoogleDriveUpload } from './GoogleDriveUpload';
+import { ImportPreviewModal } from './ImportPreviewModal';
 import { useDriveImport } from '../hooks/useDriveImport';
-import type { BinderItem } from '../types';
-import mammoth from 'mammoth';
+import { parseFile } from '../utils/documentParser';
+import type { ParsedItem, SplitLevel } from '../utils/documentParser';
+import type { BinderItem, ImportSourceMeta } from '../types';
 
 const LABEL_COLORS: Record<string, string> = {
   none: 'transparent',
@@ -77,6 +79,12 @@ function BinderNode({ item, depth, parentId, index, onResync }: BinderNodeProps)
 
   function handleDragStart(e: React.DragEvent) {
     e.dataTransfer.setData('text/plain', item.id);
+    // Cross-section DnD data (readable by Fragments/Omitted drop zones)
+    e.dataTransfer.setData(
+      'application/x-bb-item',
+      JSON.stringify({ type: 'scene', id: item.id, title: item.title }),
+    );
+    e.dataTransfer.setData('text/x-bb-type-scene', '1');
     e.dataTransfer.effectAllowed = 'move';
     e.stopPropagation();
   }
@@ -109,6 +117,29 @@ function BinderNode({ item, depth, parentId, index, onResync }: BinderNodeProps)
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     e.stopPropagation();
+
+    // Check for cross-section DnD first
+    try {
+      const raw = e.dataTransfer.getData('application/x-bb-item');
+      if (raw) {
+        const { type, id } = JSON.parse(raw) as { type: string; id: string };
+        const store = useAppStore.getState();
+        const targetParentId = isFolder ? item.id : parentId;
+        if (type === 'fragment') {
+          store.moveFragmentToManuscript(id, targetParentId ?? 'manuscript');
+          setDropIndicator(null);
+          return;
+        }
+        if (type === 'omitted') {
+          store.moveOmittedToManuscript(id, targetParentId ?? 'manuscript');
+          setDropIndicator(null);
+          return;
+        }
+      }
+    } catch {
+      // fall through to normal binder DnD
+    }
+
     const draggedId = e.dataTransfer.getData('text/plain');
     if (!draggedId || draggedId === item.id) {
       setDropIndicator(null);
@@ -370,151 +401,152 @@ function BinderNode({ item, depth, parentId, index, onResync }: BinderNodeProps)
   );
 }
 
+interface BinderPendingImport {
+  file: File;
+  splitLevel: SplitLevel;
+  parsedItems: ParsedItem[];
+}
+
 export function Binder() {
-  const { binder, addItem, updateItem } = useAppStore();
+  const { binder, importToManuscript } = useAppStore();
   const { resyncDriveFolder } = useDriveImport();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pendingImport, setPendingImport] = useState<BinderPendingImport | null>(null);
 
   async function handleFileUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const files = event.currentTarget.files;
-    if (!files) return;
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const fileName = file.name.replace(/\.[^/.]+$/, '');
-      let content = '';
-
-      if (file.name.endsWith('.docx')) {
-        const arrayBuffer = await file.arrayBuffer();
-        const result = await mammoth.convertToHtml({ arrayBuffer });
-        content = result.value;
-      } else if (file.name.endsWith('.html') || file.name.endsWith('.htm')) {
-        const raw = await file.text();
-        // Extract body content if it's a full HTML document
-        const bodyMatch = raw.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-        content = bodyMatch ? bodyMatch[1] : raw;
-      } else if (file.name.endsWith('.md')) {
-        const raw = await file.text();
-        content = markdownToHtml(raw);
-      } else {
-        // .txt and other plain text
-        const raw = await file.text();
-        content = raw
-          .split(/\n\n+/)
-          .map((para) => `<p>${para.replace(/\n/g, '<br>').trim()}</p>`)
-          .filter((p) => p !== '<p></p>')
-          .join('');
-      }
-
-      addItem(null, 'document');
-      const newId = useAppStore.getState().selectedId;
-      if (newId) {
-        updateItem(newId, { content, title: fileName });
-      }
-    }
+    if (!files || files.length === 0) return;
+    const file = files[0];
     event.currentTarget.value = '';
+
+    const splitLevel: SplitLevel = 1;
+    const items = await parseFile(file, { splitLevel });
+
+    if (items.length === 1 && !items[0].sourceHeading) {
+      // Single item — import directly
+      importToManuscript([{ title: items[0].title, content: items[0].content }]);
+      return;
+    }
+
+    setPendingImport({ file, splitLevel, parsedItems: items });
+  }
+
+  async function handleChangeSplitLevel(level: SplitLevel) {
+    if (!pendingImport) return;
+    const items = await parseFile(pendingImport.file, { splitLevel: level });
+    setPendingImport((prev) => prev ? { ...prev, splitLevel: level, parsedItems: items } : null);
+  }
+
+  function handleImportConfirm(
+    items: ParsedItem[],
+    section: 'manuscript' | 'fragments' | 'omitted',
+  ) {
+    const { file } = pendingImport!;
+    const importSource: ImportSourceMeta = {
+      fileName: file.name.replace(/\.[^/.]+$/, ''),
+      fileType: file.name.split('.').pop() ?? 'txt',
+      importedAt: Date.now(),
+    };
+    const store = useAppStore.getState();
+    if (section === 'manuscript') {
+      importToManuscript(
+        items.map((i) => ({ ...i, importSource: { ...importSource, sourceHeading: i.sourceHeading } })),
+      );
+    } else if (section === 'fragments') {
+      store.importToFragments(
+        items.map((i) => ({ ...i, importSource: { ...importSource, sourceHeading: i.sourceHeading } })),
+      );
+      store.setArea('fragments');
+    } else if (section === 'omitted') {
+      store.importToOmitted(
+        items.map((i) => ({
+          ...i,
+          reason: 'Imported as omitted material',
+          importSource: { ...importSource, sourceHeading: i.sourceHeading },
+        })),
+      );
+      store.setArea('omitted');
+    }
+    setPendingImport(null);
   }
 
   return (
-    <div className="w-56 shrink-0 bg-[#16213e] border-r border-[#0f3460] flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-[#0f3460]">
-        <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-          Binder
-        </span>
-        <div className="flex gap-1">
-          <button
-            onClick={() => addItem(null, 'folder')}
-            title="New Folder"
-            className="text-xs text-gray-400 hover:text-white px-1"
-          >
-            📁+
-          </button>
-          <button
-            onClick={() => addItem(null, 'document')}
-            title="New Document"
-            className="text-xs text-gray-400 hover:text-white px-1"
-          >
-            📄+
-          </button>
-          <label
-            title="Upload file from computer (.txt, .md, .html, .docx)"
-            className="text-xs text-gray-400 hover:text-white px-1 cursor-pointer"
-          >
-            ⬆️
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept=".txt,.md,.html,.htm,.docx"
-              onChange={handleFileUpload}
-              className="hidden"
+    <>
+      <div className="w-56 shrink-0 bg-[#16213e] border-r border-[#0f3460] flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-3 py-2 border-b border-[#0f3460]">
+          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+            Binder
+          </span>
+          <div className="flex gap-1">
+            <button
+              onClick={() => useAppStore.getState().addItem(null, 'folder')}
+              title="New Folder"
+              className="text-xs text-gray-400 hover:text-white px-1"
+            >
+              📁+
+            </button>
+            <button
+              onClick={() => useAppStore.getState().addItem(null, 'document')}
+              title="New Document"
+              className="text-xs text-gray-400 hover:text-white px-1"
+            >
+              📄+
+            </button>
+            <label
+              title="Import document (.txt, .md, .html, .docx) — supports heading-based splitting"
+              className="text-xs text-gray-400 hover:text-white px-1 cursor-pointer"
+            >
+              📥
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple={false}
+                accept=".txt,.md,.html,.htm,.docx,.doc"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+            </label>
+            <GoogleDriveUpload />
+          </div>
+        </div>
+
+        {/* Tree */}
+        <div className="flex-1 overflow-y-auto py-1">
+          {binder.map((item, i) => (
+            <BinderNode
+              key={item.id}
+              item={item}
+              depth={0}
+              parentId={null}
+              index={i}
+              onResync={resyncDriveFolder}
             />
-          </label>
-          <GoogleDriveUpload />
+          ))}
         </div>
       </div>
 
-      {/* Tree */}
-      <div className="flex-1 overflow-y-auto py-1">
-        {binder.map((item, i) => (
-          <BinderNode key={item.id} item={item} depth={0} parentId={null} index={i} onResync={resyncDriveFolder} />
-        ))}
-      </div>
-    </div>
+      {pendingImport && (
+        <ImportPreviewModal
+          key={pendingImport.splitLevel}
+          fileName={pendingImport.file.name}
+          fileType={pendingImport.file.name.split('.').pop() ?? 'file'}
+          parsedItems={pendingImport.parsedItems}
+          splitLevel={pendingImport.splitLevel}
+          defaultSection="manuscript"
+          canChangeSplitLevel={
+            pendingImport.file.name.endsWith('.docx') ||
+            pendingImport.file.name.endsWith('.doc') ||
+            pendingImport.file.name.endsWith('.md') ||
+            pendingImport.file.name.endsWith('.html') ||
+            pendingImport.file.name.endsWith('.htm')
+          }
+          onChangeSplitLevel={handleChangeSplitLevel}
+          onConfirm={handleImportConfirm}
+          onCancel={() => setPendingImport(null)}
+        />
+      )}
+    </>
   );
 }
 
-function markdownToHtml(md: string): string {
-  const lines = md.split('\n');
-  const out: string[] = [];
-  let inList = false;
-  let listType = '';
-
-  function flushList() {
-    if (inList) {
-      out.push(`</${listType}>`);
-      inList = false;
-      listType = '';
-    }
-  }
-
-  for (const line of lines) {
-    const h3 = line.match(/^### (.+)/);
-    const h2 = line.match(/^## (.+)/);
-    const h1 = line.match(/^# (.+)/);
-    const ul = line.match(/^[-*+] (.+)/);
-    const ol = line.match(/^\d+\. (.+)/);
-    const hr = line.match(/^---+$/);
-    const blockquote = line.match(/^> (.+)/);
-
-    if (h1) { flushList(); out.push(`<h1>${inlineMarkdown(h1[1])}</h1>`); }
-    else if (h2) { flushList(); out.push(`<h2>${inlineMarkdown(h2[1])}</h2>`); }
-    else if (h3) { flushList(); out.push(`<h3>${inlineMarkdown(h3[1])}</h3>`); }
-    else if (ul) {
-      if (!inList || listType !== 'ul') { flushList(); out.push('<ul>'); inList = true; listType = 'ul'; }
-      out.push(`<li>${inlineMarkdown(ul[1])}</li>`);
-    }
-    else if (ol) {
-      if (!inList || listType !== 'ol') { flushList(); out.push('<ol>'); inList = true; listType = 'ol'; }
-      out.push(`<li>${inlineMarkdown(ol[1])}</li>`);
-    }
-    else if (hr) { flushList(); out.push('<hr>'); }
-    else if (blockquote) { flushList(); out.push(`<blockquote>${inlineMarkdown(blockquote[1])}</blockquote>`); }
-    else if (line.trim() === '') { flushList(); }
-    else { flushList(); out.push(`<p>${inlineMarkdown(line)}</p>`); }
-  }
-
-  flushList();
-  return out.join('');
-}
-
-function inlineMarkdown(text: string): string {
-  return text
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/__(.+?)__/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/_(.+?)_/g, '<em>$1</em>')
-    .replace(/~~(.+?)~~/g, '<s>$1</s>')
-    .replace(/`(.+?)`/g, '<code>$1</code>');
-}
