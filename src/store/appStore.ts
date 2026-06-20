@@ -600,6 +600,27 @@ export const useAppStore = create<AppState>()(
         });
       },
 
+      sendSceneToFragments: (sceneId) => {
+        const scene = findItem(get().binder, sceneId);
+        if (!scene || scene.type === 'folder') return;
+        const id = get().addFragment({
+          title: scene.title,
+          content: scene.content,
+          source: `Manuscript: ${scene.title}`,
+        });
+        get().permanentlyDeleteItem(sceneId);
+        get().recordEvent({
+          eventType: 'moved',
+          objectType: 'scene',
+          objectId: sceneId,
+          objectTitle: scene.title,
+          relatedObjectType: 'fragment',
+          relatedObjectId: id,
+          relatedObjectTitle: scene.title,
+          description: `Scene "${scene.title}" sent to Fragments`,
+        });
+      },
+
       // ── Omitted Material ─────────────────────────────────────────────────
 
       addOmittedMaterial: (partial = {}) => {

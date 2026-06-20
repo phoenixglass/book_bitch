@@ -1,5 +1,6 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useAppStore } from '../store/appStore';
+import mammoth from 'mammoth';
 import { TagInput } from './TagInput';
 import type { OmittedMaterial, OmissionStatus } from '../types';
 
@@ -164,6 +165,31 @@ function OmittedDetail({ item, onClose }: { item: OmittedMaterial; onClose: () =
 export function OmittedView() {
   const { omittedMaterial, addOmittedMaterial, pendingSelectId, setPendingSelectId } = useAppStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const uploadRef = useRef<HTMLInputElement>(null);
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.currentTarget.files;
+    if (!files) return;
+    let lastId = '';
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const title = file.name.replace(/\.[^/.]+$/, '');
+      let content = '';
+      if (file.name.endsWith('.docx')) {
+        const buf = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer: buf });
+        content = result.value;
+      } else if (file.name.endsWith('.html') || file.name.endsWith('.htm')) {
+        const raw = await file.text();
+        content = raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      } else {
+        content = await file.text();
+      }
+      lastId = addOmittedMaterial({ title, content });
+    }
+    if (lastId) setSelectedId(lastId);
+    e.currentTarget.value = '';
+  }
 
   useEffect(() => {
     if (pendingSelectId) {
@@ -197,12 +223,28 @@ export function OmittedView() {
         <div className="px-3 py-2 border-b border-[#0f3460]">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Omitted Material</span>
-            <button
-              onClick={() => { const id = addOmittedMaterial(); setSelectedId(id); }}
-              className="text-xs bg-[#6b46c1] text-white px-2 py-0.5 rounded hover:bg-[#553c9a]"
-            >
-              + New
-            </button>
+            <div className="flex gap-1">
+              <label
+                title="Upload file to Omitted Material (.txt, .md, .html, .docx)"
+                className="text-xs text-gray-400 hover:text-white px-1 cursor-pointer"
+              >
+                ⬆️
+                <input
+                  ref={uploadRef}
+                  type="file"
+                  multiple
+                  accept=".txt,.md,.html,.htm,.docx"
+                  onChange={handleUpload}
+                  className="hidden"
+                />
+              </label>
+              <button
+                onClick={() => { const id = addOmittedMaterial(); setSelectedId(id); }}
+                className="text-xs bg-[#6b46c1] text-white px-2 py-0.5 rounded hover:bg-[#553c9a]"
+              >
+                + New
+              </button>
+            </div>
           </div>
           <input
             value={filterText}

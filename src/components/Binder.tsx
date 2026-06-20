@@ -15,6 +15,11 @@ const LABEL_COLORS: Record<string, string> = {
   purple: '#b794f4',
 };
 
+function collectLeafDocs(item: BinderItem): BinderItem[] {
+  if (item.type === 'document') return [item];
+  return item.children.flatMap(collectLeafDocs);
+}
+
 function isItemInTrash(binder: BinderItem[], itemId: string): boolean {
   const trash = binder.find((item) => item.id === 'trash');
   if (!trash) return false;
@@ -52,6 +57,8 @@ function BinderNode({ item, depth, parentId, index, onResync }: BinderNodeProps)
     removeItem,
     emptyTrash,
     permanentlyDeleteItem,
+    sendSceneToOmitted,
+    sendSceneToFragments,
   } = useAppStore();
 
   const [editing, setEditing] = useState(false);
@@ -144,6 +151,34 @@ function BinderNode({ item, depth, parentId, index, onResync }: BinderNodeProps)
 
   function handlePermanentDelete() {
     permanentlyDeleteItem(item.id);
+    setShowContextMenu(false);
+  }
+
+  function handleSendToOmitted() {
+    const reasonInput = window.prompt('Reason for omitting (optional):');
+    if (reasonInput === null) return;
+    if (item.type === 'document') {
+      sendSceneToOmitted(item.id, reasonInput);
+    } else {
+      const leafDocs = collectLeafDocs(item);
+      for (const doc of leafDocs) {
+        useAppStore.getState().sendSceneToOmitted(doc.id, reasonInput);
+      }
+      permanentlyDeleteItem(item.id);
+    }
+    setShowContextMenu(false);
+  }
+
+  function handleSendToFragments() {
+    if (item.type === 'document') {
+      sendSceneToFragments(item.id);
+    } else {
+      const leafDocs = collectLeafDocs(item);
+      for (const doc of leafDocs) {
+        useAppStore.getState().sendSceneToFragments(doc.id);
+      }
+      permanentlyDeleteItem(item.id);
+    }
     setShowContextMenu(false);
   }
 
@@ -288,12 +323,27 @@ function BinderNode({ item, depth, parentId, index, onResync }: BinderNodeProps)
             </button>
           )}
           {item.id !== 'trash' && !isItemInTrash(useAppStore.getState().binder, item.id) && (
-            <button
-              onClick={handleDelete}
-              className="w-full text-left px-3 py-2 hover:bg-[#6b46c1] hover:text-white transition-colors"
-            >
-              🗑️ Delete
-            </button>
+            <>
+              <button
+                onClick={handleSendToOmitted}
+                className="w-full text-left px-3 py-2 hover:bg-amber-800 hover:text-white transition-colors"
+              >
+                🗂 Send to Omitted Material
+              </button>
+              <button
+                onClick={handleSendToFragments}
+                className="w-full text-left px-3 py-2 hover:bg-purple-800 hover:text-white transition-colors"
+              >
+                🧩 Send to Fragments
+              </button>
+              <div className="border-t border-[#0f3460] my-1" />
+              <button
+                onClick={handleDelete}
+                className="w-full text-left px-3 py-2 hover:bg-[#6b46c1] hover:text-white transition-colors"
+              >
+                🗑️ Delete
+              </button>
+            </>
           )}
           {item.driveFileId && onResync && (
             <button

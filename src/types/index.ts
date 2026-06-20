@@ -507,6 +507,7 @@ export interface AppState {
   updateOmittedMaterial: (id: string, patch: Partial<OmittedMaterial>) => void;
   deleteOmittedMaterial: (id: string) => void;
   sendSceneToOmitted: (sceneId: string, reason?: string) => void;
+  sendSceneToFragments: (sceneId: string) => void;
   restoreOmittedToScene: (omittedId: string, parentId?: string) => string;
 
   // ─── Notebook ──────────────────────────────────────────────────────────────
