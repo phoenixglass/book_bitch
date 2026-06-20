@@ -25,6 +25,7 @@ import type {
   SplitRefTarget,
   AISettings,
   AIMode,
+  ManuscriptSettings,
 } from '../types';
 
 function makeId() {
@@ -225,6 +226,26 @@ export const useAppStore = create<AppState>()(
         mode: 'disabled' as AIMode,
         allowDrafting: false,
       } as AISettings,
+
+      // ── Manuscript format settings ────────────────────────────────────────
+      manuscriptSettings: {
+        authorName: '',
+        authorEmail: '',
+        authorPhone: '',
+        authorAddress: '',
+        bookTitle: '',
+        subtitle: '',
+        genre: '',
+        sceneBreakStyle: '#',
+        includeEndMarker: true,
+        includeChapterTitles: true,
+        includeTitlePage: true,
+        includePageNumbers: true,
+        includeSynopsis: false,
+        synopsisContent: '',
+        includeQueryLetter: false,
+        queryLetterContent: '',
+      } as ManuscriptSettings,
 
       // ── Existing actions ─────────────────────────────────────────────────
 
@@ -952,6 +973,12 @@ export const useAppStore = create<AppState>()(
 
       setAISettings: (patch) => {
         set((s) => ({ aiSettings: { ...s.aiSettings, ...patch } }));
+      },
+
+      // ── Manuscript Format ─────────────────────────────────────────────────
+
+      updateManuscriptSettings: (patch) => {
+        set((s) => ({ manuscriptSettings: { ...s.manuscriptSettings, ...patch } }));
       },
 
       // ── Export / Backup ──────────────────────────────────────────────────
