@@ -251,6 +251,90 @@ aiRouter.post('/metadata', async (req: Request, res: Response) => {
   }
 });
 
+// ── POST /api/ai/codex-extract ───────────────────────────────────────────────
+
+aiRouter.post('/codex-extract', async (req: Request, res: Response) => {
+  const config = getAIConfig();
+  if (!config) {
+    res.status(503).json({ error: 'AI is not configured. Add an API key in environment settings.' });
+    return;
+  }
+
+  const { scenes } = req.body as {
+    scenes: Array<{ id: string; title: string; text: string }>;
+  };
+
+  if (!scenes || scenes.length === 0) {
+    res.status(400).json({ error: 'No scenes provided. Add some manuscript content first.' });
+    return;
+  }
+
+  const combinedText = scenes
+    .map((s) => `=== ${s.title} ===\n${s.text}`)
+    .join('\n\n');
+
+  const { text: truncatedText, truncated } = truncate(combinedText, 20000);
+
+  const systemPrompt = [
+    'You are a writing assistant helping a novelist build a world-bible (Codex) from their manuscript.',
+    'DO NOT DRAFT PROSE: Your output is analytical only.',
+    'Your task: extract and identify all significant named entities from the provided manuscript scenes.',
+    'Rules:',
+    '- Extract only entities that are clearly named and appear meaningfully in the text.',
+    '- Do NOT invent details not stated in the text.',
+    '- Deduplicate: if the same entity appears in multiple scenes, create ONE entry.',
+    '- Descriptions should be factual, present-tense, 2–4 sentences.',
+    '- Only include type-specific fields when there is actual evidence in the text.',
+    '',
+    'Entity types:',
+    '- character: Named people (protagonists, antagonists, supporting, minor)',
+    '- place: Named locations, settings, rooms, cities, regions',
+    '- object: Significant named physical objects with story relevance',
+    '- motif: Recurring symbols, images, or patterns across the text',
+    '- institution: Organizations, groups, companies, governments, religions',
+    '- event: Named past or future events referenced but not shown',
+    '- theme: Strongly present thematic concerns',
+    '',
+    'Return ONLY valid JSON in this exact structure:',
+    JSON.stringify({
+      entries: [
+        {
+          name: 'Entity name',
+          codexType: 'character',
+          description: '2-4 sentence description grounded in the text',
+          aliases: ['alternative names found in text'],
+          role: 'protagonist|antagonist|supporting|minor (character only)',
+          relationships: 'Key relationships mentioned (character only)',
+          physicalDetails: 'Physical description from text (character only)',
+          atmosphere: 'Mood and sensory details as described (place only)',
+          meaning: 'Symbolic meaning or narrative function (motif/object only)',
+          appearances: 'Where and how it appears in the text (motif/object only)',
+        },
+      ],
+    }),
+  ].join('\n');
+
+  const userPrompt = [
+    `Manuscript: ${scenes.length} scene(s). Extract all significant named entities.`,
+    '',
+    truncatedText,
+    truncated ? '\n[Content truncated — manuscript was too long for a single pass]' : '',
+  ].join('\n');
+
+  try {
+    const raw = await callAI(config, systemPrompt, userPrompt, 4096);
+    const parsed = extractJSON(raw) as { entries: unknown[] };
+    if (!parsed || !Array.isArray(parsed.entries)) {
+      res.status(502).json({ error: 'AI returned an unexpected format. Try again.' });
+      return;
+    }
+    res.json({ entries: parsed.entries, truncated });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(502).json({ error: `AI call failed: ${msg}` });
+  }
+});
+
 // ── POST /api/ai/tags ────────────────────────────────────────────────────────
 
 aiRouter.post('/tags', async (req: Request, res: Response) => {

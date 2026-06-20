@@ -1,7 +1,31 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useAppStore } from '../store/appStore';
 import { TagInput } from './TagInput';
-import type { CodexEntry, CodexType } from '../types';
+import type { BinderItem, CodexEntry, CodexType } from '../types';
+
+interface ExtractedEntry {
+  name: string;
+  codexType: CodexType;
+  description: string;
+  aliases?: string[];
+  role?: string;
+  relationships?: string;
+  physicalDetails?: string;
+  atmosphere?: string;
+  meaning?: string;
+  appearances?: string;
+}
+
+function collectScenes(items: BinderItem[]): Array<{ id: string; title: string; text: string }> {
+  const scenes: Array<{ id: string; title: string; text: string }> = [];
+  for (const item of items) {
+    if (item.type === 'document' && item.content?.trim()) {
+      scenes.push({ id: item.id, title: item.title || 'Untitled', text: item.content });
+    }
+    if (item.children?.length) scenes.push(...collectScenes(item.children));
+  }
+  return scenes;
+}
 
 const TYPE_LABELS: Record<CodexType, string> = {
   character: 'Character', place: 'Place', object: 'Object', motif: 'Motif',
@@ -262,7 +286,7 @@ function CodexDetail({ entry, onClose }: { entry: CodexEntry; onClose: () => voi
 }
 
 export function CodexView() {
-  const { codexEntries, addCodexEntry, pendingSelectId, setPendingSelectId } = useAppStore();
+  const { codexEntries, addCodexEntry, pendingSelectId, setPendingSelectId, binder } = useAppStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -273,6 +297,67 @@ export function CodexView() {
   }, [pendingSelectId, setPendingSelectId]);
   const [filterType, setFilterType] = useState<string>('');
   const [filterText, setFilterText] = useState('');
+
+  // ── Scan state ──────────────────────────────────────────────────────────────
+  const [scanning, setScanning] = useState(false);
+  const [scanResults, setScanResults] = useState<ExtractedEntry[] | null>(null);
+  const [scanSelected, setScanSelected] = useState<boolean[]>([]);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [scanTruncated, setScanTruncated] = useState(false);
+
+  const existingNames = useMemo(
+    () => new Set(codexEntries.map((e) => e.name.toLowerCase())),
+    [codexEntries],
+  );
+
+  const handleScan = useCallback(async () => {
+    const scenes = collectScenes(binder);
+    if (scenes.length === 0) {
+      setScanError('No manuscript content found. Write some scenes first.');
+      return;
+    }
+    setScanning(true);
+    setScanError(null);
+    setScanResults(null);
+    try {
+      const resp = await fetch('/api/ai/codex-extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scenes }),
+      });
+      const data = await resp.json() as { entries?: ExtractedEntry[]; error?: string; truncated?: boolean };
+      if (!resp.ok) throw new Error(data.error ?? 'Unknown error');
+      const entries = (data.entries ?? []) as ExtractedEntry[];
+      setScanResults(entries);
+      setScanSelected(entries.map(() => true));
+      setScanTruncated(data.truncated ?? false);
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setScanning(false);
+    }
+  }, [binder]);
+
+  function importSelected() {
+    if (!scanResults) return;
+    scanResults.forEach((entry, i) => {
+      if (!scanSelected[i]) return;
+      addCodexEntry({
+        name: entry.name,
+        codexType: entry.codexType,
+        description: entry.description,
+        aliases: entry.aliases ?? [],
+        role: entry.role,
+        relationships: entry.relationships,
+        physicalDetails: entry.physicalDetails,
+        atmosphere: entry.atmosphere,
+        meaning: entry.meaning,
+        appearances: entry.appearances,
+      });
+    });
+    setScanResults(null);
+    setScanSelected([]);
+  }
 
   const filtered = useMemo(() => {
     let list = codexEntries;
@@ -306,12 +391,22 @@ export function CodexView() {
         <div className="px-3 py-2 border-b border-[#0f3460]">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Codex</span>
-            <button
-              onClick={() => { const id = addCodexEntry(); setSelectedId(id); }}
-              className="text-xs bg-[#6b46c1] text-white px-2 py-0.5 rounded hover:bg-[#553c9a]"
-            >
-              + New
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={handleScan}
+                disabled={scanning}
+                title="Extract entities from manuscript using AI"
+                className="text-xs bg-[#0f3460] text-blue-300 px-2 py-0.5 rounded hover:bg-[#1a4a7a] disabled:opacity-50 transition-colors"
+              >
+                {scanning ? '⏳' : '✨'} Scan
+              </button>
+              <button
+                onClick={() => { const id = addCodexEntry(); setSelectedId(id); }}
+                className="text-xs bg-[#6b46c1] text-white px-2 py-0.5 rounded hover:bg-[#553c9a]"
+              >
+                + New
+              </button>
+            </div>
           </div>
           <input
             value={filterText}
@@ -364,7 +459,93 @@ export function CodexView() {
         </div>
       </div>
 
-      {selected ? (
+      {scanResults !== null ? (
+        <div className="flex-1 flex flex-col overflow-hidden bg-[#0d1117]">
+          <div className="flex items-center gap-2 px-4 py-2 border-b border-[#0f3460] shrink-0">
+            <button onClick={() => { setScanResults(null); setScanSelected([]); }} className="text-gray-500 hover:text-gray-300 text-xs">← Back</button>
+            <span className="text-sm font-semibold text-white flex-1">
+              Extracted {scanResults.length} {scanResults.length === 1 ? 'entity' : 'entities'} from manuscript
+            </span>
+            {scanTruncated && (
+              <span className="text-xs text-yellow-500" title="Manuscript was too long — only the first portion was scanned">⚠ Partial scan</span>
+            )}
+            <button
+              onClick={importSelected}
+              disabled={!scanSelected.some(Boolean)}
+              className="text-xs bg-[#6b46c1] text-white px-3 py-1 rounded hover:bg-[#553c9a] disabled:opacity-40 transition-colors"
+            >
+              Import {scanSelected.filter(Boolean).length} selected
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
+            {scanResults.length === 0 && (
+              <p className="text-sm text-gray-500 text-center mt-8">No entities found. Try adding more content to your manuscript.</p>
+            )}
+            <div className="flex items-center gap-2 mb-1">
+              <button
+                onClick={() => setScanSelected(scanResults.map(() => true))}
+                className="text-xs text-gray-500 hover:text-gray-300"
+              >Select all</button>
+              <span className="text-gray-700">·</span>
+              <button
+                onClick={() => setScanSelected(scanResults.map(() => false))}
+                className="text-xs text-gray-500 hover:text-gray-300"
+              >Deselect all</button>
+            </div>
+            {scanResults.map((entry, i) => {
+              const isDuplicate = existingNames.has(entry.name.toLowerCase());
+              return (
+                <label
+                  key={i}
+                  className={`flex items-start gap-3 p-3 rounded border cursor-pointer transition-colors ${
+                    scanSelected[i]
+                      ? 'border-[#6b46c1]/60 bg-[#6b46c1]/10'
+                      : 'border-[#2d3748] bg-[#16213e]'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={scanSelected[i] ?? false}
+                    onChange={(e) => {
+                      const next = [...scanSelected];
+                      next[i] = e.target.checked;
+                      setScanSelected(next);
+                    }}
+                    className="mt-0.5 accent-purple-500 shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-semibold text-white">{entry.name}</span>
+                      <span className="text-xs text-gray-500 bg-[#0d1117] px-1.5 py-0.5 rounded">
+                        {TYPE_ICONS[entry.codexType]} {TYPE_LABELS[entry.codexType]}
+                      </span>
+                      {isDuplicate && (
+                        <span className="text-xs text-yellow-600 bg-yellow-900/20 px-1.5 py-0.5 rounded" title="An entry with this name already exists in your Codex">
+                          already exists
+                        </span>
+                      )}
+                    </div>
+                    {entry.description && (
+                      <p className="text-xs text-gray-400 mt-1 leading-relaxed">{entry.description}</p>
+                    )}
+                    {entry.aliases && entry.aliases.length > 0 && (
+                      <p className="text-xs text-gray-600 mt-0.5">aka {entry.aliases.join(', ')}</p>
+                    )}
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      ) : scanError ? (
+        <div className="flex-1 flex items-center justify-center text-gray-600">
+          <div className="text-center px-6">
+            <div className="text-3xl mb-2">⚠️</div>
+            <p className="text-sm text-red-400">{scanError}</p>
+            <button onClick={() => setScanError(null)} className="text-xs text-gray-500 hover:text-gray-300 mt-3">Dismiss</button>
+          </div>
+        </div>
+      ) : selected ? (
         <CodexDetail key={selected.id} entry={selected} onClose={() => setSelectedId(null)} />
       ) : (
         <div className="flex-1 flex items-center justify-center text-gray-600">
@@ -372,6 +553,9 @@ export function CodexView() {
             <div className="text-5xl mb-3">📚</div>
             <p className="text-sm">Select an entry to view it.</p>
             <p className="text-xs mt-1 text-gray-700">Your Codex is a flexible bible for every element of your world.</p>
+            <p className="text-xs mt-3 text-gray-700">
+              Use <span className="text-blue-400">✨ Scan</span> to extract entities from your manuscript automatically.
+            </p>
           </div>
         </div>
       )}

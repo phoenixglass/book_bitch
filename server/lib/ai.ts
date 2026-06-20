@@ -32,6 +32,7 @@ export async function callAI(
   config: AIConfig,
   systemPrompt: string,
   userPrompt: string,
+  maxTokens = 2048,
 ): Promise<string> {
   if (config.provider === 'anthropic') {
     const clientOpts: ConstructorParameters<typeof Anthropic>[0] = { apiKey: config.apiKey };
@@ -39,7 +40,7 @@ export async function callAI(
     const client = new Anthropic(clientOpts);
     const response = await client.messages.create({
       model: config.model,
-      max_tokens: 2048,
+      max_tokens: maxTokens,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
     });
@@ -62,7 +63,7 @@ export async function callAI(
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        max_tokens: 2048,
+        max_tokens: maxTokens,
       }),
     });
 
