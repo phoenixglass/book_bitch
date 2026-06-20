@@ -1,25 +1,26 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Toolbar } from './components/Toolbar';
+import { SideNav } from './components/SideNav';
 import { Binder } from './components/Binder';
 import { RichEditor } from './components/RichEditor';
 import { Corkboard } from './components/Corkboard';
 import { Outline } from './components/Outline';
 import { Inspector } from './components/Inspector';
 import { CompileDialog } from './components/CompileDialog';
-import { useAppStore } from './store/appStore';
-import type { BinderItem } from './types';
-
-function findItem(
-  items: BinderItem[],
-  id: string,
-): BinderItem | null {
-  for (const item of items) {
-    if (item.id === id) return item;
-    const found = findItem(item.children, id);
-    if (found) return found;
-  }
-  return null;
-}
+import { SceneCards } from './components/SceneCards';
+import { TimelineView } from './components/TimelineView';
+import { DashboardView } from './components/DashboardView';
+import { StructuralMap } from './components/StructuralMap';
+import { FragmentsView } from './components/FragmentsView';
+import { OmittedView } from './components/OmittedView';
+import { NotebookView } from './components/NotebookView';
+import { CodexView } from './components/CodexView';
+import { QuestionsView } from './components/QuestionsView';
+import { MoodboardView } from './components/MoodboardView';
+import { HistoryView } from './components/HistoryView';
+import { GlobalSearch } from './components/GlobalSearch';
+import { ReferencePane } from './components/ReferencePane';
+import { useAppStore, findItem } from './store/appStore';
 
 function App() {
   const {
@@ -29,72 +30,125 @@ function App() {
     compositionMode,
     setCompositionMode,
     inspectorOpen,
+    area,
+    splitScreenOpen,
+    searchOpen,
+    setSearchOpen,
   } = useAppStore();
 
   const [compileOpen, setCompileOpen] = useState(false);
 
   const selectedItem = selectedId ? findItem(binder, selectedId) : null;
 
+  // Ctrl+K opens global search
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    }
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [setSearchOpen]);
+
   return (
     <div className="flex flex-col h-screen bg-[#0d1117] text-gray-200">
       {/* Top toolbar */}
       <Toolbar />
 
-      {/* Compile button row */}
-      {!compositionMode && (
-        <div className="flex items-center px-3 py-1 bg-[#0d1117] border-b border-[#0f3460] shrink-0">
-          <button
-            onClick={() => setCompileOpen(true)}
-            className="flex items-center gap-1 text-xs text-gray-400 hover:text-white hover:bg-[#2d3748] px-2 py-1 rounded transition-colors"
-          >
-            📦 Compile & Export
-          </button>
-        </div>
-      )}
-
       {/* Main workspace */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Binder sidebar */}
-        {!compositionMode && <Binder />}
+        {/* Left icon nav (always visible, hidden in composition mode) */}
+        {!compositionMode && <SideNav />}
 
-        {/* Center pane */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {viewMode === 'editor' && selectedItem?.type === 'document' && (
-            <RichEditor
-              key={selectedItem.id}
-              itemId={selectedItem.id}
-              content={selectedItem.content}
-              compositionMode={compositionMode}
-            />
-          )}
+        {/* Manuscript area */}
+        {area === 'manuscript' && (
+          <>
+            {/* Binder sidebar */}
+            {!compositionMode && <Binder />}
 
-          {viewMode === 'editor' && !selectedItem && (
-            <div className="flex-1 flex flex-col items-center justify-center text-gray-600">
-              <div className="text-6xl mb-4">✍️</div>
-              <p className="text-xl mb-2">Book Bitch</p>
-              <p className="text-sm">
-                Select a document from the binder to start writing.
-              </p>
-            </div>
-          )}
+            {/* Compile button strip */}
+            {!compositionMode && (
+              <div className="flex flex-col flex-1 overflow-hidden">
+                <div className="flex items-center px-3 py-1 bg-[#0d1117] border-b border-[#0f3460] shrink-0">
+                  <button
+                    onClick={() => setCompileOpen(true)}
+                    className="flex items-center gap-1 text-xs text-gray-400 hover:text-white hover:bg-[#2d3748] px-2 py-1 rounded transition-colors"
+                  >
+                    📦 Compile & Export
+                  </button>
+                </div>
 
-          {viewMode === 'editor' && selectedItem?.type === 'folder' && (
-            <div className="flex-1 flex flex-col items-center justify-center text-gray-600">
-              <div className="text-5xl mb-4">📁</div>
-              <p className="text-xl mb-2">{selectedItem.title}</p>
-              <p className="text-sm">Select a document inside this folder.</p>
-            </div>
-          )}
+                {/* Editor + optional reference pane */}
+                <div className="flex flex-1 overflow-hidden">
+                  {/* Center editor / view */}
+                  <div className="flex-1 flex flex-col overflow-hidden">
+                    {viewMode === 'editor' && selectedItem?.type === 'document' && (
+                      <RichEditor
+                        key={selectedItem.id}
+                        itemId={selectedItem.id}
+                        content={selectedItem.content}
+                        compositionMode={compositionMode}
+                      />
+                    )}
 
-          {viewMode === 'corkboard' && <Corkboard />}
-          {viewMode === 'outline' && <Outline />}
-        </div>
+                    {viewMode === 'editor' && !selectedItem && (
+                      <div className="flex-1 flex flex-col items-center justify-center text-gray-600">
+                        <div className="text-6xl mb-4">✍️</div>
+                        <p className="text-xl mb-2">Book Bitch</p>
+                        <p className="text-sm">Select a document from the binder to start writing.</p>
+                      </div>
+                    )}
 
-        {/* Inspector */}
-        {!compositionMode && inspectorOpen && <Inspector />}
+                    {viewMode === 'editor' && selectedItem?.type === 'folder' && (
+                      <div className="flex-1 flex flex-col items-center justify-center text-gray-600">
+                        <div className="text-5xl mb-4">📁</div>
+                        <p className="text-xl mb-2">{selectedItem.title}</p>
+                        <p className="text-sm">Select a document inside this folder.</p>
+                      </div>
+                    )}
+
+                    {viewMode === 'corkboard' && <Corkboard />}
+                    {viewMode === 'outline' && <Outline />}
+                    {viewMode === 'scene-cards' && <SceneCards />}
+                    {viewMode === 'timeline' && <TimelineView />}
+                    {viewMode === 'dashboard' && <DashboardView />}
+                    {viewMode === 'structural-map' && <StructuralMap />}
+                  </div>
+
+                  {/* Reference pane (split-screen) */}
+                  {splitScreenOpen && viewMode === 'editor' && <ReferencePane />}
+                </div>
+              </div>
+            )}
+
+            {/* Composition (focus) mode — full screen editor */}
+            {compositionMode && selectedItem?.type === 'document' && (
+              <RichEditor
+                key={selectedItem.id}
+                itemId={selectedItem.id}
+                content={selectedItem.content}
+                compositionMode={compositionMode}
+              />
+            )}
+
+            {/* Inspector */}
+            {!compositionMode && inspectorOpen && <Inspector />}
+          </>
+        )}
+
+        {/* Non-manuscript areas */}
+        {area === 'fragments' && <FragmentsView />}
+        {area === 'omitted' && <OmittedView />}
+        {area === 'notebook' && <NotebookView />}
+        {area === 'codex' && <CodexView />}
+        {area === 'questions' && <QuestionsView />}
+        {area === 'moodboard' && <MoodboardView />}
+        {area === 'history' && <HistoryView />}
       </div>
 
-      {/* Composition mode overlay exit button */}
+      {/* Composition mode exit button */}
       {compositionMode && (
         <button
           onClick={() => setCompositionMode(false)}
@@ -104,6 +158,9 @@ function App() {
         </button>
       )}
 
+      {/* Global search overlay */}
+      {searchOpen && <GlobalSearch onClose={() => setSearchOpen(false)} />}
+
       {/* Compile dialog */}
       {compileOpen && <CompileDialog onClose={() => setCompileOpen(false)} />}
     </div>
@@ -111,4 +168,3 @@ function App() {
 }
 
 export default App;
-

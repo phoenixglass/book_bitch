@@ -1,3 +1,5 @@
+// ─── Existing core types ─────────────────────────────────────────────────────
+
 export type ItemType = 'folder' | 'document' | 'root';
 
 export type Label =
@@ -18,18 +20,44 @@ export type Status =
   | 'Final Draft'
   | 'Done';
 
+export type DraftStatus = Status;
+
 export interface Snapshot {
   id: string;
   timestamp: number;
   label: string;
   content: string;
+  metadataSnapshot?: Partial<SceneMetadata>;
+  note?: string;
+}
+
+export interface SceneMetadata {
+  povCharacter: string;
+  charactersPresent: string[];
+  location: string;
+  timelineDateStart: string;
+  timelineDateEnd: string;
+  timelineUncertain: boolean;
+  timelineLabel: string;
+  timelineNotes: string;
+  plotline: string;
+  manuscriptOrder: number;
+  chronologicalOrder: number;
+  emotionalTemperature: number; // 1–10
+  tensionLevel: number; // 1–10
+  themes: string[];
+  motifs: string[];
+  sceneFunction: string;
+  unansweredQuestions: string;
+  whatChanged: string;
+  tags: string[];
 }
 
 export interface BinderItem {
   id: string;
   type: ItemType;
   title: string;
-  content: string; // HTML from TipTap
+  content: string;
   synopsis: string;
   notes: string;
   label: Label;
@@ -38,17 +66,340 @@ export interface BinderItem {
   expanded: boolean;
   snapshots: Snapshot[];
   wordCountTarget: number;
-  driveFileId?: string; // Google Drive doc ID — enables re-sync
+  driveFileId?: string;
+  sceneMetadata?: Partial<SceneMetadata>;
+  createdAt?: number;
+  updatedAt?: number;
 }
 
-export type ViewMode = 'editor' | 'corkboard' | 'outline';
+export type ViewMode =
+  | 'editor'
+  | 'corkboard'
+  | 'outline'
+  | 'scene-cards'
+  | 'timeline'
+  | 'dashboard'
+  | 'structural-map';
+
+export type AppArea =
+  | 'manuscript'
+  | 'fragments'
+  | 'omitted'
+  | 'notebook'
+  | 'codex'
+  | 'questions'
+  | 'moodboard'
+  | 'history'
+  | 'search';
 
 export interface ProjectTarget {
   wordTarget: number;
-  deadlineDate: string; // ISO date string
+  deadlineDate: string;
 }
 
+// ─── Tags ────────────────────────────────────────────────────────────────────
+
+export interface Tag {
+  id: string;
+  name: string;
+  color: string;
+  createdAt: number;
+}
+
+// ─── Fragments ───────────────────────────────────────────────────────────────
+
+export type FragmentType =
+  | 'line'
+  | 'paragraph'
+  | 'scene_fragment'
+  | 'research_note'
+  | 'image_idea'
+  | 'dialogue_scrap'
+  | 'thematic_note'
+  | 'memory'
+  | 'other';
+
+export type FragmentStatus =
+  | 'unsorted'
+  | 'maybe_useful'
+  | 'attached'
+  | 'promoted'
+  | 'discarded';
+
+export interface Fragment {
+  id: string;
+  title: string;
+  content: string;
+  fragmentType: FragmentType;
+  tags: string[];
+  relatedCharacters: string[];
+  relatedPlaces: string[];
+  relatedThemes: string[];
+  possiblePlacement: string;
+  source: string;
+  status: FragmentStatus;
+  attachedToSceneId?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// ─── Omitted Material ────────────────────────────────────────────────────────
+
+export type OmissionStatus =
+  | 'cut'
+  | 'saved_for_later'
+  | 'alternate_version'
+  | 'duplicate'
+  | 'research_only'
+  | 'structurally_homeless'
+  | 'restored';
+
+export interface OmittedMaterial {
+  id: string;
+  title: string;
+  content: string;
+  sourceSceneId?: string;
+  sourceSceneTitle?: string;
+  reason: string;
+  omissionDate: number;
+  tags: string[];
+  relatedCharacters: string[];
+  relatedThemes: string[];
+  relatedLocations: string[];
+  omissionStatus: OmissionStatus;
+  notes: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// ─── Notebook ────────────────────────────────────────────────────────────────
+
+export interface NotebookEntry {
+  id: string;
+  title: string;
+  content: string;
+  date: string;
+  tags: string[];
+  relatedSceneIds: string[];
+  relatedFragmentIds: string[];
+  relatedCodexIds: string[];
+  relatedQuestionIds: string[];
+  isPrivate: boolean;
+  archived: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// ─── Codex / Bible ───────────────────────────────────────────────────────────
+
+export type CodexType =
+  | 'character'
+  | 'place'
+  | 'object'
+  | 'motif'
+  | 'institution'
+  | 'event'
+  | 'document'
+  | 'theme'
+  | 'custom';
+
+export interface CodexEntry {
+  id: string;
+  name: string;
+  codexType: CodexType;
+  customTypeName?: string;
+  description: string;
+  notes: string;
+  aliases: string[];
+  tags: string[];
+  relatedSceneIds: string[];
+  relatedFragmentIds: string[];
+  relatedOmittedIds: string[];
+  relatedNotebookIds: string[];
+  relatedQuestionIds: string[];
+  customFields: Record<string, string>;
+  // Character-specific
+  role?: string;
+  age?: string;
+  relationships?: string;
+  physicalDetails?: string;
+  voiceNotes?: string;
+  arcNotes?: string;
+  secrets?: string;
+  contradictions?: string;
+  // Place-specific
+  atmosphere?: string;
+  // Motif/Object-specific
+  meaning?: string;
+  appearances?: string;
+  evolution?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// ─── Questions ───────────────────────────────────────────────────────────────
+
+export type QuestionCategory =
+  | 'plot'
+  | 'character'
+  | 'timeline'
+  | 'research'
+  | 'structure'
+  | 'theme'
+  | 'continuity'
+  | 'worldbuilding'
+  | 'emotional_logic'
+  | 'other';
+
+export type QuestionStatus =
+  | 'open'
+  | 'answered'
+  | 'intentionally_ambiguous'
+  | 'irrelevant'
+  | 'deferred';
+
+export interface Question {
+  id: string;
+  text: string;
+  category: QuestionCategory;
+  questionStatus: QuestionStatus;
+  priority: 'low' | 'medium' | 'high';
+  relatedSceneIds: string[];
+  relatedFragmentIds: string[];
+  relatedOmittedIds: string[];
+  relatedCodexIds: string[];
+  relatedNotebookIds: string[];
+  answer: string;
+  notes: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// ─── Moodboard ───────────────────────────────────────────────────────────────
+
+export interface MoodboardItem {
+  id: string;
+  title: string;
+  imageUrl: string;
+  description: string;
+  tags: string[];
+  source: string;
+  relatedSceneIds: string[];
+  relatedCodexIds: string[];
+  notes: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// ─── Generic Relationship / Link ─────────────────────────────────────────────
+
+export type ObjectType =
+  | 'scene'
+  | 'fragment'
+  | 'omitted_material'
+  | 'notebook_entry'
+  | 'codex_entry'
+  | 'question'
+  | 'moodboard_item';
+
+export type RelationshipType =
+  | 'mentions'
+  | 'related_to'
+  | 'attached_to'
+  | 'promoted_from'
+  | 'restored_from'
+  | 'source_of'
+  | 'appears_in'
+  | 'answers'
+  | 'raises_question'
+  | 'visual_reference_for'
+  | 'research_for';
+
+export interface Link {
+  id: string;
+  sourceType: ObjectType;
+  sourceId: string;
+  targetType: ObjectType;
+  targetId: string;
+  relationshipType: RelationshipType;
+  createdAt: number;
+}
+
+// ─── History / Draft Archaeology ─────────────────────────────────────────────
+
+export type HistoryEventType =
+  | 'created'
+  | 'updated'
+  | 'deleted'
+  | 'moved'
+  | 'renamed'
+  | 'status_changed'
+  | 'snapshot_created'
+  | 'snapshot_restored'
+  | 'promoted'
+  | 'attached'
+  | 'restored'
+  | 'linked'
+  | 'exported'
+  | 'imported';
+
+export interface HistoryEvent {
+  id: string;
+  eventType: HistoryEventType;
+  objectType: ObjectType;
+  objectId: string;
+  objectTitle: string;
+  relatedObjectType?: ObjectType;
+  relatedObjectId?: string;
+  relatedObjectTitle?: string;
+  timestamp: number;
+  description: string;
+}
+
+// ─── Saved Filters ───────────────────────────────────────────────────────────
+
+export interface FilterCondition {
+  field: string;
+  operator: 'equals' | 'contains' | 'not_equals' | 'is_empty' | 'is_not_empty';
+  value?: string;
+}
+
+export interface SavedFilter {
+  id: string;
+  name: string;
+  targetArea: AppArea;
+  conditions: FilterCondition[];
+  createdAt: number;
+}
+
+// ─── AI Settings ─────────────────────────────────────────────────────────────
+
+export type AIMode =
+  | 'disabled'
+  | 'questions_only'
+  | 'analysis_only'
+  | 'metadata_assistance'
+  | 'continuity_checking'
+  | 'summarization'
+  | 'full';
+
+export interface AISettings {
+  mode: AIMode;
+  allowDrafting: boolean;
+  apiKey?: string;
+}
+
+// ─── Split Screen ─────────────────────────────────────────────────────────────
+
+export interface SplitRefTarget {
+  type: 'scene' | 'fragment' | 'omitted' | 'codex' | 'notebook' | 'question';
+  id: string;
+}
+
+// ─── Full App State ───────────────────────────────────────────────────────────
+
 export interface AppState {
+  // Existing
   projectTitle: string;
   binder: BinderItem[];
   selectedId: string | null;
@@ -58,7 +409,30 @@ export interface AppState {
   inspectorOpen: boolean;
   projectTarget: ProjectTarget;
 
-  // Actions
+  // New collections
+  fragments: Fragment[];
+  omittedMaterial: OmittedMaterial[];
+  notebookEntries: NotebookEntry[];
+  codexEntries: CodexEntry[];
+  questions: Question[];
+  moodboardItems: MoodboardItem[];
+  projectTags: Tag[];
+  links: Link[];
+  history: HistoryEvent[];
+  savedFilters: SavedFilter[];
+
+  // Navigation
+  area: AppArea;
+  splitScreenOpen: boolean;
+  splitRefTarget: SplitRefTarget | null;
+  splitRefPinned: boolean;
+  searchOpen: boolean;
+  searchQuery: string;
+
+  // AI
+  aiSettings: AISettings;
+
+  // ─── Existing actions ──────────────────────────────────────────────────────
   setProjectTitle: (title: string) => void;
   addItem: (parentId: string | null, type: 'folder' | 'document') => void;
   removeItem: (id: string) => void;
@@ -75,4 +449,71 @@ export interface AppState {
   deleteSnapshot: (itemId: string, snapshotId: string) => void;
   emptyTrash: () => void;
   permanentlyDeleteItem: (id: string) => void;
+
+  // ─── Navigation ────────────────────────────────────────────────────────────
+  setArea: (area: AppArea) => void;
+  setSplitScreen: (open: boolean, target?: SplitRefTarget) => void;
+  setSplitRefPinned: (pinned: boolean) => void;
+  setSplitRefTarget: (target: SplitRefTarget | null) => void;
+  setSearchOpen: (open: boolean, query?: string) => void;
+  setSearchQuery: (query: string) => void;
+
+  // ─── Tags ──────────────────────────────────────────────────────────────────
+  addTag: (name: string, color?: string) => Tag;
+  updateTag: (id: string, patch: Partial<Tag>) => void;
+  deleteTag: (id: string) => void;
+  getOrCreateTag: (name: string) => Tag;
+
+  // ─── Fragments ─────────────────────────────────────────────────────────────
+  addFragment: (partial?: Partial<Fragment>) => string;
+  updateFragment: (id: string, patch: Partial<Fragment>) => void;
+  deleteFragment: (id: string) => void;
+  attachFragmentToScene: (fragmentId: string, sceneId: string) => void;
+  promoteFragmentToScene: (fragmentId: string, parentId: string) => string;
+  sendFragmentToOmitted: (fragmentId: string, reason?: string) => void;
+
+  // ─── Omitted Material ──────────────────────────────────────────────────────
+  addOmittedMaterial: (partial?: Partial<OmittedMaterial>) => string;
+  updateOmittedMaterial: (id: string, patch: Partial<OmittedMaterial>) => void;
+  deleteOmittedMaterial: (id: string) => void;
+  sendSceneToOmitted: (sceneId: string, reason?: string) => void;
+  restoreOmittedToScene: (omittedId: string, parentId?: string) => string;
+
+  // ─── Notebook ──────────────────────────────────────────────────────────────
+  addNotebookEntry: (partial?: Partial<NotebookEntry>) => string;
+  updateNotebookEntry: (id: string, patch: Partial<NotebookEntry>) => void;
+  deleteNotebookEntry: (id: string) => void;
+
+  // ─── Codex ─────────────────────────────────────────────────────────────────
+  addCodexEntry: (partial?: Partial<CodexEntry>) => string;
+  updateCodexEntry: (id: string, patch: Partial<CodexEntry>) => void;
+  deleteCodexEntry: (id: string) => void;
+
+  // ─── Questions ─────────────────────────────────────────────────────────────
+  addQuestion: (partial?: Partial<Question>) => string;
+  updateQuestion: (id: string, patch: Partial<Question>) => void;
+  deleteQuestion: (id: string) => void;
+
+  // ─── Moodboard ─────────────────────────────────────────────────────────────
+  addMoodboardItem: (partial?: Partial<MoodboardItem>) => string;
+  updateMoodboardItem: (id: string, patch: Partial<MoodboardItem>) => void;
+  deleteMoodboardItem: (id: string) => void;
+
+  // ─── Links ─────────────────────────────────────────────────────────────────
+  addLink: (link: Omit<Link, 'id' | 'createdAt'>) => void;
+  removeLink: (id: string) => void;
+
+  // ─── History ───────────────────────────────────────────────────────────────
+  recordEvent: (event: Omit<HistoryEvent, 'id' | 'timestamp'>) => void;
+
+  // ─── Saved Filters ─────────────────────────────────────────────────────────
+  addSavedFilter: (filter: Omit<SavedFilter, 'id' | 'createdAt'>) => void;
+  deleteSavedFilter: (id: string) => void;
+
+  // ─── AI ────────────────────────────────────────────────────────────────────
+  setAISettings: (patch: Partial<AISettings>) => void;
+
+  // ─── Export / Backup ───────────────────────────────────────────────────────
+  exportProjectBackup: () => void;
+  importProjectBackup: (json: string) => void;
 }
