@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import type { BinderItem, Label, Status } from '../types';
 
@@ -41,29 +42,89 @@ function wordCount(html: string) {
   return text ? text.split(/\s+/).length : 0;
 }
 
+function findParentOf(
+  items: BinderItem[],
+  targetId: string,
+  parentId: string | null = null,
+): { parentId: string | null; index: number } | null {
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].id === targetId) return { parentId, index: i };
+    const found = findParentOf(items[i].children, targetId, items[i].id);
+    if (found) return found;
+  }
+  return null;
+}
+
 interface RowProps {
   item: BinderItem;
   depth: number;
+  parentId: string | null;
+  index: number;
 }
 
-function OutlineRow({ item, depth }: RowProps) {
-  const { selectedId, selectItem, updateItem, toggleExpanded } = useAppStore();
+function OutlineRow({ item, depth, parentId, index }: RowProps) {
+  const { binder, selectedId, selectItem, updateItem, toggleExpanded, moveItem } = useAppStore();
   const isSelected = selectedId === item.id;
   const words = wordCount(item.content);
+  const [dropIndicator, setDropIndicator] = useState<'above' | 'below' | null>(null);
+
+  function handleDragStart(e: React.DragEvent) {
+    e.dataTransfer.setData('text/plain', item.id);
+    e.dataTransfer.effectAllowed = 'move';
+    e.stopPropagation();
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const relY = e.clientY - rect.top;
+    setDropIndicator(relY < rect.height / 2 ? 'above' : 'below');
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const draggedId = e.dataTransfer.getData('text/plain');
+    if (!draggedId || draggedId === item.id) {
+      setDropIndicator(null);
+      return;
+    }
+
+    const desiredIdx = dropIndicator === 'above' ? index : index + 1;
+    const pos = findParentOf(binder, draggedId);
+    let insertIdx = desiredIdx;
+    if (pos && pos.parentId === parentId && pos.index < desiredIdx) {
+      insertIdx--;
+    }
+    moveItem(draggedId, parentId, Math.max(0, insertIdx));
+    setDropIndicator(null);
+  }
+
+  const rowBorderClass =
+    dropIndicator === 'above'
+      ? 'border-t-2 border-purple-500'
+      : dropIndicator === 'below'
+      ? 'border-b-2 border-purple-500'
+      : '';
 
   return (
     <>
       <tr
+        draggable
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragLeave={() => setDropIndicator(null)}
+        onDrop={handleDrop}
         className={`border-b border-[#1e2a3a] cursor-pointer transition-colors ${
-          isSelected
-            ? 'bg-[#2d1f5e]'
-            : 'hover:bg-[#1e2a3a]'
-        }`}
+          isSelected ? 'bg-[#2d1f5e]' : 'hover:bg-[#1e2a3a]'
+        } ${rowBorderClass}`}
         onClick={() => selectItem(item.id)}
       >
         {/* Title */}
         <td className="py-2 text-sm text-white" style={{ paddingLeft: `${depth * 20 + 12}px` }}>
           <div className="flex items-center gap-2">
+            <span className="text-gray-600 cursor-grab active:cursor-grabbing text-xs" title="Drag to reorder">⠿</span>
             {item.type === 'folder' && (
               <button
                 onClick={(e) => {
@@ -157,8 +218,8 @@ function OutlineRow({ item, depth }: RowProps) {
       {/* Children */}
       {item.type === 'folder' &&
         item.expanded &&
-        item.children.map((child) => (
-          <OutlineRow key={child.id} item={child} depth={depth + 1} />
+        item.children.map((child, i) => (
+          <OutlineRow key={child.id} item={child} depth={depth + 1} parentId={item.id} index={i} />
         ))}
     </>
   );
@@ -193,8 +254,8 @@ export function Outline() {
           </tr>
         </thead>
         <tbody>
-          {binder.map((item) => (
-            <OutlineRow key={item.id} item={item} depth={0} />
+          {binder.map((item, i) => (
+            <OutlineRow key={item.id} item={item} depth={0} parentId={null} index={i} />
           ))}
         </tbody>
       </table>
