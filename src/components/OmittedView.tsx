@@ -3,6 +3,7 @@ import { useAppStore } from '../store/appStore';
 import { TagInput } from './TagInput';
 import { WritingEditor } from './WritingEditor';
 import { ImportPreviewModal } from './ImportPreviewModal';
+import { GoogleDriveUpload } from './GoogleDriveUpload';
 import { parseFile } from '../utils/documentParser';
 import type { ParsedItem, SplitLevel } from '../utils/documentParser';
 import type { OmittedMaterial, OmissionStatus, ImportSourceMeta } from '../types';
@@ -591,12 +592,12 @@ export function OmittedView() {
               <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                 Omitted Material
               </span>
-              <div className="flex gap-1">
+              <div className="flex gap-1 items-center">
                 <label
                   title="Import document into Omitted Material"
                   className="text-xs text-gray-400 hover:text-white px-1 cursor-pointer select-none"
                 >
-                  📥 Import
+                  📥
                   <input
                     ref={uploadRef}
                     type="file"
@@ -606,6 +607,7 @@ export function OmittedView() {
                     className="hidden"
                   />
                 </label>
+                <GoogleDriveUpload targetSection="omitted" />
                 <button
                   onClick={() => {
                     const id = addOmittedMaterial();

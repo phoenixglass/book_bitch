@@ -3,6 +3,7 @@ import { useAppStore } from '../store/appStore';
 import { TagInput } from './TagInput';
 import { WritingEditor } from './WritingEditor';
 import { ImportPreviewModal } from './ImportPreviewModal';
+import { GoogleDriveUpload } from './GoogleDriveUpload';
 import { parseFile } from '../utils/documentParser';
 import type { ParsedItem, SplitLevel } from '../utils/documentParser';
 import type { Fragment, FragmentType, FragmentStatus, ImportSourceMeta } from '../types';
@@ -675,12 +676,12 @@ export function FragmentsView() {
               <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                 Fragments
               </span>
-              <div className="flex gap-1">
+              <div className="flex gap-1 items-center">
                 <label
                   title="Import document into Fragments"
                   className="text-xs text-gray-400 hover:text-white px-1 cursor-pointer select-none"
                 >
-                  📥 Import
+                  📥
                   <input
                     ref={uploadRef}
                     type="file"
@@ -690,6 +691,7 @@ export function FragmentsView() {
                     className="hidden"
                   />
                 </label>
+                <GoogleDriveUpload targetSection="fragments" />
                 <button
                   onClick={() => {
                     const id = addFragment();

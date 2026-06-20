@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAppStore } from '../store/appStore';
+import type { ImportSourceMeta } from '../types';
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 const SCOPES =
@@ -9,7 +10,7 @@ const SCOPES =
 
 let cachedAccessToken: string | null = null;
 
-export function useDriveImport() {
+export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omitted' = 'manuscript') {
   const { addItem, updateItem, selectItem } = useAppStore();
   const [isLoading, setIsLoading] = useState(false);
 
@@ -126,10 +127,92 @@ export function useDriveImport() {
     const docData = await fetchDocData(file.id);
     const tabs: any[] = docData.tabs || [];
 
+    if (targetSection !== 'manuscript') {
+      await importGoogleDocToSection(file.id, file.name, docData, tabs, targetSection);
+      return;
+    }
+
     if (tabs.length > 1) {
       await importByTabs(file.id, file.name, flattenTabs(tabs));
     } else {
       await importByHeadings(file.id, file.name, docData);
+    }
+  }
+
+  // Imports a Google Doc into Fragments or Omitted Material as flat items.
+  // Multi-tab docs: one item per tab. Single-tab docs: one item per H1 heading,
+  // or one item for the whole doc if no headings. Tab/chapter names are preserved.
+  async function importGoogleDocToSection(
+    driveFileId: string,
+    docName: string,
+    docData: any,
+    tabs: any[],
+    section: 'fragments' | 'omitted',
+  ) {
+    const { importToFragments, importToOmitted, setArea } = useAppStore.getState();
+    const flatTabs = flattenTabs(tabs);
+
+    type ItemInput = { title: string; content: string; importSource: ImportSourceMeta; reason?: string };
+    let items: ItemInput[];
+
+    if (flatTabs.length > 1) {
+      items = flatTabs.map((tab) => {
+        const tabTitle = tab.tabProperties?.title || `Tab ${(tab.tabProperties?.index ?? 0) + 1}`;
+        return {
+          title: tabTitle,
+          content: docElementsToHtml(tab.documentTab?.body?.content || []),
+          importSource: {
+            fileName: docName,
+            fileType: 'google_doc' as const,
+            importedAt: Date.now(),
+            googleFileId: driveFileId,
+            googleTabId: tab.tabProperties?.tabId,
+            googleTabTitle: tabTitle,
+          },
+        };
+      });
+    } else {
+      const bodyContent =
+        docData.tabs?.[0]?.documentTab?.body?.content ||
+        docData.body?.content ||
+        [];
+      const chapters = splitByHeading(bodyContent);
+
+      if (chapters.length <= 1) {
+        const html = await exportDocAsHtml(driveFileId);
+        items = [{
+          title: docName,
+          content: html,
+          importSource: {
+            fileName: docName,
+            fileType: 'google_doc' as const,
+            importedAt: Date.now(),
+            googleFileId: driveFileId,
+          },
+        }];
+      } else {
+        const fullHtml = await exportDocAsHtml(driveFileId);
+        const chapterHtmls = splitHtmlByH1(fullHtml, chapters.map((c) => c.title));
+        items = chapters.map((chapter, i) => ({
+          title: chapter.title,
+          content: chapterHtmls[i] ?? docElementsToHtml(chapter.elements),
+          importSource: {
+            fileName: docName,
+            fileType: 'google_doc' as const,
+            sourceHeading: chapter.title,
+            importedAt: Date.now(),
+            googleFileId: driveFileId,
+          },
+        }));
+      }
+    }
+
+    if (section === 'fragments') {
+      importToFragments(items);
+      setArea('fragments');
+    } else {
+      importToOmitted(items.map((i) => ({ ...i, reason: 'Imported from Google Drive' })));
+      setArea('omitted');
     }
   }
 
@@ -258,6 +341,24 @@ export function useDriveImport() {
     const csv = await res.text();
     const html = csvToHtml(csv);
 
+    if (targetSection !== 'manuscript') {
+      const { importToFragments, importToOmitted, setArea } = useAppStore.getState();
+      const importSource: ImportSourceMeta = {
+        fileName: file.name,
+        fileType: 'google_doc',
+        importedAt: Date.now(),
+        googleFileId: file.id,
+      };
+      if (targetSection === 'fragments') {
+        importToFragments([{ title: file.name, content: html, importSource }]);
+        setArea('fragments');
+      } else {
+        importToOmitted([{ title: file.name, content: html, reason: 'Imported from Google Drive', importSource }]);
+        setArea('omitted');
+      }
+      return;
+    }
+
     addItem(null, 'document');
     const docId = useAppStore.getState().selectedId;
     if (docId) {
@@ -274,6 +375,24 @@ export function useDriveImport() {
     );
     if (!res.ok) throw new Error(`Failed to download file: ${res.statusText}`);
     const content = await res.text();
+
+    if (targetSection !== 'manuscript') {
+      const { importToFragments, importToOmitted, setArea } = useAppStore.getState();
+      const importSource: ImportSourceMeta = {
+        fileName: file.name,
+        fileType: 'google_doc',
+        importedAt: Date.now(),
+        googleFileId: file.id,
+      };
+      if (targetSection === 'fragments') {
+        importToFragments([{ title: file.name, content, importSource }]);
+        setArea('fragments');
+      } else {
+        importToOmitted([{ title: file.name, content, reason: 'Imported from Google Drive', importSource }]);
+        setArea('omitted');
+      }
+      return;
+    }
 
     addItem(null, 'document');
     const docId = useAppStore.getState().selectedId;
