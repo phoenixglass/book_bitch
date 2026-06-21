@@ -2,8 +2,11 @@ import { useState, useRef, Fragment } from 'react';
 import { useAppStore } from '../store/appStore';
 import { findItem } from '../store/appStore';
 import { GoogleDriveUpload } from './GoogleDriveUpload';
+import { ImportPreviewModal } from './ImportPreviewModal';
 import { useDriveImport } from '../hooks/useDriveImport';
-import type { BinderItem } from '../types';
+import { parseFile } from '../utils/documentParser';
+import type { ParsedItem, SplitLevel } from '../utils/documentParser';
+import type { BinderItem, ImportSourceMeta } from '../types';
 
 const LABEL_COLORS: Record<string, string> = {
   none: 'transparent',
@@ -63,6 +66,9 @@ function DropZone({ parentId, index }: DropZoneProps) {
       />
     </div>
   );
+function collectLeafDocs(item: BinderItem): BinderItem[] {
+  if (item.type === 'document') return [item];
+  return item.children.flatMap(collectLeafDocs);
 }
 
 function isItemInTrash(binder: BinderItem[], itemId: string): boolean {
@@ -71,13 +77,28 @@ function isItemInTrash(binder: BinderItem[], itemId: string): boolean {
   return trash.children.some((child) => child.id === itemId);
 }
 
+function findDraggedPosition(
+  items: BinderItem[],
+  id: string,
+  parentId: string | null = null,
+): { parentId: string | null; index: number } | null {
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].id === id) return { parentId, index: i };
+    const found = findDraggedPosition(items[i].children, id, items[i].id);
+    if (found) return found;
+  }
+  return null;
+}
+
 interface BinderNodeProps {
   item: BinderItem;
   depth: number;
+  parentId: string | null;
+  index: number;
   onResync?: (folderId: string, driveFileId: string) => void;
 }
 
-function BinderNode({ item, depth, onResync }: BinderNodeProps) {
+function BinderNode({ item, depth, parentId, index, onResync }: BinderNodeProps) {
   const {
     selectedId,
     selectItem,
@@ -87,11 +108,13 @@ function BinderNode({ item, depth, onResync }: BinderNodeProps) {
     removeItem,
     emptyTrash,
     permanentlyDeleteItem,
+    sendSceneToOmitted,
+    sendSceneToFragments,
   } = useAppStore();
 
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(item.title);
-  const [dragOver, setDragOver] = useState(false);
+  const [dropIndicator, setDropIndicator] = useState<'above' | 'below' | 'inside' | null>(null);
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
 
@@ -105,29 +128,96 @@ function BinderNode({ item, depth, onResync }: BinderNodeProps) {
 
   function handleDragStart(e: React.DragEvent) {
     e.dataTransfer.setData('text/plain', item.id);
+    // Cross-section DnD data (readable by Fragments/Omitted drop zones)
+    e.dataTransfer.setData(
+      'application/x-bb-item',
+      JSON.stringify({ type: 'scene', id: item.id, title: item.title }),
+    );
+    e.dataTransfer.setData('text/x-bb-type-scene', '1');
+    e.dataTransfer.effectAllowed = 'move';
     e.stopPropagation();
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const draggedId = e.dataTransfer.getData('text/plain');
+    if (draggedId === item.id) return;
+
+    const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+    const relY = e.clientY - rect.top;
+    const pct = relY / rect.height;
+
+    if (isFolder) {
+      if (pct < 0.25) setDropIndicator('above');
+      else if (pct > 0.75) setDropIndicator('below');
+      else setDropIndicator('inside');
+    } else {
+      setDropIndicator(pct < 0.5 ? 'above' : 'below');
+    }
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setDropIndicator(null);
+    }
   }
 
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     e.stopPropagation();
-    setDragOver(false);
-    const draggedId = e.dataTransfer.getData('text/plain');
-    if (draggedId && draggedId !== item.id && isFolder) {
-      useAppStore
-        .getState()
-        .moveItem(draggedId, item.id, item.children.length);
+
+    // Check for cross-section DnD first
+    try {
+      const raw = e.dataTransfer.getData('application/x-bb-item');
+      if (raw) {
+        const { type, id } = JSON.parse(raw) as { type: string; id: string };
+        const store = useAppStore.getState();
+        const targetParentId = isFolder ? item.id : parentId;
+        if (type === 'fragment') {
+          store.moveFragmentToManuscript(id, targetParentId ?? 'manuscript');
+          setDropIndicator(null);
+          return;
+        }
+        if (type === 'omitted') {
+          store.moveOmittedToManuscript(id, targetParentId ?? 'manuscript');
+          setDropIndicator(null);
+          return;
+        }
+      }
+    } catch {
+      // fall through to normal binder DnD
     }
+
+    const draggedId = e.dataTransfer.getData('text/plain');
+    if (!draggedId || draggedId === item.id) {
+      setDropIndicator(null);
+      return;
+    }
+
+    const store = useAppStore.getState();
+
+    if (dropIndicator === 'inside' && isFolder) {
+      store.moveItem(draggedId, item.id, item.children.length);
+    } else {
+      const desiredIdx = dropIndicator === 'above' ? index : index + 1;
+      const pos = findDraggedPosition(store.binder, draggedId);
+      let insertIdx = desiredIdx;
+      if (pos && pos.parentId === parentId && pos.index < desiredIdx) {
+        insertIdx--;
+      }
+      store.moveItem(draggedId, parentId, Math.max(0, insertIdx));
+    }
+
+    setDropIndicator(null);
   }
 
   function handleContextMenu(e: React.MouseEvent) {
-    console.log('Context menu triggered on:', item.title);
     e.preventDefault();
     e.stopPropagation();
     selectItem(item.id);
     setContextMenuPos({ x: e.clientX, y: e.clientY });
     setShowContextMenu(true);
-    console.log('Menu should be visible now');
   }
 
   function handleDelete() {
@@ -144,16 +234,50 @@ function BinderNode({ item, depth, onResync }: BinderNodeProps) {
     setShowContextMenu(false);
   }
 
+  function handleSendToOmitted() {
+    const reasonInput = window.prompt('Reason for omitting (optional):');
+    if (reasonInput === null) return;
+    if (item.type === 'document') {
+      sendSceneToOmitted(item.id, reasonInput);
+    } else {
+      const leafDocs = collectLeafDocs(item);
+      for (const doc of leafDocs) {
+        useAppStore.getState().sendSceneToOmitted(doc.id, reasonInput);
+      }
+      permanentlyDeleteItem(item.id);
+    }
+    setShowContextMenu(false);
+  }
+
+  function handleSendToFragments() {
+    if (item.type === 'document') {
+      sendSceneToFragments(item.id);
+    } else {
+      const leafDocs = collectLeafDocs(item);
+      for (const doc of leafDocs) {
+        useAppStore.getState().sendSceneToFragments(doc.id);
+      }
+      permanentlyDeleteItem(item.id);
+    }
+    setShowContextMenu(false);
+  }
+
+  const indicatorClass =
+    dropIndicator === 'above'
+      ? 'border-t-2 border-purple-500'
+      : dropIndicator === 'below'
+      ? 'border-b-2 border-purple-500'
+      : dropIndicator === 'inside'
+      ? 'ring-2 ring-purple-500 ring-inset'
+      : '';
+
   return (
     <div>
       <div
         draggable
         onDragStart={handleDragStart}
-        onDragOver={(e) => {
-          e.preventDefault();
-          if (isFolder) setDragOver(true);
-        }}
-        onDragLeave={() => setDragOver(false)}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onClick={() => selectItem(item.id)}
         onContextMenu={handleContextMenu}
@@ -165,9 +289,14 @@ function BinderNode({ item, depth, onResync }: BinderNodeProps) {
           isSelected
             ? 'bg-[#6b46c1] text-white'
             : 'text-gray-300 hover:bg-[#2d3748]'
-        } ${dragOver ? 'drag-over' : ''}`}
+        } ${indicatorClass}`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
       >
+        {/* Drag handle */}
+        <span className="text-gray-600 hover:text-gray-400 cursor-grab active:cursor-grabbing text-xs shrink-0" title="Drag to reorder">
+          ⠿
+        </span>
+
         {/* Expand toggle */}
         {isFolder ? (
           <button
@@ -242,6 +371,8 @@ function BinderNode({ item, depth, onResync }: BinderNodeProps) {
               <BinderNode item={child} depth={depth + 1} onResync={onResync} />
               <DropZone parentId={item.id} index={i + 1} />
             </Fragment>
+          {item.children.map((child, i) => (
+            <BinderNode key={child.id} item={child} depth={depth + 1} parentId={item.id} index={i} onResync={onResync} />
           ))}
           {item.children.length === 0 && (
             <div
@@ -278,12 +409,27 @@ function BinderNode({ item, depth, onResync }: BinderNodeProps) {
             </button>
           )}
           {item.id !== 'trash' && !isItemInTrash(useAppStore.getState().binder, item.id) && (
-            <button
-              onClick={handleDelete}
-              className="w-full text-left px-3 py-2 hover:bg-[#6b46c1] hover:text-white transition-colors"
-            >
-              🗑️ Delete
-            </button>
+            <>
+              <button
+                onClick={handleSendToOmitted}
+                className="w-full text-left px-3 py-2 hover:bg-amber-800 hover:text-white transition-colors"
+              >
+                🗂 Send to Omitted Material
+              </button>
+              <button
+                onClick={handleSendToFragments}
+                className="w-full text-left px-3 py-2 hover:bg-purple-800 hover:text-white transition-colors"
+              >
+                🧩 Send to Fragments
+              </button>
+              <div className="border-t border-[#0f3460] my-1" />
+              <button
+                onClick={handleDelete}
+                className="w-full text-left px-3 py-2 hover:bg-[#6b46c1] hover:text-white transition-colors"
+              >
+                🗑️ Delete
+              </button>
+            </>
           )}
           {item.driveFileId && onResync && (
             <button
@@ -310,68 +456,128 @@ function BinderNode({ item, depth, onResync }: BinderNodeProps) {
   );
 }
 
+interface BinderPendingImport {
+  file: File;
+  splitLevel: SplitLevel;
+  parsedItems: ParsedItem[];
+}
+
 export function Binder() {
-  const { binder, addItem, updateItem, selectItem } = useAppStore();
+  const { binder, importToManuscript } = useAppStore();
   const { resyncDriveFolder } = useDriveImport();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pendingImport, setPendingImport] = useState<BinderPendingImport | null>(null);
 
   async function handleFileUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const files = event.currentTarget.files;
-    if (!files) return;
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const text = await file.text();
-
-      addItem(null, 'document');
-      const lastBinder = useAppStore.getState().binder;
-      const lastDoc = lastBinder[lastBinder.length - 1];
-      if (lastDoc && lastDoc.id !== 'trash') {
-        const fileName = file.name.replace(/\.[^/.]+$/, '');
-        updateItem(lastDoc.id, { content: text, title: fileName });
-        selectItem(lastDoc.id);
-      }
-    }
+    if (!files || files.length === 0) return;
+    const file = files[0];
     event.currentTarget.value = '';
+
+    const splitLevel: SplitLevel = 1;
+    const items = await parseFile(file, { splitLevel });
+
+    if (items.length === 1 && !items[0].sourceHeading) {
+      // Single item — import directly
+      importToManuscript([{ title: items[0].title, content: items[0].content }]);
+      return;
+    }
+
+    setPendingImport({ file, splitLevel, parsedItems: items });
+  }
+
+  async function handleChangeSplitLevel(level: SplitLevel) {
+    if (!pendingImport) return;
+    const items = await parseFile(pendingImport.file, { splitLevel: level });
+    setPendingImport((prev) => prev ? { ...prev, splitLevel: level, parsedItems: items } : null);
+  }
+
+  function handleImportConfirm(
+    items: ParsedItem[],
+    section: 'manuscript' | 'fragments' | 'omitted',
+  ) {
+    const { file } = pendingImport!;
+    const importSource: ImportSourceMeta = {
+      fileName: file.name.replace(/\.[^/.]+$/, ''),
+      fileType: file.name.split('.').pop() ?? 'txt',
+      importedAt: Date.now(),
+    };
+    const store = useAppStore.getState();
+    if (section === 'manuscript') {
+      importToManuscript(
+        items.map((i) => ({ ...i, importSource: { ...importSource, sourceHeading: i.sourceHeading } })),
+      );
+    } else if (section === 'fragments') {
+      store.importToFragments(
+        items.map((i) => ({ ...i, importSource: { ...importSource, sourceHeading: i.sourceHeading } })),
+      );
+      store.setArea('fragments');
+    } else if (section === 'omitted') {
+      store.importToOmitted(
+        items.map((i) => ({
+          ...i,
+          reason: 'Imported as omitted material',
+          importSource: { ...importSource, sourceHeading: i.sourceHeading },
+        })),
+      );
+      store.setArea('omitted');
+    }
+    setPendingImport(null);
   }
 
   return (
-    <div className="w-56 shrink-0 bg-[#16213e] border-r border-[#0f3460] flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-[#0f3460]">
-        <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-          Binder
-        </span>
-        <div className="flex gap-1">
-          <button
-            onClick={() => addItem(null, 'folder')}
-            title="New Folder"
-            className="text-xs text-gray-400 hover:text-white px-1"
-          >
-            📁+
-          </button>
-          <button
-            onClick={() => addItem(null, 'document')}
-            title="New Document"
-            className="text-xs text-gray-400 hover:text-white px-1"
-          >
-            📄+
-          </button>
-          <label
-            title="Upload file from computer"
-            className="text-xs text-gray-400 hover:text-white px-1 cursor-pointer"
-          >
-            ⬆️
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept=".txt,.md,.html"
-              onChange={handleFileUpload}
-              className="hidden"
+    <>
+      <div className="w-56 shrink-0 bg-[#16213e] border-r border-[#0f3460] flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-3 py-2 border-b border-[#0f3460]">
+          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+            Binder
+          </span>
+          <div className="flex gap-1">
+            <button
+              onClick={() => useAppStore.getState().addItem(null, 'folder')}
+              title="New Folder"
+              className="text-xs text-gray-400 hover:text-white px-1"
+            >
+              📁+
+            </button>
+            <button
+              onClick={() => useAppStore.getState().addItem(null, 'document')}
+              title="New Document"
+              className="text-xs text-gray-400 hover:text-white px-1"
+            >
+              📄+
+            </button>
+            <label
+              title="Import document (.txt, .md, .html, .docx) — supports heading-based splitting"
+              className="text-xs text-gray-400 hover:text-white px-1 cursor-pointer"
+            >
+              📥
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple={false}
+                accept=".txt,.md,.html,.htm,.docx,.doc"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+            </label>
+            <GoogleDriveUpload />
+          </div>
+        </div>
+
+        {/* Tree */}
+        <div className="flex-1 overflow-y-auto py-1">
+          {binder.map((item, i) => (
+            <BinderNode
+              key={item.id}
+              item={item}
+              depth={0}
+              parentId={null}
+              index={i}
+              onResync={resyncDriveFolder}
             />
-          </label>
-          <GoogleDriveUpload />
+          ))}
         </div>
       </div>
 
@@ -386,5 +592,27 @@ export function Binder() {
         ))}
       </div>
     </div>
+      {pendingImport && (
+        <ImportPreviewModal
+          key={pendingImport.splitLevel}
+          fileName={pendingImport.file.name}
+          fileType={pendingImport.file.name.split('.').pop() ?? 'file'}
+          parsedItems={pendingImport.parsedItems}
+          splitLevel={pendingImport.splitLevel}
+          defaultSection="manuscript"
+          canChangeSplitLevel={
+            pendingImport.file.name.endsWith('.docx') ||
+            pendingImport.file.name.endsWith('.doc') ||
+            pendingImport.file.name.endsWith('.md') ||
+            pendingImport.file.name.endsWith('.html') ||
+            pendingImport.file.name.endsWith('.htm')
+          }
+          onChangeSplitLevel={handleChangeSplitLevel}
+          onConfirm={handleImportConfirm}
+          onCancel={() => setPendingImport(null)}
+        />
+      )}
+    </>
   );
 }
+

@@ -1,4 +1,5 @@
 import { useState, Fragment } from 'react';
+import { useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import type { BinderItem } from '../types';
 
@@ -21,8 +22,61 @@ interface CardProps {
 
 function IndexCard({ item, isDragging, onDragStart, onDragOver, onDragEnd }: CardProps) {
   const { selectedId, selectItem, updateItem } = useAppStore();
+  parentId: string | null;
+  index: number;
+}
+
+function IndexCard({ item, parentId, index }: CardProps) {
+  const { binder, selectedId, selectItem, updateItem, moveItem } = useAppStore();
   const isSelected = selectedId === item.id;
   const words = wordCount(item.content);
+  const [dropIndicator, setDropIndicator] = useState<'left' | 'right' | null>(null);
+
+  function handleDragStart(e: React.DragEvent) {
+    e.dataTransfer.setData('text/plain', item.id);
+    e.dataTransfer.effectAllowed = 'move';
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const relX = e.clientX - rect.left;
+    setDropIndicator(relX < rect.width / 2 ? 'left' : 'right');
+  }
+
+  function findParentIndex(items: BinderItem[], id: string, pId: string | null = null): { parentId: string | null; index: number } | null {
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].id === id) return { parentId: pId, index: i };
+      const found = findParentIndex(items[i].children, id, items[i].id);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    const draggedId = e.dataTransfer.getData('text/plain');
+    if (!draggedId || draggedId === item.id) {
+      setDropIndicator(null);
+      return;
+    }
+
+    const desiredIdx = dropIndicator === 'left' ? index : index + 1;
+    const pos = findParentIndex(binder, draggedId);
+    let insertIdx = desiredIdx;
+    if (pos && pos.parentId === parentId && pos.index < desiredIdx) {
+      insertIdx--;
+    }
+    moveItem(draggedId, parentId, Math.max(0, insertIdx));
+    setDropIndicator(null);
+  }
+
+  const borderClass =
+    dropIndicator === 'left'
+      ? 'border-l-4 border-l-purple-500'
+      : dropIndicator === 'right'
+      ? 'border-r-4 border-r-purple-500'
+      : '';
 
   return (
     <div
@@ -30,6 +84,10 @@ function IndexCard({ item, isDragging, onDragStart, onDragOver, onDragEnd }: Car
       onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDragEnd={onDragEnd}
+      onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
+      onDragLeave={() => setDropIndicator(null)}
+      onDrop={handleDrop}
       onClick={() => selectItem(item.id)}
       className={`rounded-lg border p-3 cursor-grab active:cursor-grabbing transition-all flex flex-col gap-2 ${
         isSelected
@@ -37,9 +95,12 @@ function IndexCard({ item, isDragging, onDragStart, onDragOver, onDragEnd }: Car
           : 'border-[#2d3748] bg-[#1e2640] hover:border-[#4a5568]'
       }`}
       style={{ minHeight: '140px', width: '200px', opacity: isDragging ? 0.35 : 1 }}
+      } ${borderClass}`}
+      style={{ minHeight: '140px', width: '200px' }}
     >
       {/* Title bar */}
       <div className="flex items-center gap-2 border-b border-[#2d3748] pb-2">
+        <span className="text-gray-600 cursor-grab text-xs" title="Drag to reorder">⠿</span>
         <span className="text-xs">📄</span>
         <span className="font-medium text-sm text-white truncate flex-1">
           {item.title}
@@ -166,6 +227,9 @@ function FolderGroup({ folder }: FolderGroupProps) {
               }}
             />
           </Fragment>
+      <div className="flex flex-wrap gap-4">
+        {docs.map((doc, i) => (
+          <IndexCard key={doc.id} item={doc} parentId={folder.id} index={i} />
         ))}
         {dropBeforeId === 'END' && <DropPlaceholder />}
       </div>
@@ -181,6 +245,8 @@ export function Corkboard() {
   const allDocs = binder.flatMap((b) =>
     b.type === 'document' ? [b] : [],
   );
+  const foldersToShow = binder.filter((b) => b.type === 'folder' && b.id !== 'trash');
+  const allDocs = binder.flatMap((b) => b.type === 'document' ? [b] : []);
 
   return (
     <div className="flex-1 overflow-y-auto p-6 bg-[#12192c]">
@@ -198,8 +264,8 @@ export function Corkboard() {
               Root Documents
             </h3>
             <div className="flex flex-wrap gap-4">
-              {allDocs.map((doc) => (
-                <IndexCard key={doc.id} item={doc} />
+              {allDocs.map((doc, i) => (
+                <IndexCard key={doc.id} item={doc} parentId={null} index={i} />
               ))}
             </div>
           </div>
