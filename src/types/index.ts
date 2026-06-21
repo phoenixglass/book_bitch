@@ -396,6 +396,21 @@ export interface SavedFilter {
   createdAt: number;
 }
 
+// ─── Editor Appearance Settings ──────────────────────────────────────────────
+
+export interface EditorSettings {
+  fontFamily: string;
+  fontSize: number;          // pt
+  lineHeight: number;        // multiplier, e.g. 2.0 = double
+  firstLineIndent: number;   // inches
+  paragraphSpacingBefore: number; // pt
+  paragraphSpacingAfter: number;  // pt
+  textAlign: 'left' | 'center' | 'right' | 'justify';
+  pageWidth: number;         // px max-width of text column
+  pageBackground: string;    // css color
+  textColor: string;         // css color
+}
+
 // ─── Manuscript Format Settings ──────────────────────────────────────────────
 
 export interface ManuscriptSettings {
@@ -624,6 +639,9 @@ export interface AppState {
   pendingAIResult: AIResult | null;
   aiContextObject: { type: AIObjectType; id: string } | null;
 
+  // Editor appearance settings
+  editorSettings: EditorSettings;
+
   // Manuscript format settings
   manuscriptSettings: ManuscriptSettings;
 
@@ -729,6 +747,9 @@ export interface AppState {
   setAIPanelOpen: (open: boolean) => void;
   setPendingAIResult: (result: AIResult | null) => void;
   setAIContextObject: (obj: { type: AIObjectType; id: string } | null) => void;
+
+  // ─── Editor Appearance ─────────────────────────────────────────────────────
+  updateEditorSettings: (patch: Partial<EditorSettings>) => void;
 
   // ─── Manuscript Format ─────────────────────────────────────────────────────
   updateManuscriptSettings: (patch: Partial<ManuscriptSettings>) => void;

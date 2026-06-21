@@ -33,6 +33,31 @@ body {
   margin: 0 0 0.75em;
 }
 
+/* Manuscript prose — driven by CSS custom properties set by EditorSettings */
+.manuscript-prose .ProseMirror {
+  font-family: var(--ms-font-family, 'Times New Roman, Times, serif');
+  font-size: var(--ms-font-size, 16px);
+  line-height: var(--ms-line-height, 2);
+  color: var(--ms-text-color, #e0e0e0);
+  max-width: var(--ms-page-width, 680px);
+  margin: 0 auto;
+  background: var(--ms-page-bg, transparent);
+  text-align: var(--ms-text-align, left) !important;
+}
+
+.manuscript-prose .ProseMirror p {
+  text-indent: var(--ms-first-line-indent, 0.5in);
+  margin-top: var(--ms-para-before, 0px);
+  margin-bottom: var(--ms-para-after, 0px);
+}
+
+/* First paragraph after a heading should not be indented */
+.manuscript-prose .ProseMirror h1 + p,
+.manuscript-prose .ProseMirror h2 + p,
+.manuscript-prose .ProseMirror h3 + p {
+  text-indent: 0;
+}
+
 .ProseMirror h1 { font-size: 2em; font-weight: 700; margin: 1em 0 0.5em; color: #fff; }
 .ProseMirror h2 { font-size: 1.5em; font-weight: 600; margin: 0.8em 0 0.4em; color: #fff; }
 .ProseMirror h3 { font-size: 1.25em; font-weight: 600; margin: 0.7em 0 0.3em; color: #fff; }

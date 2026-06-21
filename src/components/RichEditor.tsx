@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Highlight from '@tiptap/extension-highlight';
@@ -22,7 +22,25 @@ const TOOLBAR_BTNS = [
 ];
 
 export function RichEditor({ itemId, content, compositionMode }: EditorProps) {
-  const { updateItem, takeSnapshot } = useAppStore();
+  const { updateItem, takeSnapshot, editorSettings } = useAppStore();
+  const proseRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = proseRef.current;
+    if (!el) return;
+    const s = editorSettings;
+    const ptToPx = (pt: number) => `${(pt * 4) / 3}px`;
+    el.style.setProperty('--ms-font-family', s.fontFamily);
+    el.style.setProperty('--ms-font-size', ptToPx(s.fontSize));
+    el.style.setProperty('--ms-line-height', String(s.lineHeight));
+    el.style.setProperty('--ms-first-line-indent', `${s.firstLineIndent}in`);
+    el.style.setProperty('--ms-para-before', ptToPx(s.paragraphSpacingBefore));
+    el.style.setProperty('--ms-para-after', ptToPx(s.paragraphSpacingAfter));
+    el.style.setProperty('--ms-text-align', s.textAlign);
+    el.style.setProperty('--ms-page-width', `${s.pageWidth}px`);
+    el.style.setProperty('--ms-page-bg', s.pageBackground);
+    el.style.setProperty('--ms-text-color', s.textColor);
+  }, [editorSettings]);
 
   const editor = useEditor({
     extensions: [
@@ -247,7 +265,7 @@ export function RichEditor({ itemId, content, compositionMode }: EditorProps) {
       </div>
 
       {/* Editor area */}
-      <div className="flex-1 overflow-y-auto">
+      <div ref={proseRef} className="manuscript-prose flex-1 overflow-y-auto">
         <EditorContent editor={editor} className="h-full" />
       </div>
     </div>
