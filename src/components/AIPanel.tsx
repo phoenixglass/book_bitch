@@ -227,6 +227,7 @@ function useAIContext(): SelectedAIContext | null {
         codexType: c.codexType,
         aliases: c.aliases,
         role: c.role,
+        pronouns: c.pronouns,
         relationships: c.relationships,
         physicalDetails: c.physicalDetails,
         atmosphere: c.atmosphere,

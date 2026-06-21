@@ -245,6 +245,7 @@ export interface CodexEntry {
   // Character-specific
   role?: string;
   age?: string;
+  pronouns?: string;
   relationships?: string;
   physicalDetails?: string;
   voiceNotes?: string;

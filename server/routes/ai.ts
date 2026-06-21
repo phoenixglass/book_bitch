@@ -329,6 +329,7 @@ aiRouter.post('/codex-extract', async (req: Request, res: Response) => {
           description: '2-4 sentence description grounded in the text',
           aliases: ['alternative names found in text'],
           role: 'protagonist|antagonist|supporting|minor (character only)',
+          pronouns: 'Pronouns used for this character in the text, e.g. she/her (character only)',
           relationships: 'Key relationships mentioned (character only)',
           physicalDetails: 'Physical description from text (character only)',
           atmosphere: 'Mood and sensory details as described (place only)',

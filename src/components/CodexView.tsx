@@ -134,6 +134,7 @@ function CodexDetail({ entry, onClose }: { entry: CodexEntry; onClose: () => voi
               {[
                 ['role', 'Role', 'e.g. Protagonist, Antagonist'],
                 ['age', 'Age / DOB', ''],
+                ['pronouns', 'Pronouns', 'e.g. she/her, he/him, they/them'],
                 ['relationships', 'Relationships', 'Key relationships…'],
                 ['physicalDetails', 'Physical Details', ''],
               ].map(([field, label, placeholder]) => (
