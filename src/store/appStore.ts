@@ -28,6 +28,7 @@ import type {
   AIObjectType,
   AIResult,
   ManuscriptSettings,
+  EditorSettings,
 } from '../types';
 
 function makeId() {
@@ -231,6 +232,20 @@ export const useAppStore = create<AppState>()(
       aiPanelOpen: false,
       pendingAIResult: null as AIResult | null,
       aiContextObject: null as { type: AIObjectType; id: string } | null,
+
+      // ── Editor appearance settings ────────────────────────────────────────
+      editorSettings: {
+        fontFamily: 'Times New Roman, Times, serif',
+        fontSize: 12,
+        lineHeight: 2.0,
+        firstLineIndent: 0.5,
+        paragraphSpacingBefore: 0,
+        paragraphSpacingAfter: 0,
+        textAlign: 'left',
+        pageWidth: 680,
+        pageBackground: '#1a1a2e',
+        textColor: '#e0e0e0',
+      } as EditorSettings,
 
       // ── Manuscript format settings ────────────────────────────────────────
       manuscriptSettings: {
@@ -1325,6 +1340,12 @@ export const useAppStore = create<AppState>()(
 
       setAIContextObject: (obj) => {
         set({ aiContextObject: obj });
+      },
+
+      // ── Editor Appearance ─────────────────────────────────────────────────
+
+      updateEditorSettings: (patch) => {
+        set((s) => ({ editorSettings: { ...s.editorSettings, ...patch } }));
       },
 
       // ── Manuscript Format ─────────────────────────────────────────────────

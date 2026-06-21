@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { useAppStore, totalWordCount } from '../store/appStore';
+import { EditorSettingsDialog } from './EditorSettingsDialog';
 import type { ViewMode } from '../types';
 
 const MANUSCRIPT_MODES: { label: string; value: ViewMode; icon: string }[] = [
@@ -25,6 +27,7 @@ export function Toolbar() {
     aiPanelOpen, setAIPanelOpen,
   } = useAppStore();
 
+  const [formatOpen, setFormatOpen] = useState(false);
   const totalWords = totalWordCount(binder);
   const pct = projectTarget.wordTarget > 0
     ? Math.min(100, Math.round((totalWords / projectTarget.wordTarget) * 100))
@@ -33,6 +36,8 @@ export function Toolbar() {
   if (compositionMode) return null;
 
   return (
+    <>
+    {formatOpen && <EditorSettingsDialog onClose={() => setFormatOpen(false)} />}
     <div className="flex items-center gap-2 px-3 h-11 bg-[#16213e] border-b border-[#0f3460] shrink-0 select-none">
       {/* Project title */}
       <input
@@ -117,6 +122,17 @@ export function Toolbar() {
         ✦<span className="ml-1 hidden sm:inline">AI</span>
       </button>
 
+      {/* Format settings */}
+      {area === 'manuscript' && viewMode === 'editor' && (
+        <button
+          onClick={() => setFormatOpen(true)}
+          title="Paragraph & Font Settings"
+          className="px-2 py-1 rounded text-xs text-gray-400 hover:text-white hover:bg-[#2d3748] transition-colors"
+        >
+          Aa Format
+        </button>
+      )}
+
       {/* Composition mode */}
       {area === 'manuscript' && (
         <button
@@ -141,5 +157,6 @@ export function Toolbar() {
         </button>
       )}
     </div>
+    </>
   );
 }
