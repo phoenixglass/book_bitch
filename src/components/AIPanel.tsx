@@ -11,6 +11,7 @@ import type {
   AICodexSuggestOutput,
   AIExtractQuestionsOutput,
   AIRefineQuestionOutput,
+  AIPlotlineOutput,
   AIOutput,
   QuestionCategory,
   SelectedAIContext,
@@ -55,6 +56,7 @@ const ACTIONS_BY_TYPE: Record<AIObjectType, ActionDef[]> = {
     { value: 'summarize', label: 'Summarize Scene', desc: 'Produce a concise summary with key details' },
     { value: 'metadata', label: 'Generate Metadata', desc: 'Suggest synopsis, POV, location, tone, tags' },
     { value: 'tags', label: 'Suggest Tags', desc: 'Recommend tags for organisation' },
+    { value: 'plotline', label: 'Suggest Plotline', desc: 'Suggest which plotline or thread this scene belongs to' },
   ],
   fragment: [
     { value: 'questions', label: 'Ask Me Questions', desc: 'Generate craft questions about this fragment' },
@@ -1171,6 +1173,60 @@ function RefineQuestionResult({
   );
 }
 
+// ── Plotline Result ───────────────────────────────────────────────────────────
+
+function PlotlineResult({
+  output,
+  ctx,
+}: {
+  output: AIPlotlineOutput;
+  ctx: SelectedAIContext;
+}) {
+  const { updateItem, binder } = useAppStore();
+  const [applied, setApplied] = useState<string | null>(null);
+
+  function applyPlotline(name: string) {
+    const scene = findItem(binder, ctx.objectId);
+    updateItem(ctx.objectId, { sceneMetadata: { ...(scene?.sceneMetadata ?? {}), plotline: name } });
+    setApplied(name);
+  }
+
+  if (!output.suggestions || output.suggestions.length === 0) {
+    return <p className="text-xs text-gray-500 italic">No plotline suggestions generated.</p>;
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {output.truncated && (
+        <p className="text-[11px] text-amber-500">Content was truncated before analysis.</p>
+      )}
+      <p className="text-[10px] text-gray-500 uppercase tracking-wider">Plotline Suggestions</p>
+      {output.suggestions.map((s) => {
+        const isApplied = applied === s.name;
+        return (
+          <div key={s.name} className="flex flex-col gap-1 bg-[#1a1a3e] border border-[#0f3460] rounded p-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-purple-300 font-medium">{s.name}</span>
+              <button
+                onClick={() => applyPlotline(s.name)}
+                disabled={isApplied}
+                className={`shrink-0 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
+                  isApplied
+                    ? 'bg-green-900/30 text-green-400 cursor-default'
+                    : 'bg-purple-700 text-white hover:bg-purple-600'
+                }`}
+              >
+                {isApplied ? '✓ Applied' : 'Use This'}
+              </button>
+            </div>
+            <p className="text-[11px] text-gray-400 leading-relaxed">{s.reason}</p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Main AI Panel ─────────────────────────────────────────────────────────────
 
 export function AIPanel() {
@@ -1180,6 +1236,7 @@ export function AIPanel() {
     aiPanelOpen,
     setAIPanelOpen,
     projectTags,
+    binder,
   } = useAppStore();
 
   const ctx = useAIContext();
@@ -1259,6 +1316,18 @@ export function AIPanel() {
 
       if (action === 'tags') {
         body.allProjectTags = projectTags.map((t) => t.name);
+      }
+
+      if (action === 'plotline') {
+        const plotlines = new Set<string>();
+        const scanBinder = (items: typeof binder) => {
+          for (const item of items) {
+            if (item.sceneMetadata?.plotline?.trim()) plotlines.add(item.sceneMetadata.plotline.trim());
+            if (item.children) scanBinder(item.children);
+          }
+        };
+        scanBinder(binder);
+        body.allProjectPlotlines = [...plotlines];
       }
 
       if (action === 'codex-suggest') {
@@ -1614,6 +1683,9 @@ export function AIPanel() {
               )}
               {result.type === 'refine-question' && (
                 <RefineQuestionResult output={result as AIRefineQuestionOutput} ctx={ctx} />
+              )}
+              {result.type === 'plotline' && (
+                <PlotlineResult output={result as AIPlotlineOutput} ctx={ctx} />
               )}
             </div>
           )}
