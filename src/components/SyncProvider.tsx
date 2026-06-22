@@ -39,6 +39,10 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         const cloudData = await loadProjectFromCloud(currentUser.id);
         if (cloudData) {
           useAppStore.getState().importProjectFromCloud(cloudData);
+        } else {
+          // First login: no cloud data yet — push existing local state up
+          const state = useAppStore.getState();
+          await saveProjectToCloud(currentUser.id, getSerializableState(state));
         }
         isLoadingFromCloud.current = false;
       }
