@@ -464,7 +464,8 @@ export type AIActionType =
   | 'placement'
   | 'codex-suggest'
   | 'extract-questions'
-  | 'refine-question';
+  | 'refine-question'
+  | 'plotline';
 
 export interface AIQuestionSuggestion {
   text: string;
@@ -551,6 +552,12 @@ export interface AIRefineQuestionOutput {
   truncated?: boolean;
 }
 
+export interface AIPlotlineOutput {
+  type: 'plotline';
+  suggestions: Array<{ name: string; reason: string }>;
+  truncated?: boolean;
+}
+
 export type AIOutput =
   | AIQuestionsOutput
   | AISummarizeOutput
@@ -559,7 +566,8 @@ export type AIOutput =
   | AIPlacementOutput
   | AICodexSuggestOutput
   | AIExtractQuestionsOutput
-  | AIRefineQuestionOutput;
+  | AIRefineQuestionOutput
+  | AIPlotlineOutput;
 
 // ─── AI Context Model ─────────────────────────────────────────────────────────
 

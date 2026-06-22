@@ -608,6 +608,79 @@ aiRouter.post('/refine-question', async (req: Request, res: Response) => {
   }
 });
 
+// ── POST /api/ai/plotline ────────────────────────────────────────────────────
+
+aiRouter.post('/plotline', async (req: Request, res: Response) => {
+  const config = getAIConfig();
+  if (!config) {
+    res.status(503).json({ error: 'AI is not configured. Add an API key in environment settings.' });
+    return;
+  }
+
+  const {
+    title,
+    content,
+    allProjectPlotlines = [],
+    mode = 'metadata_assistance',
+    allowDrafting = false,
+  } = req.body as {
+    title?: string;
+    content?: string;
+    allProjectPlotlines?: string[];
+    mode?: string;
+    allowDrafting?: boolean;
+  };
+
+  if (!content) {
+    res.status(400).json({ error: 'No content provided.' });
+    return;
+  }
+
+  const plainText = stripHTML(content);
+  const { text: truncatedText, truncated } = truncate(plainText, 4000);
+  const preamble = modePreamble(mode, allowDrafting);
+
+  const existingList = allProjectPlotlines.length > 0
+    ? `Existing plotlines in this project: ${allProjectPlotlines.join(', ')}`
+    : 'No existing plotlines defined in this project yet.';
+
+  const systemPrompt = [
+    'You are a writing assistant helping a novelist identify which narrative thread or plotline a scene belongs to.',
+    preamble,
+    'Your task: suggest 1–3 plotline or narrative thread names for the provided scene.',
+    'Rules:',
+    '- Prefer existing project plotlines where relevant (exact name matches).',
+    '- If no existing plotline fits, suggest a concise new name (2–5 words).',
+    '- Each suggestion must include a brief reason grounded in the scene text.',
+    '- Do not invent details not in the text.',
+    existingList,
+    '',
+    'Return ONLY valid JSON in this exact structure:',
+    JSON.stringify({
+      suggestions: [
+        { name: 'Plotline or thread name', reason: 'One sentence grounding this in the scene text' },
+      ],
+    }),
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const userPrompt = [`Scene title: ${title ?? 'Untitled'}`, '', 'Scene text:', truncatedText].join('\n');
+
+  try {
+    const raw = await callAI(config, systemPrompt, userPrompt);
+    const parsed = extractJSON(raw) as { suggestions: Array<{ name: string; reason: string }> };
+    if (!parsed || !Array.isArray(parsed.suggestions)) {
+      res.status(502).json({ error: 'AI returned an unexpected format. Try again.' });
+      return;
+    }
+    res.json({ suggestions: parsed.suggestions, truncated });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(502).json({ error: `AI call failed: ${msg}` });
+  }
+});
+
 // ── POST /api/ai/tags ────────────────────────────────────────────────────────
 
 aiRouter.post('/tags', async (req: Request, res: Response) => {
