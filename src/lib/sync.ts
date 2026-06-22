@@ -7,15 +7,18 @@ export async function saveProjectToCloud(userId: string, data: object) {
   if (error) console.error('Cloud save failed:', error.message);
 }
 
-export async function loadProjectFromCloud(userId: string) {
+export async function loadProjectFromCloud(userId: string): Promise<{ data: object | null; notFound: boolean }> {
   const { data, error } = await supabase
     .from('projects')
     .select('data')
     .eq('id', userId)
     .single();
-  if (error && error.code !== 'PGRST116') {
+  if (error) {
+    if (error.code === 'PGRST116') {
+      return { data: null, notFound: true };
+    }
     console.error('Cloud load failed:', error.message);
-    return null;
+    throw new Error(error.message);
   }
-  return data?.data ?? null;
+  return { data: (data?.data as object | null) ?? null, notFound: false };
 }
