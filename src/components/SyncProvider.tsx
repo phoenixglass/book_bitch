@@ -24,33 +24,54 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isLoadingFromCloud = useRef(false);
+  const isSyncing = useRef(false);
+  const cloudLoaded = useRef(false);
+
+  async function loadForUser(u: User) {
+    if (isSyncing.current) return;
+    isSyncing.current = true;
+    try {
+      const cloudData = await loadProjectFromCloud(u.id);
+      if (cloudData) {
+        useAppStore.getState().importProjectFromCloud(cloudData);
+      } else {
+        // First ever login — upload existing local data
+        await saveProjectToCloud(u.id, getSerializableState(useAppStore.getState()));
+      }
+      cloudLoaded.current = true;
+    } finally {
+      isSyncing.current = false;
+    }
+  }
 
   useEffect(() => {
+    // Load data for any existing session on page load
     supabase.auth.getSession().then(({ data }) => {
-      setUser(data.session?.user ?? null);
+      const u = data.session?.user ?? null;
+      setUser(u);
+      if (u) loadForUser(u);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
 
-      if (currentUser) {
-        isLoadingFromCloud.current = true;
-        const cloudData = await loadProjectFromCloud(currentUser.id);
-        if (cloudData) {
-          useAppStore.getState().importProjectFromCloud(cloudData);
-        }
-        isLoadingFromCloud.current = false;
+    // Only react to actual sign-in / sign-out events, not token refreshes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN') {
+        const u = session?.user ?? null;
+        setUser(u);
+        if (u && !cloudLoaded.current) loadForUser(u);
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null);
+        cloudLoaded.current = false;
       }
     });
+
     return () => subscription.unsubscribe();
   }, []);
 
-  // Debounced save: whenever store changes and user is logged in, save after 2s of inactivity
+  // Debounced save on any store change
   useEffect(() => {
     if (!user) return;
     const unsub = useAppStore.subscribe((state) => {
-      if (isLoadingFromCloud.current) return;
+      if (isSyncing.current || !cloudLoaded.current) return;
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(async () => {
         setSyncStatus('saving');
