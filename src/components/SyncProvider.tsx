@@ -20,6 +20,19 @@ export function useSyncContext() {
   return useContext(SyncContext);
 }
 
+function waitForHydration(): Promise<void> {
+  return new Promise((resolve) => {
+    if (useAppStore.persist.hasHydrated()) {
+      resolve();
+    } else {
+      const unsub = useAppStore.persist.onFinishHydration(() => {
+        unsub();
+        resolve();
+      });
+    }
+  });
+}
+
 export function SyncProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -28,9 +41,11 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const cloudLoaded = useRef(false);
 
   async function loadForUser(u: User) {
-    if (isSyncing.current) return;
+    if (isSyncing.current || cloudLoaded.current) return;
     isSyncing.current = true;
     try {
+      // Wait for localStorage hydration to finish before we overwrite with cloud data
+      await waitForHydration();
       const cloudData = await loadProjectFromCloud(u.id);
       if (cloudData) {
         useAppStore.getState().importProjectFromCloud(cloudData);
@@ -45,19 +60,17 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
-    // Load data for any existing session on page load
     supabase.auth.getSession().then(({ data }) => {
       const u = data.session?.user ?? null;
       setUser(u);
       if (u) loadForUser(u);
     });
 
-    // Only react to actual sign-in / sign-out events, not token refreshes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN') {
         const u = session?.user ?? null;
         setUser(u);
-        if (u && !cloudLoaded.current) loadForUser(u);
+        if (u) loadForUser(u);
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
         cloudLoaded.current = false;
