@@ -46,13 +46,17 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     try {
       // Wait for localStorage hydration to finish before we overwrite with cloud data
       await waitForHydration();
-      const cloudData = await loadProjectFromCloud(u.id);
-      if (cloudData) {
-        useAppStore.getState().importProjectFromCloud(cloudData);
-      } else {
+      const result = await loadProjectFromCloud(u.id).catch((err) => {
+        console.error('Failed to load project from cloud — preserving current state:', err);
+        throw err;
+      });
+      if (result.data) {
+        useAppStore.getState().importProjectFromCloud(result.data);
+      } else if (result.notFound) {
         // First ever login — upload existing local data
         await saveProjectToCloud(u.id, getSerializableState(useAppStore.getState()));
       }
+      // On load error, loadProjectFromCloud throws, so we never reach here — data is preserved
       cloudLoaded.current = true;
     } finally {
       isSyncing.current = false;
