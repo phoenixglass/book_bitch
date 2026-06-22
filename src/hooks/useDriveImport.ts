@@ -658,5 +658,21 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     return text.replace(/[&<>"']/g, (m) => map[m]);
   }
 
-  return { isLoading, importFromDrive, resyncDriveFolder };
+  // ── Re-sync single document ───────────────────────────────────────────────
+
+  async function resyncDriveDoc(docId: string, driveFileId: string) {
+    try {
+      setIsLoading(true);
+      const html = await exportDocAsHtml(driveFileId);
+      const docData = await fetchDocData(driveFileId);
+      updateItem(docId, { title: docData.title || 'Untitled', content: html });
+    } catch (error) {
+      console.error('Re-sync doc failed:', error);
+      alert('Failed to re-sync document from Google Drive.');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  return { isLoading, importFromDrive, resyncDriveFolder, resyncDriveDoc };
 }

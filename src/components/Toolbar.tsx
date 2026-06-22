@@ -3,6 +3,7 @@ import { useAppStore, totalWordCount } from '../store/appStore';
 import { EditorSettingsDialog } from './EditorSettingsDialog';
 import { useSyncContext } from './SyncProvider';
 import type { ViewMode } from '../types';
+import type { MouseEvent } from 'react';
 
 const MANUSCRIPT_MODES: { label: string; value: ViewMode; icon: string }[] = [
   { label: 'Editor', value: 'editor', icon: '✏️' },
@@ -28,7 +29,7 @@ export function Toolbar() {
     aiPanelOpen, setAIPanelOpen,
   } = useAppStore();
 
-  const { user, syncStatus, signOut } = useSyncContext();
+  const { user, syncStatus, cloudError, signOut, forceReloadFromCloud } = useSyncContext();
   const [formatOpen, setFormatOpen] = useState(false);
   const totalWords = totalWordCount(binder);
   const pct = projectTarget.wordTarget > 0
@@ -149,9 +150,20 @@ export function Toolbar() {
       {/* Sync status + sign out */}
       {user && (
         <div className="flex items-center gap-2 text-xs">
-          {syncStatus === 'saving' && <span className="text-yellow-400">Saving…</span>}
-          {syncStatus === 'saved' && <span className="text-green-400">Saved</span>}
-          {syncStatus === 'error' && <span className="text-red-400">Sync error</span>}
+          {syncStatus === 'saving' && <span className="text-yellow-400 animate-pulse">↑ Saving…</span>}
+          {syncStatus === 'saved' && <span className="text-green-400">✓ Saved</span>}
+          {syncStatus === 'error' && (
+            <button
+              onClick={(e: MouseEvent) => {
+                e.preventDefault();
+                forceReloadFromCloud();
+              }}
+              title={`Sync error: ${cloudError ?? 'unknown'}. Click to retry.`}
+              className="text-red-400 hover:text-red-300 underline cursor-pointer"
+            >
+              ⚠ Sync error — retry
+            </button>
+          )}
           <button
             onClick={signOut}
             title={`Signed in as ${user.email}`}

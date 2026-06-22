@@ -47,9 +47,10 @@ interface BinderNodeProps {
   parentId: string | null;
   index: number;
   onResync?: (folderId: string, driveFileId: string) => void;
+  onResyncDoc?: (docId: string, driveFileId: string) => void;
 }
 
-function BinderNode({ item, depth, parentId, index, onResync }: BinderNodeProps) {
+function BinderNode({ item, depth, parentId, index, onResync, onResyncDoc }: BinderNodeProps) {
   const {
     selectedId,
     selectItem,
@@ -317,7 +318,7 @@ function BinderNode({ item, depth, parentId, index, onResync }: BinderNodeProps)
       {isFolder && item.expanded && (
         <div>
           {item.children.map((child, i) => (
-            <BinderNode key={child.id} item={child} depth={depth + 1} parentId={item.id} index={i} onResync={onResync} />
+            <BinderNode key={child.id} item={child} depth={depth + 1} parentId={item.id} index={i} onResync={onResync} onResyncDoc={onResyncDoc} />
           ))}
           {item.children.length === 0 && (
             <div
@@ -376,10 +377,21 @@ function BinderNode({ item, depth, parentId, index, onResync }: BinderNodeProps)
               </button>
             </>
           )}
-          {item.driveFileId && onResync && (
+          {item.driveFileId && isFolder && onResync && (
             <button
               onClick={() => {
                 onResync(item.id, item.driveFileId!);
+                setShowContextMenu(false);
+              }}
+              className="w-full text-left px-3 py-2 hover:bg-[#2b6cb0] hover:text-white transition-colors"
+            >
+              🔄 Re-sync from Drive
+            </button>
+          )}
+          {item.driveFileId && !isFolder && onResyncDoc && (
+            <button
+              onClick={() => {
+                onResyncDoc(item.id, item.driveFileId!);
                 setShowContextMenu(false);
               }}
               className="w-full text-left px-3 py-2 hover:bg-[#2b6cb0] hover:text-white transition-colors"
@@ -409,7 +421,7 @@ interface BinderPendingImport {
 
 export function Binder() {
   const { binder, importToManuscript } = useAppStore();
-  const { resyncDriveFolder } = useDriveImport();
+  const { resyncDriveFolder, resyncDriveDoc } = useDriveImport();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingImport, setPendingImport] = useState<BinderPendingImport | null>(null);
 
@@ -521,6 +533,7 @@ export function Binder() {
               parentId={null}
               index={i}
               onResync={resyncDriveFolder}
+              onResyncDoc={resyncDriveDoc}
             />
           ))}
         </div>
