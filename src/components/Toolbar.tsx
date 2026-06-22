@@ -126,7 +126,7 @@ export function Toolbar() {
       </button>
 
       {/* Format settings */}
-      {area === 'manuscript' && viewMode === 'editor' && (
+      {((area === 'manuscript' && viewMode === 'editor') || area === 'fragments' || area === 'omitted') && (
         <button
           onClick={() => setFormatOpen(true)}
           title="Paragraph & Font Settings"
