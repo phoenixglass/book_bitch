@@ -757,5 +757,6 @@ export interface AppState {
 
   // ─── Export / Backup ───────────────────────────────────────────────────────
   exportProjectBackup: () => void;
+  importProjectFromCloud: (data: Record<string, unknown>) => void;
   importProjectBackup: (json: string) => void;
 }

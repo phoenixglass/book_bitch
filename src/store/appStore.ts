@@ -1393,6 +1393,27 @@ export const useAppStore = create<AppState>()(
         });
       },
 
+      importProjectFromCloud: (data: Record<string, unknown>) => {
+        set({
+          projectTitle: (data.projectTitle as string) ?? 'My Project',
+          projectTarget: (data.projectTarget as ProjectTarget) ?? { wordTarget: 80000, deadlineDate: '' },
+          binder: (data.binder as BinderItem[]) ?? INITIAL_BINDER,
+          fragments: (data.fragments as Fragment[]) ?? [],
+          omittedMaterial: (data.omittedMaterial as OmittedMaterial[]) ?? [],
+          notebookEntries: (data.notebookEntries as NotebookEntry[]) ?? [],
+          codexEntries: (data.codexEntries as CodexEntry[]) ?? [],
+          questions: (data.questions as Question[]) ?? [],
+          moodboardItems: (data.moodboardItems as MoodboardItem[]) ?? [],
+          projectTags: (data.projectTags as Tag[]) ?? [],
+          links: (data.links as Link[]) ?? [],
+          history: (data.history as HistoryEvent[]) ?? [],
+          savedFilters: (data.savedFilters as SavedFilter[]) ?? [],
+          editorSettings: (data.editorSettings as EditorSettings) ?? undefined,
+          manuscriptSettings: (data.manuscriptSettings as ManuscriptSettings) ?? undefined,
+          selectedId: null,
+        });
+      },
+
       importProjectBackup: (json) => {
         try {
           const data = JSON.parse(json);

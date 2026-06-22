@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAppStore, totalWordCount } from '../store/appStore';
 import { EditorSettingsDialog } from './EditorSettingsDialog';
+import { useSyncContext } from './SyncProvider';
 import type { ViewMode } from '../types';
 
 const MANUSCRIPT_MODES: { label: string; value: ViewMode; icon: string }[] = [
@@ -27,6 +28,7 @@ export function Toolbar() {
     aiPanelOpen, setAIPanelOpen,
   } = useAppStore();
 
+  const { user, syncStatus, signOut } = useSyncContext();
   const [formatOpen, setFormatOpen] = useState(false);
   const totalWords = totalWordCount(binder);
   const pct = projectTarget.wordTarget > 0
@@ -142,6 +144,22 @@ export function Toolbar() {
         >
           ⛶ Focus
         </button>
+      )}
+
+      {/* Sync status + sign out */}
+      {user && (
+        <div className="flex items-center gap-2 text-xs">
+          {syncStatus === 'saving' && <span className="text-yellow-400">Saving…</span>}
+          {syncStatus === 'saved' && <span className="text-green-400">Saved</span>}
+          {syncStatus === 'error' && <span className="text-red-400">Sync error</span>}
+          <button
+            onClick={signOut}
+            title={`Signed in as ${user.email}`}
+            className="px-2 py-1 rounded text-gray-400 hover:text-white hover:bg-[#2d3748] transition-colors"
+          >
+            {user.email?.split('@')[0]} ↩
+          </button>
+        </div>
       )}
 
       {/* Inspector toggle */}
