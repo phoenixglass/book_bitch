@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, createContext, useContext } from 'react';
+import { useEffect, useRef, useState, createContext, useContext, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { saveProjectToCloud, loadProjectFromCloud } from '../lib/sync';
 import { useAppStore } from '../store/appStore';
@@ -7,13 +7,17 @@ import type { User } from '@supabase/supabase-js';
 interface SyncContextValue {
   user: User | null;
   syncStatus: 'idle' | 'saving' | 'saved' | 'error';
+  cloudError: string | null;
   signOut: () => void;
+  forceReloadFromCloud: () => Promise<void>;
 }
 
 const SyncContext = createContext<SyncContextValue>({
   user: null,
   syncStatus: 'idle',
+  cloudError: null,
   signOut: () => {},
+  forceReloadFromCloud: async () => {},
 });
 
 export function useSyncContext() {
@@ -36,6 +40,7 @@ function waitForHydration(): Promise<void> {
 export function SyncProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [cloudError, setCloudError] = useState<string | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isSyncing = useRef(false);
   const cloudLoaded = useRef(false);
@@ -43,25 +48,36 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   async function loadForUser(u: User) {
     if (isSyncing.current || cloudLoaded.current) return;
     isSyncing.current = true;
+    setSyncStatus('saving');
     try {
-      // Wait for localStorage hydration to finish before we overwrite with cloud data
       await waitForHydration();
-      const result = await loadProjectFromCloud(u.id).catch((err) => {
-        console.error('Failed to load project from cloud — preserving current state:', err);
-        throw err;
-      });
+      const result = await loadProjectFromCloud(u.id);
       if (result.data) {
         useAppStore.getState().importProjectFromCloud(result.data);
       } else if (result.notFound) {
         // First ever login — upload existing local data
         await saveProjectToCloud(u.id, getSerializableState(useAppStore.getState()));
       }
-      // On load error, loadProjectFromCloud throws, so we never reach here — data is preserved
       cloudLoaded.current = true;
+      setCloudError(null);
+      setSyncStatus('saved');
+      setTimeout(() => setSyncStatus('idle'), 2000);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('Failed to load project from cloud:', msg);
+      setCloudError(msg);
+      setSyncStatus('error');
+      // Keep local data intact — don't crash or overwrite
     } finally {
       isSyncing.current = false;
     }
   }
+
+  const forceReloadFromCloud = useCallback(async () => {
+    if (!user || isSyncing.current) return;
+    cloudLoaded.current = false;
+    await loadForUser(user);
+  }, [user]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -78,26 +94,34 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
         cloudLoaded.current = false;
+        setCloudError(null);
+        setSyncStatus('idle');
       }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  // Debounced save on any store change
+  // Debounced auto-save on any store change
   useEffect(() => {
     if (!user) return;
     const unsub = useAppStore.subscribe((state) => {
       if (isSyncing.current || !cloudLoaded.current) return;
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(async () => {
+        isSyncing.current = true;
         setSyncStatus('saving');
         try {
           await saveProjectToCloud(user.id, getSerializableState(state));
+          setCloudError(null);
           setSyncStatus('saved');
           setTimeout(() => setSyncStatus('idle'), 2000);
-        } catch {
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          setCloudError(msg);
           setSyncStatus('error');
+        } finally {
+          isSyncing.current = false;
         }
       }, 2000);
     });
@@ -107,7 +131,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const signOut = () => supabase.auth.signOut();
 
   return (
-    <SyncContext.Provider value={{ user, syncStatus, signOut }}>
+    <SyncContext.Provider value={{ user, syncStatus, cloudError, signOut, forceReloadFromCloud }}>
       {children}
     </SyncContext.Provider>
   );
