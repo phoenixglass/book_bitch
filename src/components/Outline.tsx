@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { useAppStore } from '../store/appStore';
-import type { BinderItem, Label, Status } from '../types';
+import type { BinderItem, Status } from '../types';
 
-const LABELS: Label[] = ['none', 'red', 'orange', 'yellow', 'green', 'blue', 'purple'];
 const STATUSES: Status[] = [
   'No Status',
   'To Do',
@@ -12,16 +11,6 @@ const STATUSES: Status[] = [
   'Final Draft',
   'Done',
 ];
-
-const LABEL_COLORS: Record<string, string> = {
-  none: 'transparent',
-  red: '#fc8181',
-  orange: '#f6ad55',
-  yellow: '#f6e05e',
-  green: '#68d391',
-  blue: '#63b3ed',
-  purple: '#b794f4',
-};
 
 const STATUS_COLORS: Record<string, string> = {
   'No Status': '#4a5568',
@@ -152,25 +141,6 @@ function OutlineRow({ item, depth, parentId, index }: RowProps) {
           />
         </td>
 
-        {/* Label */}
-        <td className="py-2 px-3 text-xs">
-          <select
-            value={item.label}
-            onChange={(e) =>
-              updateItem(item.id, { label: e.target.value as Label })
-            }
-            onClick={(e) => e.stopPropagation()}
-            className="bg-[#1a1a2e] text-xs rounded px-1 py-0.5 outline-none border border-[#2d3748]"
-            style={{ color: LABEL_COLORS[item.label] !== 'transparent' ? LABEL_COLORS[item.label] : '#9ca3af' }}
-          >
-            {LABELS.map((l) => (
-              <option key={l} value={l} style={{ color: LABEL_COLORS[l] !== 'transparent' ? LABEL_COLORS[l] : undefined }}>
-                {l}
-              </option>
-            ))}
-          </select>
-        </td>
-
         {/* Status */}
         <td className="py-2 px-3 text-xs">
           <select
@@ -238,9 +208,6 @@ export function Outline() {
             </th>
             <th className="py-2 px-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">
               Synopsis
-            </th>
-            <th className="py-2 px-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">
-              Label
             </th>
             <th className="py-2 px-3 text-left text-xs font-semibold text-gray-400 uppercase tracking-wider">
               Status
