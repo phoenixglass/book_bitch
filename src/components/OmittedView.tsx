@@ -45,10 +45,11 @@ function setDragData(
   e.dataTransfer.effectAllowed = 'move';
 }
 
-function getDragType(e: React.DragEvent): 'fragment' | 'scene' | 'omitted' | null {
+function getDragType(e: React.DragEvent): 'fragment' | 'scene' | 'omitted' | 'text' | null {
   if (e.dataTransfer.types.includes(`${BB_TYPE_KEY}-fragment`)) return 'fragment';
   if (e.dataTransfer.types.includes(`${BB_TYPE_KEY}-scene`)) return 'scene';
   if (e.dataTransfer.types.includes(`${BB_TYPE_KEY}-omitted`)) return 'omitted';
+  if (e.dataTransfer.types.includes(`${BB_TYPE_KEY}-text`)) return 'text';
   return null;
 }
 
@@ -538,13 +539,24 @@ export function OmittedView() {
       } else if (data.type === 'fragment') {
         const reason = prompt('Reason for omitting (optional):') ?? '';
         if (reason !== null) moveFragmentToOmitted(data.id, reason);
+      } else if (data.type === 'text') {
+        const reason = prompt('Reason for omitting (optional):') ?? '';
+        if (reason !== null) {
+          const text = (data as { type: string; content: string }).content || e.dataTransfer.getData('text/plain');
+          const id = addOmittedMaterial({
+            content: text,
+            title: text.slice(0, 50).replace(/<[^>]+>/g, ''),
+            reason: reason || 'Dragged from manuscript',
+          });
+          setSelectedId(id);
+        }
       }
 
       setDragOverId(null);
       setIsExternalDragOver(false);
       externalDragCounter.current = 0;
     },
-    [dragOverPos, reorderOmitted, sendSceneToOmitted, moveFragmentToOmitted],
+    [dragOverPos, reorderOmitted, sendSceneToOmitted, moveFragmentToOmitted, addOmittedMaterial],
   );
 
   function handleContainerDragEnter(e: React.DragEvent) {
@@ -584,6 +596,17 @@ export function OmittedView() {
     } else if (data.type === 'fragment') {
       const reason = prompt('Reason for omitting (optional):') ?? '';
       if (reason !== null) moveFragmentToOmitted(data.id, reason);
+    } else if (data.type === 'text') {
+      const reason = prompt('Reason for omitting (optional):') ?? '';
+      if (reason !== null) {
+        const text = (data as { type: string; content: string }).content || e.dataTransfer.getData('text/plain');
+        const id = addOmittedMaterial({
+          content: text,
+          title: text.slice(0, 50).replace(/<[^>]+>/g, ''),
+          reason: reason || 'Dragged from manuscript',
+        });
+        setSelectedId(id);
+      }
     }
   }
 

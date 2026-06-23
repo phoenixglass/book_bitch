@@ -15,6 +15,19 @@ interface EditorProps {
   compositionMode?: boolean;
 }
 
+const BB_ITEM_TYPE = 'application/x-bb-item';
+const BB_TYPE_KEY = 'text/x-bb-type';
+
+function setDragDataForText(
+  e: React.DragEvent,
+  text: string,
+) {
+  e.dataTransfer.setData(BB_ITEM_TYPE, JSON.stringify({ type: 'text', content: text }));
+  e.dataTransfer.setData(`${BB_TYPE_KEY}-text`, '1');
+  e.dataTransfer.setData('text/plain', text);
+  e.dataTransfer.effectAllowed = 'copy';
+}
+
 const TOOLBAR_BTNS = [
   { label: 'B', title: 'Bold', cmd: (e: ReturnType<typeof useEditor>) => e?.chain().focus().toggleBold().run(), active: (e: ReturnType<typeof useEditor>) => e?.isActive('bold') ?? false, style: 'font-bold' },
   { label: 'I', title: 'Italic', cmd: (e: ReturnType<typeof useEditor>) => e?.chain().focus().toggleItalic().run(), active: (e: ReturnType<typeof useEditor>) => e?.isActive('italic') ?? false, style: 'italic' },
@@ -73,6 +86,13 @@ export function RichEditor({ itemId, content, compositionMode }: EditorProps) {
   }, [itemId, content]);
 
   const wordCount = editor?.storage.characterCount?.words() ?? 0;
+
+  const handleEditorDragStart = (e: React.DragEvent) => {
+    const selectedText = editor?.view.state.selection.content().textContent ?? '';
+    if (selectedText.trim()) {
+      setDragDataForText(e, selectedText);
+    }
+  };
 
   return (
     <div
@@ -265,7 +285,7 @@ export function RichEditor({ itemId, content, compositionMode }: EditorProps) {
       </div>
 
       {/* Editor area */}
-      <div ref={proseRef} className="manuscript-prose flex-1 overflow-y-auto">
+      <div ref={proseRef} className="manuscript-prose flex-1 overflow-y-auto" onDragStart={handleEditorDragStart}>
         <EditorContent editor={editor} className="h-full" />
       </div>
     </div>
