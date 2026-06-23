@@ -12,6 +12,15 @@ const LABEL_COLORS: Record<string, string> = {
   none: '#4a5568', red: '#fc8181', orange: '#f6ad55', yellow: '#f6e05e',
   green: '#68d391', blue: '#63b3ed', purple: '#b794f4',
 };
+const STATUS_COLORS: Record<Status, string> = {
+  'No Status': '#4a5568',
+  'To Do': '#fc8181',
+  'In Progress': '#f6ad55',
+  'First Draft': '#f6e05e',
+  'Revised Draft': '#68d391',
+  'Final Draft': '#63b3ed',
+  'Done': '#b794f4',
+};
 
 type Tab = 'synopsis' | 'scene' | 'notes' | 'metadata' | 'snapshots';
 
@@ -339,10 +348,11 @@ export function Inspector() {
                   <select
                     value={item.status}
                     onChange={(e) => updateItem(item.id, { status: e.target.value as Status })}
-                    className="w-full bg-[#1a1a2e] border border-[#2d3748] rounded px-2 py-1 text-sm text-gray-300 outline-none focus:border-[#6b46c1]"
+                    className="w-full bg-[#1a1a2e] border border-[#2d3748] rounded px-2 py-1 text-sm outline-none focus:border-[#6b46c1]"
+                    style={{ color: STATUS_COLORS[item.status] }}
                   >
                     {STATUSES.map((s) => (
-                      <option key={s} value={s}>{s}</option>
+                      <option key={s} value={s} style={{ color: STATUS_COLORS[s] }}>● {s}</option>
                     ))}
                   </select>
                 </div>
