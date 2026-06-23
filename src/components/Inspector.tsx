@@ -1,17 +1,12 @@
 import { useState } from 'react';
 import { useAppStore, findItem } from '../store/appStore';
 import { TagInput } from './TagInput';
-import type { BinderItem, Label, Status, SceneMetadata } from '../types';
+import type { BinderItem, Status, SceneMetadata } from '../types';
 
-const LABELS: Label[] = ['none', 'red', 'orange', 'yellow', 'green', 'blue', 'purple'];
 const STATUSES: Status[] = [
   'No Status', 'To Do', 'In Progress', 'First Draft',
   'Revised Draft', 'Final Draft', 'Done',
 ];
-const LABEL_COLORS: Record<string, string> = {
-  none: '#4a5568', red: '#fc8181', orange: '#f6ad55', yellow: '#f6e05e',
-  green: '#68d391', blue: '#63b3ed', purple: '#b794f4',
-};
 const STATUS_COLORS: Record<Status, string> = {
   'No Status': '#4a5568',
   'To Do': '#fc8181',
@@ -327,22 +322,6 @@ export function Inspector() {
 
             {tab === 'metadata' && (
               <div className="flex flex-col gap-3">
-                <div>
-                  <label className="text-xs text-gray-500 block mb-1">Label</label>
-                  <select
-                    value={item.label}
-                    onChange={(e) => updateItem(item.id, { label: e.target.value as Label })}
-                    className="w-full bg-[#1a1a2e] border border-[#2d3748] rounded px-2 py-1 text-sm outline-none focus:border-[#6b46c1]"
-                    style={{ color: LABEL_COLORS[item.label] }}
-                  >
-                    {LABELS.map((l) => (
-                      <option key={l} value={l} style={{ color: LABEL_COLORS[l] }}>
-                        ● {l}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
                 <div>
                   <label className="text-xs text-gray-500 block mb-1">Status</label>
                   <select

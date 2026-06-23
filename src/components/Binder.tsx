@@ -7,14 +7,14 @@ import { parseFile } from '../utils/documentParser';
 import type { ParsedItem, SplitLevel } from '../utils/documentParser';
 import type { BinderItem, ImportSourceMeta } from '../types';
 
-const LABEL_COLORS: Record<string, string> = {
-  none: 'transparent',
-  red: '#fc8181',
-  orange: '#f6ad55',
-  yellow: '#f6e05e',
-  green: '#68d391',
-  blue: '#63b3ed',
-  purple: '#b794f4',
+const STATUS_COLORS: Record<string, string> = {
+  'No Status': 'transparent',
+  'To Do': '#fc8181',
+  'In Progress': '#f6ad55',
+  'First Draft': '#f6e05e',
+  'Revised Draft': '#68d391',
+  'Final Draft': '#63b3ed',
+  'Done': '#b794f4',
 };
 
 function collectLeafDocs(item: BinderItem): BinderItem[] {
@@ -270,11 +270,11 @@ function BinderNode({ item, depth, parentId, index, onResync, onResyncDoc }: Bin
           {item.driveFileId && <span title="Linked to Google Drive">☁️</span>}
         </span>
 
-        {/* Label dot */}
-        {item.label !== 'none' && (
+        {/* Status dot */}
+        {item.status !== 'No Status' && (
           <span
             className="w-2 h-2 rounded-full shrink-0"
-            style={{ background: LABEL_COLORS[item.label] }}
+            style={{ background: STATUS_COLORS[item.status] }}
           />
         )}
 
