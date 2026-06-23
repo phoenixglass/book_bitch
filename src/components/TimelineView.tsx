@@ -39,18 +39,36 @@ export function TimelineView() {
   }, [allScenes, filterPov, filterPlotline, filterLocation, filterStatus]);
 
   const sorted = useMemo(() => {
+    function parseDateSortKey(dateStr: string | undefined): number {
+      if (!dateStr) return Number.MAX_SAFE_INTEGER;
+      const parts = dateStr.split('/');
+      if (parts.length === 3) {
+        // M/D/YYYY
+        const year = parseInt(parts[2], 10);
+        const month = parseInt(parts[0], 10);
+        const day = parseInt(parts[1], 10);
+        return year * 10000 + month * 100 + day;
+      } else if (parts.length === 2) {
+        // M/YYYY
+        const year = parseInt(parts[1], 10);
+        const month = parseInt(parts[0], 10);
+        return year * 10000 + month * 100;
+      }
+      return Number.MAX_SAFE_INTEGER;
+    }
+
     return [...filtered].sort((a, b) => {
       if (order === 'manuscript') {
         const ma = a.sceneMetadata?.manuscriptOrder ?? 9999;
         const mb = b.sceneMetadata?.manuscriptOrder ?? 9999;
         return ma - mb;
       } else {
+        const da = parseDateSortKey(a.sceneMetadata?.timelineDateStart);
+        const db = parseDateSortKey(b.sceneMetadata?.timelineDateStart);
+        if (da !== db) return da - db;
         const ca = a.sceneMetadata?.chronologicalOrder ?? 9999;
         const cb = b.sceneMetadata?.chronologicalOrder ?? 9999;
-        if (ca !== cb) return ca - cb;
-        const da = a.sceneMetadata?.timelineDateStart ?? 'zzz';
-        const db = b.sceneMetadata?.timelineDateStart ?? 'zzz';
-        return da.localeCompare(db);
+        return ca - cb;
       }
     });
   }, [filtered, order]);
