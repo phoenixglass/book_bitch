@@ -278,6 +278,92 @@ aiRouter.post('/metadata', async (req: Request, res: Response) => {
 
 // ── POST /api/ai/codex-extract ───────────────────────────────────────────────
 
+const CODEX_EXTRACT_SYSTEM = [
+  'You are a writing assistant helping a novelist build a world-bible (Codex) from their manuscript.',
+  'DO NOT DRAFT PROSE: Your output is analytical only.',
+  'Your task: extract and identify all significant named entities from the provided manuscript scenes.',
+  'Rules:',
+  '- Extract only entities that are clearly named and appear meaningfully in the text.',
+  '- Do NOT invent details not stated in the text.',
+  '- Deduplicate: if the same entity appears in multiple scenes, create ONE entry.',
+  '- Descriptions should be factual, present-tense, 2–4 sentences.',
+  '- Only include type-specific fields when there is actual evidence in the text.',
+  '',
+  'Entity types:',
+  '- character: Named people (protagonists, antagonists, supporting, minor)',
+  '- place: Named locations, settings, rooms, cities, regions',
+  '- object: Significant named physical objects with story relevance',
+  '- motif: Recurring symbols, images, or patterns across the text',
+  '- institution: Organizations, groups, companies, governments, religions',
+  '- event: Named past or future events referenced but not shown',
+  '- theme: Strongly present thematic concerns',
+  '',
+  'Return ONLY valid JSON in this exact structure:',
+  JSON.stringify({
+    entries: [
+      {
+        name: 'Entity name',
+        codexType: 'character',
+        description: '2-4 sentence description grounded in the text',
+        aliases: ['alternative names found in text'],
+        role: 'protagonist|antagonist|supporting|minor (character only)',
+        pronouns: 'Pronouns used for this character in the text, e.g. she/her (character only)',
+        relationships: 'Key relationships mentioned (character only)',
+        physicalDetails: 'Physical description from text (character only)',
+        atmosphere: 'Mood and sensory details as described (place only)',
+        meaning: 'Symbolic meaning or narrative function (motif/object only)',
+        appearances: 'Where and how it appears in the text (motif/object only)',
+      },
+    ],
+  }),
+].join('\n');
+
+const CHUNK_SIZE = 20000;
+
+function chunkScenes(scenes: Array<{ id: string; title: string; text: string }>): string[] {
+  const chunks: string[] = [];
+  let current = '';
+  for (const scene of scenes) {
+    const block = `=== ${scene.title} ===\n${scene.text}`;
+    if (current.length > 0 && current.length + block.length + 2 > CHUNK_SIZE) {
+      chunks.push(current);
+      current = block;
+    } else {
+      current = current.length > 0 ? current + '\n\n' + block : block;
+    }
+    // If a single scene exceeds the chunk size, hard-truncate it
+    if (current.length > CHUNK_SIZE) {
+      current = current.slice(0, CHUNK_SIZE);
+    }
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks;
+}
+
+interface RawEntry {
+  name?: string;
+  codexType?: string;
+  [key: string]: unknown;
+}
+
+function mergeEntries(allEntries: RawEntry[]): RawEntry[] {
+  const seen = new Map<string, RawEntry>();
+  for (const entry of allEntries) {
+    if (!entry.name || !entry.codexType) continue;
+    const key = `${entry.codexType}::${String(entry.name).toLowerCase().trim()}`;
+    if (!seen.has(key)) {
+      seen.set(key, entry);
+    } else {
+      // Merge: keep existing but fill in any missing fields from the later chunk
+      const existing = seen.get(key)!;
+      for (const [k, v] of Object.entries(entry)) {
+        if (v && !existing[k]) existing[k] = v;
+      }
+    }
+  }
+  return Array.from(seen.values());
+}
+
 aiRouter.post('/codex-extract', async (req: Request, res: Response) => {
   const config = getAIConfig();
   if (!config) {
@@ -294,67 +380,25 @@ aiRouter.post('/codex-extract', async (req: Request, res: Response) => {
     return;
   }
 
-  const combinedText = scenes
-    .map((s) => `=== ${s.title} ===\n${s.text}`)
-    .join('\n\n');
-
-  const { text: truncatedText, truncated } = truncate(combinedText, 20000);
-
-  const systemPrompt = [
-    'You are a writing assistant helping a novelist build a world-bible (Codex) from their manuscript.',
-    'DO NOT DRAFT PROSE: Your output is analytical only.',
-    'Your task: extract and identify all significant named entities from the provided manuscript scenes.',
-    'Rules:',
-    '- Extract only entities that are clearly named and appear meaningfully in the text.',
-    '- Do NOT invent details not stated in the text.',
-    '- Deduplicate: if the same entity appears in multiple scenes, create ONE entry.',
-    '- Descriptions should be factual, present-tense, 2–4 sentences.',
-    '- Only include type-specific fields when there is actual evidence in the text.',
-    '',
-    'Entity types:',
-    '- character: Named people (protagonists, antagonists, supporting, minor)',
-    '- place: Named locations, settings, rooms, cities, regions',
-    '- object: Significant named physical objects with story relevance',
-    '- motif: Recurring symbols, images, or patterns across the text',
-    '- institution: Organizations, groups, companies, governments, religions',
-    '- event: Named past or future events referenced but not shown',
-    '- theme: Strongly present thematic concerns',
-    '',
-    'Return ONLY valid JSON in this exact structure:',
-    JSON.stringify({
-      entries: [
-        {
-          name: 'Entity name',
-          codexType: 'character',
-          description: '2-4 sentence description grounded in the text',
-          aliases: ['alternative names found in text'],
-          role: 'protagonist|antagonist|supporting|minor (character only)',
-          pronouns: 'Pronouns used for this character in the text, e.g. she/her (character only)',
-          relationships: 'Key relationships mentioned (character only)',
-          physicalDetails: 'Physical description from text (character only)',
-          atmosphere: 'Mood and sensory details as described (place only)',
-          meaning: 'Symbolic meaning or narrative function (motif/object only)',
-          appearances: 'Where and how it appears in the text (motif/object only)',
-        },
-      ],
-    }),
-  ].join('\n');
-
-  const userPrompt = [
-    `Manuscript: ${scenes.length} scene(s). Extract all significant named entities.`,
-    '',
-    truncatedText,
-    truncated ? '\n[Content truncated — manuscript was too long for a single pass]' : '',
-  ].join('\n');
+  const chunks = chunkScenes(scenes);
 
   try {
-    const raw = await callAI(config, systemPrompt, userPrompt, 4096);
-    const parsed = extractJSON(raw) as { entries: unknown[] };
-    if (!parsed || !Array.isArray(parsed.entries)) {
-      res.status(502).json({ error: 'AI returned an unexpected format. Try again.' });
-      return;
-    }
-    res.json({ entries: parsed.entries, truncated });
+    const chunkResults = await Promise.all(
+      chunks.map((chunkText, i) => {
+        const userPrompt = [
+          `Manuscript chunk ${i + 1} of ${chunks.length}. Extract all significant named entities.`,
+          '',
+          chunkText,
+        ].join('\n');
+        return callAI(config, CODEX_EXTRACT_SYSTEM, userPrompt, 4096).then((raw) => {
+          const parsed = extractJSON(raw) as { entries: RawEntry[] };
+          return Array.isArray(parsed?.entries) ? parsed.entries : [];
+        });
+      }),
+    );
+
+    const merged = mergeEntries(chunkResults.flat());
+    res.json({ entries: merged, truncated: false });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(502).json({ error: `AI call failed: ${msg}` });

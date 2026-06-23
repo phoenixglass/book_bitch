@@ -470,6 +470,7 @@ export function CodexView() {
             <button onClick={() => { setScanResults(null); setScanSelected([]); }} className="text-gray-500 hover:text-gray-300 text-xs">← Back</button>
             <span className="text-sm font-semibold text-white flex-1">
               Extracted {scanResults.length} {scanResults.length === 1 ? 'entity' : 'entities'} from manuscript
+              {filterType && <span className="text-gray-500 font-normal"> · showing {TYPE_LABELS[filterType as CodexType]} only</span>}
             </span>
             {scanTruncated && (
               <span className="text-xs text-yellow-500" title="Manuscript was too long — only the first portion was scanned">⚠ Partial scan</span>
@@ -483,21 +484,24 @@ export function CodexView() {
             </button>
           </div>
           <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
-            {scanResults.length === 0 && (
-              <p className="text-sm text-gray-500 text-center mt-8">No entities found. Try adding more content to your manuscript.</p>
+            {scanResults.filter(e => !filterType || e.codexType === filterType).length === 0 && (
+              <p className="text-sm text-gray-500 text-center mt-8">
+                {filterType ? `No ${TYPE_LABELS[filterType as CodexType]} entities found in manuscript.` : 'No entities found. Try adding more content to your manuscript.'}
+              </p>
             )}
             <div className="flex items-center gap-2 mb-1">
               <button
-                onClick={() => setScanSelected(scanResults.map(() => true))}
+                onClick={() => setScanSelected(scanResults.map((e, i) => !filterType || e.codexType === filterType ? true : scanSelected[i]))}
                 className="text-xs text-gray-500 hover:text-gray-300"
               >Select all</button>
               <span className="text-gray-700">·</span>
               <button
-                onClick={() => setScanSelected(scanResults.map(() => false))}
+                onClick={() => setScanSelected(scanResults.map((e, i) => !filterType || e.codexType === filterType ? false : scanSelected[i]))}
                 className="text-xs text-gray-500 hover:text-gray-300"
               >Deselect all</button>
             </div>
             {scanResults.map((entry, i) => {
+              if (filterType && entry.codexType !== filterType) return null;
               const isDuplicate = existingNames.has(entry.name.toLowerCase());
               return (
                 <label
