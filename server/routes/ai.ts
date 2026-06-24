@@ -749,7 +749,8 @@ aiRouter.post('/plotline', async (req: Request, res: Response) => {
     'Return ONLY valid JSON in this exact structure:',
     JSON.stringify({
       suggestions: [
-        { name: 'Plotline or thread name', reason: 'One sentence grounding this in the scene text' },
+        { name: 'First plotline or thread name', reason: 'One sentence grounding this in the scene text' },
+        { name: 'Second plotline or thread name', reason: 'One sentence grounding this in the scene text' },
       ],
     }),
   ]
