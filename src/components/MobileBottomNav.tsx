@@ -18,7 +18,7 @@ const MORE_NAV: { area: AppArea; icon: string; label: string }[] = [
 ];
 
 export function MobileBottomNav() {
-  const { area, setArea, setSearchOpen, questions, fragments, omittedMaterial } = useAppStore();
+  const { area, setArea, setSearchOpen, questions, fragments } = useAppStore();
   const [showMore, setShowMore] = useState(false);
 
   const openQuestionCount = questions.filter((q) => q.questionStatus === 'open').length;
