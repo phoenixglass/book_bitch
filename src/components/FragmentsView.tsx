@@ -624,7 +624,7 @@ export function FragmentsView() {
         moveOmittedToFragments(data.id);
       } else if (data.type === 'text') {
         // Create a new fragment from the dragged text
-        const text = (data as { type: string; content: string }).content || e.dataTransfer.getData('text/plain');
+        const text = e.dataTransfer.getData('text/plain');
         const id = addFragment({
           content: text,
           title: text.slice(0, 50).replace(/<[^>]+>/g, ''),
@@ -677,7 +677,7 @@ export function FragmentsView() {
       moveOmittedToFragments(data.id);
     } else if (data.type === 'text') {
       // Create a new fragment from the dragged text
-      const text = (data as { type: string; content: string }).content || e.dataTransfer.getData('text/plain');
+      const text = e.dataTransfer.getData('text/plain');
       const id = addFragment({
         content: text,
         title: text.slice(0, 50).replace(/<[^>]+>/g, ''),

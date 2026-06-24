@@ -542,7 +542,7 @@ export function OmittedView() {
       } else if (data.type === 'text') {
         const reason = prompt('Reason for omitting (optional):') ?? '';
         if (reason !== null) {
-          const text = (data as { type: string; content: string }).content || e.dataTransfer.getData('text/plain');
+          const text = e.dataTransfer.getData('text/plain');
           const id = addOmittedMaterial({
             content: text,
             title: text.slice(0, 50).replace(/<[^>]+>/g, ''),
@@ -599,7 +599,7 @@ export function OmittedView() {
     } else if (data.type === 'text') {
       const reason = prompt('Reason for omitting (optional):') ?? '';
       if (reason !== null) {
-        const text = (data as { type: string; content: string }).content || e.dataTransfer.getData('text/plain');
+        const text = e.dataTransfer.getData('text/plain');
         const id = addOmittedMaterial({
           content: text,
           title: text.slice(0, 50).replace(/<[^>]+>/g, ''),
