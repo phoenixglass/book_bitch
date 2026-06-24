@@ -711,12 +711,16 @@ aiRouter.post('/plotline', async (req: Request, res: Response) => {
   const {
     title,
     content,
+    notes = '',
+    sceneMetadata = {},
     allProjectPlotlines = [],
     mode = 'metadata_assistance',
     allowDrafting = false,
   } = req.body as {
     title?: string;
     content?: string;
+    notes?: string;
+    sceneMetadata?: Record<string, unknown>;
     allProjectPlotlines?: string[];
     mode?: string;
     allowDrafting?: boolean;
@@ -728,7 +732,7 @@ aiRouter.post('/plotline', async (req: Request, res: Response) => {
   }
 
   const plainText = stripHTML(content);
-  const { text: truncatedText, truncated } = truncate(plainText, 4000);
+  const { text: truncatedText, truncated } = truncate(plainText);
   const preamble = modePreamble(mode, allowDrafting);
 
   const existingList = allProjectPlotlines.length > 0
@@ -738,12 +742,13 @@ aiRouter.post('/plotline', async (req: Request, res: Response) => {
   const systemPrompt = [
     'You are a writing assistant helping a novelist identify which narrative thread or plotline a scene belongs to.',
     preamble,
-    'Your task: suggest 1–3 plotline or narrative thread names for the provided scene.',
+    'Your task: suggest 2–3 plotline or narrative thread names for the provided scene.',
     'Rules:',
     '- Prefer existing project plotlines where relevant (exact name matches).',
     '- If no existing plotline fits, suggest a concise new name (2–5 words).',
     '- Each suggestion must include a brief reason grounded in the scene text.',
-    '- Do not invent details not in the text.',
+    '- Do not invent details not present in the text or metadata.',
+    '- Always use provided metadata (location, characters, POV) — do not override it with assumptions.',
     existingList,
     '',
     'Return ONLY valid JSON in this exact structure:',
@@ -751,13 +756,32 @@ aiRouter.post('/plotline', async (req: Request, res: Response) => {
       suggestions: [
         { name: 'First plotline or thread name', reason: 'One sentence grounding this in the scene text' },
         { name: 'Second plotline or thread name', reason: 'One sentence grounding this in the scene text' },
+        { name: 'Third plotline or thread name (optional)', reason: 'One sentence grounding this in the scene text' },
       ],
     }),
   ]
     .filter(Boolean)
     .join('\n');
 
-  const userPrompt = [`Scene title: ${title ?? 'Untitled'}`, '', 'Scene text:', truncatedText].join('\n');
+  const metaLines: string[] = [];
+  if (sceneMetadata.location) metaLines.push(`Location: ${sceneMetadata.location}`);
+  if (sceneMetadata.povCharacter) metaLines.push(`POV character: ${sceneMetadata.povCharacter}`);
+  if (Array.isArray(sceneMetadata.charactersPresent) && (sceneMetadata.charactersPresent as string[]).length > 0) {
+    metaLines.push(`Characters present: ${(sceneMetadata.charactersPresent as string[]).join(', ')}`);
+  }
+  if (Array.isArray(sceneMetadata.themes) && (sceneMetadata.themes as string[]).length > 0) {
+    metaLines.push(`Themes: ${(sceneMetadata.themes as string[]).join(', ')}`);
+  }
+  if (sceneMetadata.synopsis) metaLines.push(`Synopsis: ${sceneMetadata.synopsis}`);
+
+  const userPrompt = [
+    `Scene title: ${title ?? 'Untitled'}`,
+    metaLines.length > 0 ? `\nScene metadata:\n${metaLines.join('\n')}` : '',
+    notes ? `\nAuthor notes:\n${stripHTML(notes)}` : '',
+    '',
+    'Scene text:',
+    truncatedText,
+  ].filter(s => s !== undefined).join('\n');
 
   try {
     const raw = await callAI(config, systemPrompt, userPrompt);
