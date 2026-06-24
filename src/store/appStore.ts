@@ -267,6 +267,8 @@ export const useAppStore = create<AppState>()(
         queryLetterContent: '',
       } as ManuscriptSettings,
 
+      localLastModified: new Date().toISOString(),
+
       // ── Existing actions ─────────────────────────────────────────────────
 
       setProjectTitle: (title) => set({ projectTitle: title }),
@@ -1393,7 +1395,7 @@ export const useAppStore = create<AppState>()(
         });
       },
 
-      importProjectFromCloud: (data: Record<string, unknown>) => {
+      importProjectFromCloud: (data: Record<string, unknown>, cloudTimestamp?: string) => {
         set({
           projectTitle: (data.projectTitle as string) ?? 'My Project',
           projectTarget: (data.projectTarget as ProjectTarget) ?? { wordTarget: 80000, deadlineDate: '' },
@@ -1410,6 +1412,7 @@ export const useAppStore = create<AppState>()(
           savedFilters: (data.savedFilters as SavedFilter[]) ?? [],
           editorSettings: (data.editorSettings as EditorSettings) ?? undefined,
           manuscriptSettings: (data.manuscriptSettings as ManuscriptSettings) ?? undefined,
+          localLastModified: cloudTimestamp ?? new Date().toISOString(),
           selectedId: null,
         });
       },

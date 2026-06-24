@@ -654,6 +654,9 @@ export interface AppState {
   // Manuscript format settings
   manuscriptSettings: ManuscriptSettings;
 
+  // Last time local data was modified (ISO string), used for cloud sync conflict resolution
+  localLastModified: string;
+
   // ─── Existing actions ──────────────────────────────────────────────────────
   setProjectTitle: (title: string) => void;
   addItem: (parentId: string | null, type: 'folder' | 'document') => void;
@@ -765,6 +768,6 @@ export interface AppState {
 
   // ─── Export / Backup ───────────────────────────────────────────────────────
   exportProjectBackup: () => void;
-  importProjectFromCloud: (data: Record<string, unknown>) => void;
+  importProjectFromCloud: (data: Record<string, unknown>, cloudTimestamp?: string) => void;
   importProjectBackup: (json: string) => void;
 }
