@@ -16,6 +16,13 @@ const NAV_ITEMS: { area: AppArea; icon: string; label: string }[] = [
   { area: 'history', icon: '🕰️', label: 'History' },
 ];
 
+// Which drag types each nav area accepts as a drop target
+const NAV_DROP_ACCEPTS: Partial<Record<AppArea, string[]>> = {
+  manuscript: ['fragment', 'omitted'],
+  fragments: ['scene', 'omitted'],
+  omitted: ['scene', 'fragment'],
+};
+
 function parseDragData(e: React.DragEvent): { type: string; id: string } | null {
   try {
     const raw = e.dataTransfer.getData(BB_ITEM_TYPE);
@@ -43,9 +50,16 @@ export function SideNav() {
     trashFragment,
     trashOmitted,
     removeItem,
+    sendSceneToFragments,
+    sendSceneToOmitted,
+    moveFragmentToManuscript,
+    moveFragmentToOmitted,
+    moveOmittedToManuscript,
+    moveOmittedToFragments,
   } = useAppStore();
 
   const [trashDragOver, setTrashDragOver] = useState(false);
+  const [dragOverArea, setDragOverArea] = useState<AppArea | null>(null);
 
   const openQuestionCount = questions.filter((q) => q.questionStatus === 'open').length;
   const unsortedFragmentCount = fragments.filter(
@@ -90,32 +104,99 @@ export function SideNav() {
     }
   }
 
+  function handleNavDragEnter(e: React.DragEvent, navArea: AppArea) {
+    const accepted = NAV_DROP_ACCEPTS[navArea];
+    if (!accepted) return;
+    const type = getDragTypeFromEvent(e);
+    if (type && accepted.includes(type)) {
+      e.preventDefault();
+      setDragOverArea(navArea);
+    }
+  }
+
+  function handleNavDragOver(e: React.DragEvent, navArea: AppArea) {
+    const accepted = NAV_DROP_ACCEPTS[navArea];
+    if (!accepted) return;
+    const type = getDragTypeFromEvent(e);
+    if (type && accepted.includes(type)) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    }
+  }
+
+  function handleNavDragLeave() {
+    setDragOverArea(null);
+  }
+
+  function handleNavDrop(e: React.DragEvent, navArea: AppArea) {
+    e.preventDefault();
+    setDragOverArea(null);
+    const data = parseDragData(e);
+    if (!data) return;
+
+    if (navArea === 'fragments') {
+      if (data.type === 'scene') {
+        sendSceneToFragments(data.id);
+        setArea('fragments');
+      } else if (data.type === 'omitted') {
+        moveOmittedToFragments(data.id);
+        setArea('fragments');
+      }
+    } else if (navArea === 'omitted') {
+      if (data.type === 'scene') {
+        sendSceneToOmitted(data.id, '');
+        setArea('omitted');
+      } else if (data.type === 'fragment') {
+        moveFragmentToOmitted(data.id, '');
+        setArea('omitted');
+      }
+    } else if (navArea === 'manuscript') {
+      if (data.type === 'fragment') {
+        moveFragmentToManuscript(data.id, 'manuscript');
+        setArea('manuscript');
+      } else if (data.type === 'omitted') {
+        moveOmittedToManuscript(data.id, 'manuscript');
+        setArea('manuscript');
+      }
+    }
+  }
+
   return (
     <div className="w-14 shrink-0 bg-[#0d1117] border-r border-[#0f3460] flex flex-col items-center py-2 gap-1 select-none overflow-y-auto">
-      {NAV_ITEMS.map((item) => (
-        <button
-          key={item.area}
-          title={item.label}
-          onClick={() => setArea(item.area)}
-          className={`relative w-10 h-10 rounded-lg flex items-center justify-center text-xl transition-colors ${
-            area === item.area
-              ? 'bg-[#6b46c1] text-white'
-              : 'text-gray-500 hover:text-gray-200 hover:bg-[#2d3748]'
-          }`}
-        >
-          {item.icon}
-          {item.area === 'questions' && openQuestionCount > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 bg-amber-500 text-black text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
-              {openQuestionCount > 9 ? '9+' : openQuestionCount}
-            </span>
-          )}
-          {item.area === 'fragments' && unsortedFragmentCount > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 bg-blue-500 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
-              {unsortedFragmentCount > 9 ? '9+' : unsortedFragmentCount}
-            </span>
-          )}
-        </button>
-      ))}
+      {NAV_ITEMS.map((navItem) => {
+        const isDropTarget = !!NAV_DROP_ACCEPTS[navItem.area];
+        const isDragOver = dragOverArea === navItem.area;
+        return (
+          <button
+            key={navItem.area}
+            title={navItem.label}
+            onClick={() => setArea(navItem.area)}
+            onDragEnter={isDropTarget ? (e) => handleNavDragEnter(e, navItem.area) : undefined}
+            onDragOver={isDropTarget ? (e) => handleNavDragOver(e, navItem.area) : undefined}
+            onDragLeave={isDropTarget ? handleNavDragLeave : undefined}
+            onDrop={isDropTarget ? (e) => handleNavDrop(e, navItem.area) : undefined}
+            className={`relative w-10 h-10 rounded-lg flex items-center justify-center text-xl transition-colors ${
+              isDragOver
+                ? 'bg-purple-700 text-white ring-2 ring-purple-400'
+                : area === navItem.area
+                ? 'bg-[#6b46c1] text-white'
+                : 'text-gray-500 hover:text-gray-200 hover:bg-[#2d3748]'
+            }`}
+          >
+            {navItem.icon}
+            {navItem.area === 'questions' && openQuestionCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 bg-amber-500 text-black text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                {openQuestionCount > 9 ? '9+' : openQuestionCount}
+              </span>
+            )}
+            {navItem.area === 'fragments' && unsortedFragmentCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 bg-blue-500 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                {unsortedFragmentCount > 9 ? '9+' : unsortedFragmentCount}
+              </span>
+            )}
+          </button>
+        );
+      })}
 
       <div className="flex-1" />
 
