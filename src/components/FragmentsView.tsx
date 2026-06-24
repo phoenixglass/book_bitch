@@ -45,10 +45,11 @@ function setDragData(
   e.dataTransfer.effectAllowed = 'move';
 }
 
-function getDragType(e: React.DragEvent): 'fragment' | 'scene' | 'omitted' | null {
+function getDragType(e: React.DragEvent): 'fragment' | 'scene' | 'omitted' | 'text' | null {
   if (e.dataTransfer.types.includes(`${BB_TYPE_KEY}-fragment`)) return 'fragment';
   if (e.dataTransfer.types.includes(`${BB_TYPE_KEY}-scene`)) return 'scene';
   if (e.dataTransfer.types.includes(`${BB_TYPE_KEY}-omitted`)) return 'omitted';
+  if (e.dataTransfer.types.includes(`${BB_TYPE_KEY}-text`)) return 'text';
   return null;
 }
 
@@ -621,13 +622,21 @@ export function FragmentsView() {
         sendSceneToFragments(data.id);
       } else if (data.type === 'omitted') {
         moveOmittedToFragments(data.id);
+      } else if (data.type === 'text') {
+        // Create a new fragment from the dragged text
+        const text = e.dataTransfer.getData('text/plain');
+        const id = addFragment({
+          content: text,
+          title: text.slice(0, 50).replace(/<[^>]+>/g, ''),
+        });
+        setSelectedId(id);
       }
 
       setDragOverId(null);
       setIsExternalDragOver(false);
       externalDragCounter.current = 0;
     },
-    [dragOverPos, reorderFragment, sendSceneToFragments, moveOmittedToFragments],
+    [dragOverPos, reorderFragment, sendSceneToFragments, moveOmittedToFragments, addFragment],
   );
 
   // Container-level drag handlers (for items dropped outside any card)
@@ -666,6 +675,14 @@ export function FragmentsView() {
       sendSceneToFragments(data.id);
     } else if (data.type === 'omitted') {
       moveOmittedToFragments(data.id);
+    } else if (data.type === 'text') {
+      // Create a new fragment from the dragged text
+      const text = e.dataTransfer.getData('text/plain');
+      const id = addFragment({
+        content: text,
+        title: text.slice(0, 50).replace(/<[^>]+>/g, ''),
+      });
+      setSelectedId(id);
     }
     // fragment drops handled by card handlers
   }

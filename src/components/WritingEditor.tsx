@@ -15,6 +15,19 @@ interface WritingEditorProps {
   onChange: (html: string) => void;
 }
 
+const BB_ITEM_TYPE = 'application/x-bb-item';
+const BB_TYPE_KEY = 'text/x-bb-type';
+
+function setDragDataForText(
+  e: React.DragEvent,
+  text: string,
+) {
+  e.dataTransfer.setData(BB_ITEM_TYPE, JSON.stringify({ type: 'text', content: text }));
+  e.dataTransfer.setData(`${BB_TYPE_KEY}-text`, '1');
+  e.dataTransfer.setData('text/plain', text);
+  e.dataTransfer.effectAllowed = 'copy';
+}
+
 export function WritingEditor({ itemId, content, onChange }: WritingEditorProps) {
   const { editorSettings } = useAppStore();
   const proseRef = useRef<HTMLDivElement>(null);
@@ -86,6 +99,15 @@ export function WritingEditor({ itemId, content, onChange }: WritingEditorProps)
     },
   ];
 
+  const handleEditorDragStart = (e: React.DragEvent) => {
+    if (!editor) return;
+    const { from, to } = editor.state.selection;
+    const selectedText = editor.state.doc.textBetween(from, to, ' ');
+    if (selectedText.trim()) {
+      setDragDataForText(e, selectedText);
+    }
+  };
+
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
       <div className="flex items-center gap-1 px-3 py-1 bg-[#1a1a2e] border-b border-[#0f3460] shrink-0">
@@ -135,7 +157,7 @@ export function WritingEditor({ itemId, content, onChange }: WritingEditorProps)
         </button>
         <div className="ml-auto text-xs text-gray-600">{wordCount.toLocaleString()} words</div>
       </div>
-      <div ref={proseRef} className="manuscript-prose flex-1 overflow-y-auto">
+      <div ref={proseRef} className="manuscript-prose flex-1 overflow-y-auto" onDragStart={handleEditorDragStart}>
         <EditorContent editor={editor} className="h-full" />
       </div>
     </div>
