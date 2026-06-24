@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAppStore, totalWordCount } from '../store/appStore';
 import { EditorSettingsDialog } from './EditorSettingsDialog';
 import { useSyncContext } from './SyncProvider';
+import { useIsMobile } from '../hooks/useIsMobile';
 import type { ViewMode } from '../types';
 import type { MouseEvent } from 'react';
 
@@ -15,7 +16,11 @@ const MANUSCRIPT_MODES: { label: string; value: ViewMode; icon: string }[] = [
   { label: 'Dashboard', value: 'dashboard', icon: '📈' },
 ];
 
-export function Toolbar() {
+interface ToolbarProps {
+  onOpenBinder?: () => void;
+}
+
+export function Toolbar({ onOpenBinder }: ToolbarProps) {
   const {
     projectTitle, setProjectTitle,
     viewMode, setViewMode,
@@ -31,6 +36,7 @@ export function Toolbar() {
 
   const { user, syncStatus, cloudError, signOut, forceReloadFromCloud } = useSyncContext();
   const [formatOpen, setFormatOpen] = useState(false);
+  const isMobile = useIsMobile();
   const totalWords = totalWordCount(binder.filter(b => b.id !== 'research' && b.id !== 'trash'));
   const pct = projectTarget.wordTarget > 0
     ? Math.min(100, Math.round((totalWords / projectTarget.wordTarget) * 100))
@@ -41,43 +47,54 @@ export function Toolbar() {
   return (
     <>
     {formatOpen && <EditorSettingsDialog onClose={() => setFormatOpen(false)} />}
-    <div className="flex items-center gap-2 px-3 h-11 bg-[#16213e] border-b border-[#0f3460] shrink-0 select-none">
+    <div className="flex items-center gap-2 px-3 h-11 bg-[#16213e] border-b border-[#0f3460] shrink-0 select-none overflow-x-auto">
+      {/* Mobile: binder toggle */}
+      {isMobile && area === 'manuscript' && onOpenBinder && (
+        <button
+          onClick={onOpenBinder}
+          title="Open Binder"
+          className="shrink-0 w-8 h-8 flex items-center justify-center rounded text-gray-400 hover:text-white hover:bg-[#2d3748] transition-colors text-lg"
+        >
+          ☰
+        </button>
+      )}
+
       {/* Project title */}
       <input
         value={projectTitle}
         onChange={(e) => setProjectTitle(e.target.value)}
-        className="bg-transparent text-white font-semibold text-sm w-40 outline-none border-b border-transparent hover:border-[#6b46c1] focus:border-[#6b46c1] transition-colors"
+        className="bg-transparent text-white font-semibold text-sm w-32 shrink-0 outline-none border-b border-transparent hover:border-[#6b46c1] focus:border-[#6b46c1] transition-colors"
       />
 
-      <div className="w-px h-6 bg-[#0f3460] mx-1" />
+      <div className="w-px h-6 bg-[#0f3460] mx-1 shrink-0" />
 
       {/* Manuscript view modes */}
       {area === 'manuscript' && (
-        <div className="flex gap-1">
+        <div className="flex gap-1 shrink-0">
           {MANUSCRIPT_MODES.map((m) => (
             <button
               key={m.value}
               onClick={() => setViewMode(m.value)}
               title={m.label}
-              className={`px-2 py-1 rounded text-xs transition-colors ${
+              className={`px-2 py-1 rounded text-xs transition-colors whitespace-nowrap ${
                 viewMode === m.value
                   ? 'bg-[#6b46c1] text-white'
                   : 'text-gray-400 hover:text-white hover:bg-[#2d3748]'
               }`}
             >
-              {m.icon} {m.label}
+              {m.icon}<span className="hidden sm:inline ml-1">{m.label}</span>
             </button>
           ))}
         </div>
       )}
 
-      <div className="w-px h-6 bg-[#0f3460] mx-1" />
+      <div className="w-px h-6 bg-[#0f3460] mx-1 shrink-0" />
 
       {/* Word count */}
-      <div className="flex items-center gap-2 text-xs text-gray-400">
+      <div className="flex items-center gap-2 text-xs text-gray-400 shrink-0">
         <span>{totalWords.toLocaleString()} words</span>
         {projectTarget.wordTarget > 0 && (
-          <div className="flex items-center gap-1">
+          <div className="hidden sm:flex items-center gap-1">
             <div className="w-20 h-2 bg-[#2d3748] rounded-full overflow-hidden">
               <div className="h-full bg-[#6b46c1] transition-all" style={{ width: `${pct}%` }} />
             </div>
@@ -97,8 +114,8 @@ export function Toolbar() {
         🔍
       </button>
 
-      {/* Split screen */}
-      {area === 'manuscript' && viewMode === 'editor' && (
+      {/* Split screen — desktop only */}
+      {!isMobile && area === 'manuscript' && viewMode === 'editor' && (
         <button
           onClick={() => setSplitScreen(!splitScreenOpen)}
           title="Split-screen reference mode"
@@ -125,8 +142,8 @@ export function Toolbar() {
         ✦<span className="ml-1 hidden sm:inline">AI</span>
       </button>
 
-      {/* Format settings */}
-      {((area === 'manuscript' && viewMode === 'editor') || area === 'fragments' || area === 'omitted') && (
+      {/* Format settings — desktop only */}
+      {!isMobile && ((area === 'manuscript' && viewMode === 'editor') || area === 'fragments' || area === 'omitted') && (
         <button
           onClick={() => setFormatOpen(true)}
           title="Paragraph & Font Settings"
@@ -147,8 +164,8 @@ export function Toolbar() {
         </button>
       )}
 
-      {/* Sync status + sign out */}
-      {user && (
+      {/* Sync status + sign out — desktop only */}
+      {!isMobile && user && (
         <div className="flex items-center gap-2 text-xs">
           {syncStatus === 'saving' && <span className="text-yellow-400 animate-pulse">↑ Saving…</span>}
           {syncStatus === 'saved' && <span className="text-green-400">✓ Saved</span>}
@@ -174,8 +191,25 @@ export function Toolbar() {
         </div>
       )}
 
-      {/* Inspector toggle */}
-      {area === 'manuscript' && (
+      {/* Mobile: compact sync indicator */}
+      {isMobile && user && (
+        <div className="text-xs shrink-0">
+          {syncStatus === 'saving' && <span className="text-yellow-400">↑</span>}
+          {syncStatus === 'saved' && <span className="text-green-400">✓</span>}
+          {syncStatus === 'error' && (
+            <button
+              onClick={(e: MouseEvent) => { e.preventDefault(); forceReloadFromCloud(); }}
+              title="Sync error — tap to retry"
+              className="text-red-400"
+            >
+              ⚠
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Inspector toggle — desktop only */}
+      {!isMobile && area === 'manuscript' && (
         <button
           onClick={() => setInspectorOpen(!inspectorOpen)}
           title="Toggle Inspector"

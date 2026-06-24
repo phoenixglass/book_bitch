@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Toolbar } from './components/Toolbar';
 import { SideNav } from './components/SideNav';
+import { MobileBottomNav } from './components/MobileBottomNav';
+import { useIsMobile } from './hooks/useIsMobile';
 import { Binder } from './components/Binder';
 import { RichEditor } from './components/RichEditor';
 import { Corkboard } from './components/Corkboard';
@@ -40,8 +42,19 @@ function App() {
   } = useAppStore();
 
   const [compileOpen, setCompileOpen] = useState(false);
+  const [mobileBinderOpen, setMobileBinderOpen] = useState(false);
+  const isMobile = useIsMobile();
 
   const selectedItem = selectedId ? findItem(binder, selectedId) : null;
+
+  // Close binder drawer when a document is selected on mobile
+  const prevSelectedId = useRef(selectedId);
+  useEffect(() => {
+    if (isMobile && selectedId !== prevSelectedId.current) {
+      setMobileBinderOpen(false);
+      prevSelectedId.current = selectedId;
+    }
+  }, [selectedId, isMobile]);
 
   // Ctrl+K opens global search
   useEffect(() => {
@@ -58,12 +71,12 @@ function App() {
   return (
     <div className="flex flex-col h-screen bg-[#0d1117] text-gray-200">
       {/* Top toolbar */}
-      <Toolbar />
+      <Toolbar onOpenBinder={isMobile ? () => setMobileBinderOpen(true) : undefined} />
 
       {/* Main workspace */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left icon nav (always visible, hidden in composition mode) */}
-        {!compositionMode && <SideNav />}
+        {/* Left icon nav — desktop only */}
+        {!compositionMode && !isMobile && <SideNav />}
 
         {/* Content area — all views */}
         <div className="flex flex-1 overflow-hidden">
@@ -71,8 +84,32 @@ function App() {
           {/* Manuscript area */}
           {area === 'manuscript' && (
             <>
-              {/* Binder sidebar */}
-              {!compositionMode && <Binder />}
+              {/* Binder sidebar — desktop inline, mobile drawer */}
+              {!compositionMode && !isMobile && <Binder />}
+
+              {/* Mobile binder drawer */}
+              {!compositionMode && isMobile && mobileBinderOpen && (
+                <div className="fixed inset-0 z-50 flex">
+                  <div className="w-72 h-full bg-[#0d1117] border-r border-[#0f3460] overflow-y-auto flex flex-col">
+                    <div className="flex items-center justify-between px-3 py-2 border-b border-[#0f3460] shrink-0">
+                      <span className="text-sm font-semibold text-gray-300">Binder</span>
+                      <button
+                        onClick={() => setMobileBinderOpen(false)}
+                        className="w-7 h-7 flex items-center justify-center rounded text-gray-400 hover:text-white hover:bg-[#2d3748] transition-colors"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto">
+                      <Binder />
+                    </div>
+                  </div>
+                  <div
+                    className="flex-1 bg-black/60"
+                    onClick={() => setMobileBinderOpen(false)}
+                  />
+                </div>
+              )}
 
               {/* Compile button strip */}
               {!compositionMode && (
@@ -100,10 +137,19 @@ function App() {
                       )}
 
                       {viewMode === 'editor' && !selectedItem && (
-                        <div className="flex-1 flex flex-col items-center justify-center text-gray-600">
+                        <div className="flex-1 flex flex-col items-center justify-center text-gray-600 px-6 text-center">
                           <div className="text-6xl mb-4">✍️</div>
                           <p className="text-xl mb-2">Book Bitch</p>
-                          <p className="text-sm">Select a document from the binder to start writing.</p>
+                          {isMobile ? (
+                            <button
+                              onClick={() => setMobileBinderOpen(true)}
+                              className="mt-3 px-4 py-2 bg-[#6b46c1] text-white rounded-lg text-sm hover:bg-[#7c3aed] transition-colors"
+                            >
+                              ☰ Open Binder
+                            </button>
+                          ) : (
+                            <p className="text-sm">Select a document from the binder to start writing.</p>
+                          )}
                         </div>
                       )}
 
@@ -139,8 +185,8 @@ function App() {
                 />
               )}
 
-              {/* Inspector */}
-              {!compositionMode && inspectorOpen && <Inspector />}
+              {/* Inspector — desktop only */}
+              {!compositionMode && !isMobile && inspectorOpen && <Inspector />}
             </>
           )}
 
@@ -154,10 +200,13 @@ function App() {
           {area === 'history' && <HistoryView />}
           {area === 'trash' && <TrashView />}
 
-          {/* AI Panel — available in all areas */}
-          {!compositionMode && aiPanelOpen && <AIPanel />}
+          {/* AI Panel — desktop only */}
+          {!compositionMode && !isMobile && aiPanelOpen && <AIPanel />}
         </div>
       </div>
+
+      {/* Mobile bottom navigation */}
+      {isMobile && !compositionMode && <MobileBottomNav />}
 
       {/* Composition mode exit button */}
       {compositionMode && (
