@@ -1328,6 +1328,8 @@ export function AIPanel() {
         };
         scanBinder(binder);
         body.allProjectPlotlines = [...plotlines];
+        body.notes = ctx.notes ?? '';
+        body.sceneMetadata = ctx.metadata ?? {};
       }
 
       if (action === 'codex-suggest') {
