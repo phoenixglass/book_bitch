@@ -88,7 +88,9 @@ export function RichEditor({ itemId, content, compositionMode }: EditorProps) {
   const wordCount = editor?.storage.characterCount?.words() ?? 0;
 
   const handleEditorDragStart = (e: React.DragEvent) => {
-    const selectedText = editor?.view.state.selection.content().textContent ?? '';
+    if (!editor) return;
+    const { from, to } = editor.state.selection;
+    const selectedText = editor.state.doc.textBetween(from, to, ' ');
     if (selectedText.trim()) {
       setDragDataForText(e, selectedText);
     }
