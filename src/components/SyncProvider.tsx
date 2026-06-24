@@ -53,7 +53,16 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       await waitForHydration();
       const result = await loadProjectFromCloud(u.id);
       if (result.data) {
-        useAppStore.getState().importProjectFromCloud(result.data);
+        const localTs = useAppStore.getState().localLastModified;
+        const cloudTs = result.updatedAt;
+        // Use cloud data unless local is strictly newer
+        const localIsNewer = localTs && cloudTs && new Date(localTs) > new Date(cloudTs);
+        if (localIsNewer) {
+          // Local has unsaved changes newer than the cloud — push local up
+          await saveProjectToCloud(u.id, getSerializableState(useAppStore.getState()));
+        } else {
+          useAppStore.getState().importProjectFromCloud(result.data, cloudTs ?? undefined);
+        }
       } else if (result.notFound) {
         // First ever login — upload existing local data
         await saveProjectToCloud(u.id, getSerializableState(useAppStore.getState()));
@@ -105,14 +114,16 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   // Debounced auto-save on any store change
   useEffect(() => {
     if (!user) return;
-    const unsub = useAppStore.subscribe((state) => {
+    const unsub = useAppStore.subscribe((_state) => {
       if (isSyncing.current || !cloudLoaded.current) return;
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(async () => {
         isSyncing.current = true;
         setSyncStatus('saving');
         try {
-          await saveProjectToCloud(user.id, getSerializableState(state));
+          const ts = new Date().toISOString();
+          useAppStore.setState({ localLastModified: ts });
+          await saveProjectToCloud(user.id, getSerializableState(useAppStore.getState()));
           setCloudError(null);
           setSyncStatus('saved');
           setTimeout(() => setSyncStatus('idle'), 2000);
@@ -154,5 +165,6 @@ function getSerializableState(state: ReturnType<typeof useAppStore.getState>) {
     savedFilters: state.savedFilters,
     editorSettings: state.editorSettings,
     manuscriptSettings: state.manuscriptSettings,
+    localLastModified: state.localLastModified,
   };
 }
