@@ -79,6 +79,7 @@ aiRouter.post('/questions', async (req: Request, res: Response) => {
     '- Ask questions only. Never draft prose, dialogue, or scene content.',
     '- Make questions specific to the provided text, not generic.',
     '- Questions should provoke thought, not suggest answers.',
+    '- Flag any culturally significant dates or events (e.g., 9/11, anniversaries of tragedies, major holidays) whose tone or context might be problematic.',
     categoryHint,
     '',
     'Return ONLY valid JSON in this exact structure, no other text:',
