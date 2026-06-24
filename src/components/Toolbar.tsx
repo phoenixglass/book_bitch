@@ -31,7 +31,7 @@ export function Toolbar() {
 
   const { user, syncStatus, cloudError, signOut, forceReloadFromCloud } = useSyncContext();
   const [formatOpen, setFormatOpen] = useState(false);
-  const totalWords = totalWordCount(binder);
+  const totalWords = totalWordCount(binder.filter(b => b.id !== 'research' && b.id !== 'trash'));
   const pct = projectTarget.wordTarget > 0
     ? Math.min(100, Math.round((totalWords / projectTarget.wordTarget) * 100))
     : 0;
