@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useAppStore, totalWordCount } from '../store/appStore';
 import { EditorSettingsDialog } from './EditorSettingsDialog';
 import { useSyncContext } from './SyncProvider';
@@ -32,11 +32,26 @@ export function Toolbar({ onOpenBinder }: ToolbarProps) {
     setSearchOpen,
     aiSettings,
     aiPanelOpen, setAIPanelOpen,
+    exportProjectBackup,
+    importProjectBackup,
   } = useAppStore();
 
   const { user, syncStatus, cloudError, signOut, forceReloadFromCloud } = useSyncContext();
   const [formatOpen, setFormatOpen] = useState(false);
+  const backupInputRef = useRef<HTMLInputElement>(null);
   const isMobile = useIsMobile();
+
+  function handleImportBackup(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const json = ev.target?.result as string;
+      if (json) importProjectBackup(json);
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
   const totalWords = totalWordCount(binder.filter(b => b.id !== 'research' && b.id !== 'trash'));
   const pct = projectTarget.wordTarget > 0
     ? Math.min(100, Math.round((totalWords / projectTarget.wordTarget) * 100))
@@ -206,6 +221,33 @@ export function Toolbar({ onOpenBinder }: ToolbarProps) {
             </button>
           )}
         </div>
+      )}
+
+      {/* Backup import/export — desktop only */}
+      {!isMobile && (
+        <>
+          <input
+            ref={backupInputRef}
+            type="file"
+            accept=".json"
+            className="hidden"
+            onChange={handleImportBackup}
+          />
+          <button
+            onClick={() => backupInputRef.current?.click()}
+            title="Import project from JSON backup"
+            className="px-2 py-1 rounded text-xs text-gray-400 hover:text-white hover:bg-[#2d3748] transition-colors"
+          >
+            ↑ Import
+          </button>
+          <button
+            onClick={exportProjectBackup}
+            title="Export project as JSON backup"
+            className="px-2 py-1 rounded text-xs text-gray-400 hover:text-white hover:bg-[#2d3748] transition-colors"
+          >
+            ↓ Export
+          </button>
+        </>
       )}
 
       {/* Inspector toggle — desktop only */}
