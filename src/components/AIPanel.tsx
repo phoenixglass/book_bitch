@@ -16,7 +16,6 @@ import type {
   QuestionCategory,
   SelectedAIContext,
   BinderItem,
-  StoryBrief,
 } from '../types';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
