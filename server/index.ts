@@ -4,7 +4,7 @@ import { aiRouter } from './routes/ai.js';
 const app = express();
 const PORT = Number(process.env.PORT ?? 3001);
 
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '50mb' }));
 
 app.use('/api/ai', aiRouter);
 
