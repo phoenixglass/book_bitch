@@ -269,7 +269,7 @@ export const useAppStore = create<AppState>()(
         queryLetterContent: '',
       } as ManuscriptSettings,
 
-      localLastModified: new Date().toISOString(),
+      localLastModified: null,
 
       // ── Existing actions ─────────────────────────────────────────────────
 
@@ -1420,7 +1420,7 @@ export const useAppStore = create<AppState>()(
           editorSettings: (data.editorSettings as EditorSettings) ?? undefined,
           manuscriptSettings: (data.manuscriptSettings as ManuscriptSettings) ?? undefined,
           storyBrief: (data.storyBrief as StoryBrief | null) ?? null,
-          localLastModified: cloudTimestamp ?? new Date().toISOString(),
+          localLastModified: cloudTimestamp ?? null,
           selectedId: null,
         });
       },
