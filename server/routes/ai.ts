@@ -4,6 +4,11 @@ import { stripHTML, truncate, modePreamble } from '../lib/context.js';
 
 export const aiRouter = Router();
 
+function storyContextBlock(ctx?: string): string {
+  if (!ctx?.trim()) return '';
+  return `\n--- STORY BRIEF ---\n${ctx.trim()}\n--- END STORY BRIEF ---\n`;
+}
+
 // ── GET /api/ai/status ───────────────────────────────────────────────────────
 
 aiRouter.get('/status', (_req: Request, res: Response) => {
@@ -33,6 +38,7 @@ aiRouter.post('/questions', async (req: Request, res: Response) => {
     extractFromNote = false,
     mode = 'questions_only',
     allowDrafting = false,
+    storyContext,
   } = req.body as {
     title?: string;
     content?: string;
@@ -42,6 +48,7 @@ aiRouter.post('/questions', async (req: Request, res: Response) => {
     extractFromNote?: boolean;
     mode?: string;
     allowDrafting?: boolean;
+    storyContext?: string;
   };
 
   if (!content && !synopsis) {
@@ -75,6 +82,7 @@ aiRouter.post('/questions', async (req: Request, res: Response) => {
     `You are a writing coach helping a novelist think more deeply about their work.`,
     preamble,
     taskDesc,
+    storyContext ? 'A Story Brief with full manuscript context is included in the user message — use it to make questions specific to this story\'s characters, plot, and themes, not generic.' : '',
     'Rules:',
     '- Ask questions only. Never draft prose, dialogue, or scene content.',
     '- Make questions specific to the provided text, not generic.',
@@ -98,6 +106,7 @@ aiRouter.post('/questions', async (req: Request, res: Response) => {
     .join('\n');
 
   const userPrompt = [
+    storyContextBlock(storyContext),
     `${objectLabel.charAt(0).toUpperCase() + objectLabel.slice(1)} title: ${title ?? 'Untitled'}`,
     synopsis ? `Synopsis: ${synopsis}` : '',
     '',
@@ -131,12 +140,13 @@ aiRouter.post('/summarize', async (req: Request, res: Response) => {
     return;
   }
 
-  const { title, content, objectType = 'scene', mode = 'analysis_only', allowDrafting = false } = req.body as {
+  const { title, content, objectType = 'scene', mode = 'analysis_only', allowDrafting = false, storyContext } = req.body as {
     title?: string;
     content?: string;
     objectType?: string;
     mode?: string;
     allowDrafting?: boolean;
+    storyContext?: string;
   };
 
   if (!content) {
@@ -152,6 +162,7 @@ aiRouter.post('/summarize', async (req: Request, res: Response) => {
     `You are a writing assistant helping a novelist organize their manuscript (${objectType}).`,
     preamble,
     'Your task: produce a concise, analytical summary of the provided text.',
+    storyContext ? 'A Story Brief with full manuscript context is included in the user message — use it to correctly identify characters, places, and their roles in the story.' : '',
     'Rules:',
     '- Summarize only. Do not draft new prose or suggest rewrites.',
     '- Be specific to the provided text.',
@@ -172,6 +183,7 @@ aiRouter.post('/summarize', async (req: Request, res: Response) => {
     .join('\n');
 
   const userPrompt = [
+    storyContextBlock(storyContext),
     `Title: ${title ?? 'Untitled'}`,
     `Type: ${objectType}`,
     '',
@@ -210,11 +222,12 @@ aiRouter.post('/metadata', async (req: Request, res: Response) => {
     return;
   }
 
-  const { title, content, mode = 'metadata_assistance', allowDrafting = false } = req.body as {
+  const { title, content, mode = 'metadata_assistance', allowDrafting = false, storyContext } = req.body as {
     title?: string;
     content?: string;
     mode?: string;
     allowDrafting?: boolean;
+    storyContext?: string;
   };
 
   if (!content) {
@@ -230,6 +243,7 @@ aiRouter.post('/metadata', async (req: Request, res: Response) => {
     'You are a writing assistant helping a novelist organize scene metadata.',
     preamble,
     'Your task: suggest metadata values based ONLY on evidence in the provided scene text.',
+    storyContext ? 'A Story Brief with full manuscript context is included in the user message — use it to correctly identify character names, locations, and how they relate to the broader story.' : '',
     'Rules:',
     '- Only suggest values supported by the text. Leave fields as empty string or 0 if not evident.',
     '- Do not invent details not present in the text.',
@@ -257,6 +271,7 @@ aiRouter.post('/metadata', async (req: Request, res: Response) => {
     .join('\n');
 
   const userPrompt = [
+    storyContextBlock(storyContext),
     `Scene title: ${title ?? 'Untitled'}`,
     '',
     'Scene text:',
@@ -461,12 +476,13 @@ aiRouter.post('/placement', async (req: Request, res: Response) => {
     return;
   }
 
-  const { title, content, objectType = 'fragment', mode = 'analysis_only', allowDrafting = false } = req.body as {
+  const { title, content, objectType = 'fragment', mode = 'analysis_only', allowDrafting = false, storyContext } = req.body as {
     title?: string;
     content?: string;
     objectType?: string;
     mode?: string;
     allowDrafting?: boolean;
+    storyContext?: string;
   };
 
   if (!content) {
@@ -500,6 +516,7 @@ aiRouter.post('/placement', async (req: Request, res: Response) => {
   ].filter(Boolean).join('\n');
 
   const userPrompt = [
+    storyContextBlock(storyContext),
     `Title: ${title ?? 'Untitled'}`,
     `Type: ${objectType}`,
     '',
@@ -716,6 +733,7 @@ aiRouter.post('/plotline', async (req: Request, res: Response) => {
     allProjectPlotlines = [],
     mode = 'metadata_assistance',
     allowDrafting = false,
+    storyContext,
   } = req.body as {
     title?: string;
     content?: string;
@@ -724,6 +742,7 @@ aiRouter.post('/plotline', async (req: Request, res: Response) => {
     allProjectPlotlines?: string[];
     mode?: string;
     allowDrafting?: boolean;
+    storyContext?: string;
   };
 
   if (!content) {
@@ -775,6 +794,7 @@ aiRouter.post('/plotline', async (req: Request, res: Response) => {
   if (sceneMetadata.synopsis) metaLines.push(`Synopsis: ${sceneMetadata.synopsis}`);
 
   const userPrompt = [
+    storyContextBlock(storyContext),
     `Scene title: ${title ?? 'Untitled'}`,
     metaLines.length > 0 ? `\nScene metadata:\n${metaLines.join('\n')}` : '',
     notes ? `\nAuthor notes:\n${stripHTML(notes)}` : '',
@@ -865,6 +885,90 @@ aiRouter.post('/tags', async (req: Request, res: Response) => {
       return;
     }
     res.json({ ...parsed, truncated });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(502).json({ error: `AI call failed: ${msg}` });
+  }
+});
+
+// ── POST /api/ai/generate-brief ──────────────────────────────────────────────
+
+const BRIEF_MAX_CHARS = 600_000;
+
+aiRouter.post('/generate-brief', async (req: Request, res: Response) => {
+  const config = getAIConfig();
+  if (!config) {
+    res.status(503).json({ error: 'AI is not configured. Add an API key in environment settings.' });
+    return;
+  }
+
+  const { scenes } = req.body as {
+    scenes: Array<{ id: string; title: string; text: string }>;
+  };
+
+  if (!scenes || scenes.length === 0) {
+    res.status(400).json({ error: 'No manuscript content found. Add some scenes first.' });
+    return;
+  }
+
+  let manuscriptText = scenes
+    .map((s) => `=== ${s.title} ===\n${s.text}`)
+    .join('\n\n');
+
+  let truncated = false;
+  if (manuscriptText.length > BRIEF_MAX_CHARS) {
+    manuscriptText = manuscriptText.slice(0, BRIEF_MAX_CHARS);
+    truncated = true;
+  }
+
+  const systemPrompt = [
+    'You are a literary assistant helping a novelist understand their work in progress.',
+    'DO NOT DRAFT PROSE: Your output is analytical only.',
+    'Your task: read the provided manuscript scenes and produce a comprehensive Story Brief.',
+    'This Brief will be injected as background context into all future AI writing-assistance sessions, so it must be accurate, specific, and genuinely useful to an AI analysing individual scenes.',
+    '',
+    'Write the Brief as clear prose under these exact headings:',
+    '',
+    '## PREMISE & OVERVIEW',
+    'What is this story about? (2–4 sentences covering the core situation, stakes, and world.)',
+    '',
+    '## CHARACTERS',
+    'All named characters: who they are, their role in the story, key relationships, and where they currently stand — emotionally, physically, and narratively — based on the scenes provided.',
+    '',
+    '## PLOT AS WRITTEN',
+    'What has actually been written — the key events in narrative terms. What has happened. What has changed. What has been set in motion. (Not what might happen — only what is on the page.)',
+    '',
+    '## ACTIVE THREADS',
+    'Plotlines, conflicts, tensions, and questions that are currently unresolved or building in the text.',
+    '',
+    '## TONE & VOICE',
+    'The emotional register, style, and feel of the prose. What kind of story is this? What is its atmosphere and sensibility?',
+    '',
+    '## TIMELINE & SETTING',
+    'Key dates, time references, locations, and world-building details established in the text.',
+    '',
+    '## GAPS & OPEN QUESTIONS',
+    'What appears to be missing, unwritten, or unresolved? What is implied but not yet on the page?',
+    '',
+    'Be specific: name characters, reference actual events and scenes. Never be vague or generic.',
+    'Return ONLY valid JSON: { "brief": "the full story brief text" }',
+  ].join('\n');
+
+  const userPrompt = [
+    `Manuscript (${scenes.length} scene${scenes.length !== 1 ? 's' : ''}):`,
+    '',
+    manuscriptText,
+    truncated ? '\n\n[Note: manuscript was truncated due to length — analysis covers the first portion only]' : '',
+  ].join('\n');
+
+  try {
+    const raw = await callAI(config, systemPrompt, userPrompt, 4096);
+    const parsed = extractJSON(raw) as { brief: string };
+    if (!parsed || typeof parsed.brief !== 'string') {
+      res.status(502).json({ error: 'AI returned an unexpected format. Try again.' });
+      return;
+    }
+    res.json({ brief: parsed.brief, truncated });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(502).json({ error: `AI call failed: ${msg}` });
