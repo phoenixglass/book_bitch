@@ -383,7 +383,7 @@ app.post('/api/ai/generate-brief', async (req: Request, res: Response) => {
     'What appears to be missing, unwritten, or unresolved? What is implied but not yet on the page?',
     '',
     'Be specific: name characters, reference actual events and scenes. Never be vague or generic.',
-    'Return ONLY valid JSON: { "brief": "the full story brief text" }',
+    'Return the brief as plain text only — no JSON, no code fences, no preamble.',
   ].join('\n');
   const userPrompt = [
     `Manuscript (${scenes.length} scene${scenes.length !== 1 ? 's' : ''}):`,
@@ -392,10 +392,9 @@ app.post('/api/ai/generate-brief', async (req: Request, res: Response) => {
     truncated ? '\n\n[Note: manuscript was truncated due to length — analysis covers the first portion only]' : '',
   ].join('\n');
   try {
-    const raw = await callAI(config, systemPrompt, userPrompt, 4096);
-    const parsed = extractJSON(raw) as { brief: string };
-    if (!parsed || typeof parsed.brief !== 'string') { res.status(502).json({ error: 'AI returned an unexpected format. Try again.' }); return; }
-    res.json({ brief: parsed.brief, truncated });
+    const brief = (await callAI(config, systemPrompt, userPrompt, 4096)).trim();
+    if (!brief) { res.status(502).json({ error: 'AI returned an empty response. Try again.' }); return; }
+    res.json({ brief, truncated });
   } catch (err) {
     res.status(502).json({ error: `AI call failed: ${err instanceof Error ? err.message : String(err)}` });
   }

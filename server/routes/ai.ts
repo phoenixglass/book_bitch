@@ -951,7 +951,7 @@ aiRouter.post('/generate-brief', async (req: Request, res: Response) => {
     'What appears to be missing, unwritten, or unresolved? What is implied but not yet on the page?',
     '',
     'Be specific: name characters, reference actual events and scenes. Never be vague or generic.',
-    'Return ONLY valid JSON: { "brief": "the full story brief text" }',
+    'Return the brief as plain text only — no JSON, no code fences, no preamble.',
   ].join('\n');
 
   const userPrompt = [
@@ -962,13 +962,12 @@ aiRouter.post('/generate-brief', async (req: Request, res: Response) => {
   ].join('\n');
 
   try {
-    const raw = await callAI(config, systemPrompt, userPrompt, 4096);
-    const parsed = extractJSON(raw) as { brief: string };
-    if (!parsed || typeof parsed.brief !== 'string') {
-      res.status(502).json({ error: 'AI returned an unexpected format. Try again.' });
+    const brief = (await callAI(config, systemPrompt, userPrompt, 4096)).trim();
+    if (!brief) {
+      res.status(502).json({ error: 'AI returned an empty response. Try again.' });
       return;
     }
-    res.json({ brief: parsed.brief, truncated });
+    res.json({ brief, truncated });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(502).json({ error: `AI call failed: ${msg}` });
