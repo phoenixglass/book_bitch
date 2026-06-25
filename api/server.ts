@@ -139,7 +139,7 @@ async function callAI(
 // ── Express app ────────────────────────────────────────────────────────────
 
 const app = express();
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '50mb' }));
 
 // GET /api/ai/status
 app.get('/api/ai/status', (_req: Request, res: Response) => {
@@ -338,6 +338,64 @@ app.post('/api/ai/plotline', async (req: Request, res: Response) => {
     const parsed = extractJSON(raw) as { suggestions: Array<{ name: string; reason: string }> };
     if (!parsed || !Array.isArray(parsed.suggestions)) { res.status(502).json({ error: 'AI returned an unexpected format. Try again.' }); return; }
     res.json({ suggestions: parsed.suggestions, truncated });
+  } catch (err) {
+    res.status(502).json({ error: `AI call failed: ${err instanceof Error ? err.message : String(err)}` });
+  }
+});
+
+// POST /api/ai/generate-brief
+const BRIEF_MAX_CHARS = 600_000;
+app.post('/api/ai/generate-brief', async (req: Request, res: Response) => {
+  const config = getAIConfig();
+  if (!config) { res.status(503).json({ error: 'AI is not configured. Add an API key in environment settings.' }); return; }
+  const { scenes } = req.body as { scenes: Array<{ id: string; title: string; text: string }> };
+  if (!scenes || scenes.length === 0) { res.status(400).json({ error: 'No manuscript content found. Add some scenes first.' }); return; }
+  let manuscriptText = scenes.map((s) => `=== ${s.title} ===\n${s.text}`).join('\n\n');
+  let truncated = false;
+  if (manuscriptText.length > BRIEF_MAX_CHARS) { manuscriptText = manuscriptText.slice(0, BRIEF_MAX_CHARS); truncated = true; }
+  const systemPrompt = [
+    'You are a literary assistant helping a novelist understand their work in progress.',
+    'DO NOT DRAFT PROSE: Your output is analytical only.',
+    'Your task: read the provided manuscript scenes and produce a comprehensive Story Brief.',
+    'This Brief will be injected as background context into all future AI writing-assistance sessions, so it must be accurate, specific, and genuinely useful to an AI analysing individual scenes.',
+    '',
+    'Write the Brief as clear prose under these exact headings:',
+    '',
+    '## PREMISE & OVERVIEW',
+    'What is this story about? (2–4 sentences covering the core situation, stakes, and world.)',
+    '',
+    '## CHARACTERS',
+    'All named characters: who they are, their role in the story, key relationships, and where they currently stand — emotionally, physically, and narratively — based on the scenes provided.',
+    '',
+    '## PLOT AS WRITTEN',
+    'What has actually been written — the key events in narrative terms. What has happened. What has changed. What has been set in motion. (Not what might happen — only what is on the page.)',
+    '',
+    '## ACTIVE THREADS',
+    'Plotlines, conflicts, tensions, and questions that are currently unresolved or building in the text.',
+    '',
+    '## TONE & VOICE',
+    'The emotional register, style, and feel of the prose. What kind of story is this? What is its atmosphere and sensibility?',
+    '',
+    '## TIMELINE & SETTING',
+    'Key dates, time references, locations, and world-building details established in the text.',
+    '',
+    '## GAPS & OPEN QUESTIONS',
+    'What appears to be missing, unwritten, or unresolved? What is implied but not yet on the page?',
+    '',
+    'Be specific: name characters, reference actual events and scenes. Never be vague or generic.',
+    'Return ONLY valid JSON: { "brief": "the full story brief text" }',
+  ].join('\n');
+  const userPrompt = [
+    `Manuscript (${scenes.length} scene${scenes.length !== 1 ? 's' : ''}):`,
+    '',
+    manuscriptText,
+    truncated ? '\n\n[Note: manuscript was truncated due to length — analysis covers the first portion only]' : '',
+  ].join('\n');
+  try {
+    const raw = await callAI(config, systemPrompt, userPrompt, 4096);
+    const parsed = extractJSON(raw) as { brief: string };
+    if (!parsed || typeof parsed.brief !== 'string') { res.status(502).json({ error: 'AI returned an unexpected format. Try again.' }); return; }
+    res.json({ brief: parsed.brief, truncated });
   } catch (err) {
     res.status(502).json({ error: `AI call failed: ${err instanceof Error ? err.message : String(err)}` });
   }
