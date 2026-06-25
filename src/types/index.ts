@@ -664,7 +664,8 @@ export interface AppState {
   manuscriptSettings: ManuscriptSettings;
 
   // Last time local data was modified (ISO string), used for cloud sync conflict resolution
-  localLastModified: string;
+  // null means this device has never made a local change — always defer to cloud in that case
+  localLastModified: string | null;
 
   // ─── Existing actions ──────────────────────────────────────────────────────
   setProjectTitle: (title: string) => void;

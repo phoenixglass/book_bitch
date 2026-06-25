@@ -165,6 +165,7 @@ function getSerializableState(state: ReturnType<typeof useAppStore.getState>) {
     savedFilters: state.savedFilters,
     editorSettings: state.editorSettings,
     manuscriptSettings: state.manuscriptSettings,
+    storyBrief: state.storyBrief,
     localLastModified: state.localLastModified,
   };
 }
