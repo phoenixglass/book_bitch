@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useAppStore, findItem } from '../store/appStore';
+import { useAppStore, findItem, totalWordCount } from '../store/appStore';
 import type {
   AIActionType,
   AIObjectType,
@@ -15,6 +15,8 @@ import type {
   AIOutput,
   QuestionCategory,
   SelectedAIContext,
+  BinderItem,
+  StoryBrief,
 } from '../types';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -32,6 +34,19 @@ function stripHTML(html: string): string {
 
 function wordCount(html: string): number {
   return stripHTML(html).split(/\s+/).filter(Boolean).length;
+}
+
+function collectManuscriptScenes(items: BinderItem[]): Array<{ id: string; title: string; text: string }> {
+  const result: Array<{ id: string; title: string; text: string }> = [];
+  for (const item of items) {
+    if (item.id === 'trash') continue;
+    if (item.type === 'document' && item.content) {
+      const text = stripHTML(item.content);
+      if (text.trim()) result.push({ id: item.id, title: item.title, text });
+    }
+    if (item.children?.length) result.push(...collectManuscriptScenes(item.children));
+  }
+  return result;
 }
 
 // ── Object type labels ────────────────────────────────────────────────────────
@@ -1237,6 +1252,8 @@ export function AIPanel() {
     setAIPanelOpen,
     projectTags,
     binder,
+    storyBrief,
+    setStoryBrief,
   } = useAppStore();
 
   const ctx = useAIContext();
@@ -1250,6 +1267,11 @@ export function AIPanel() {
   const [error, setError] = useState<string | null>(null);
   const [privacyAcknowledged, setPrivacyAcknowledged] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [briefLoading, setBriefLoading] = useState(false);
+  const [briefError, setBriefError] = useState<string | null>(null);
+  const [showBriefContent, setShowBriefContent] = useState(false);
+  const [editingBrief, setEditingBrief] = useState(false);
+  const [briefDraft, setBriefDraft] = useState('');
 
   const actions = ctx ? availableActionsForType(ctx.objectType, aiSettings.mode) : [];
 
@@ -1282,6 +1304,35 @@ export function AIPanel() {
   useEffect(() => {
     if (aiPanelOpen) checkAIStatus();
   }, [aiPanelOpen, checkAIStatus]);
+
+  async function handleGenerateBrief() {
+    setBriefLoading(true);
+    setBriefError(null);
+    try {
+      const scenes = collectManuscriptScenes(binder);
+      if (scenes.length === 0) {
+        setBriefError('No manuscript content found. Add some scenes first.');
+        return;
+      }
+      const res = await fetch('/api/ai/generate-brief', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scenes }),
+      });
+      const data = await res.json() as { brief?: string; error?: string; truncated?: boolean };
+      if (!res.ok || !data.brief) {
+        throw new Error(data.error ?? `Server returned ${res.status}`);
+      }
+      const currentWc = totalWordCount(binder);
+      setStoryBrief({ content: data.brief, generatedAt: Date.now(), wordCountAtGeneration: currentWc });
+      setShowBriefContent(false);
+      setEditingBrief(false);
+    } catch (err) {
+      setBriefError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBriefLoading(false);
+    }
+  }
 
   async function handleRun() {
     if (!ctx || !aiStatus?.configured || aiSettings.mode === 'disabled') return;
@@ -1344,6 +1395,10 @@ export function AIPanel() {
         body.currentPriority = (ctx.metadata?.priority as string) ?? '';
         body.notes = ctx.notes ?? '';
         body.answer = (ctx.metadata?.answer as string) ?? '';
+      }
+
+      if (storyBrief?.content) {
+        body.storyContext = storyBrief.content;
       }
 
       const res = await fetch(`/api/ai/${endpoint}`, {
@@ -1458,6 +1513,133 @@ export function AIPanel() {
               )}
             </div>
           )}
+
+          {/* Story Brief */}
+          {!statusLoading && aiStatus?.configured && (() => {
+            const currentWc = totalWordCount(binder);
+            const drift = storyBrief ? Math.abs(currentWc - storyBrief.wordCountAtGeneration) : 0;
+            const isStale = drift > 500;
+            return (
+              <div className="border border-[#0f3460] rounded bg-[#1a1a3e]">
+                <div className="flex items-center justify-between px-2.5 py-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Story Brief</span>
+                    {storyBrief && (
+                      <span className="text-[10px] text-green-400 bg-green-900/20 rounded px-1 py-0.5">active</span>
+                    )}
+                    {storyBrief && isStale && (
+                      <span className="text-[10px] text-amber-400 bg-amber-900/20 rounded px-1 py-0.5">stale</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {storyBrief && (
+                      <button
+                        onClick={() => {
+                          setShowBriefContent(v => !v);
+                          if (!showBriefContent) {
+                            setBriefDraft(storyBrief.content);
+                            setEditingBrief(false);
+                          }
+                        }}
+                        className="text-[10px] text-gray-500 hover:text-gray-300 px-1"
+                      >
+                        {showBriefContent ? 'hide' : 'view'}
+                      </button>
+                    )}
+                    <button
+                      onClick={handleGenerateBrief}
+                      disabled={briefLoading}
+                      className="text-[10px] px-2 py-0.5 rounded bg-purple-900/40 text-purple-300 hover:bg-purple-800/40 hover:text-white disabled:opacity-50 disabled:cursor-default transition-colors"
+                    >
+                      {briefLoading ? '⟳ Generating…' : storyBrief ? '↺ Regen' : 'Generate'}
+                    </button>
+                    {storyBrief && (
+                      <button
+                        onClick={() => { setStoryBrief(null); setShowBriefContent(false); }}
+                        className="text-[10px] text-gray-600 hover:text-red-400 px-1"
+                        title="Clear brief"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {!storyBrief && !briefLoading && (
+                  <p className="px-2.5 pb-2 text-[10px] text-gray-600 leading-relaxed">
+                    Generate a brief so the AI knows your full story — characters, plot, tone, gaps.
+                  </p>
+                )}
+
+                {storyBrief && !showBriefContent && (
+                  <div className="px-2.5 pb-2 flex flex-col gap-0.5">
+                    <p className="text-[10px] text-gray-600">
+                      {new Date(storyBrief.generatedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                      {' · '}{storyBrief.wordCountAtGeneration.toLocaleString()} words at generation
+                    </p>
+                    {isStale && (
+                      <p className="text-[10px] text-amber-500">
+                        ⚠ Manuscript has changed by ~{drift.toLocaleString()} words — consider regenerating.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {storyBrief && showBriefContent && (
+                  <div className="px-2.5 pb-2 flex flex-col gap-1.5">
+                    {isStale && (
+                      <p className="text-[10px] text-amber-500">
+                        ⚠ Manuscript has changed by ~{drift.toLocaleString()} words.
+                      </p>
+                    )}
+                    {editingBrief ? (
+                      <>
+                        <textarea
+                          value={briefDraft}
+                          onChange={e => setBriefDraft(e.target.value)}
+                          rows={12}
+                          className="w-full bg-[#0f1022] border border-[#2d3748] rounded px-2 py-1.5 text-[11px] text-gray-300 font-mono leading-relaxed resize-y outline-none focus:border-purple-700"
+                        />
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => {
+                              setStoryBrief({ ...storyBrief, content: briefDraft });
+                              setEditingBrief(false);
+                            }}
+                            className="text-[10px] px-2 py-0.5 rounded bg-purple-700 text-white hover:bg-purple-600"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => { setEditingBrief(false); setBriefDraft(storyBrief.content); }}
+                            className="text-[10px] px-2 py-0.5 rounded bg-[#2d3748] text-gray-400 hover:text-white"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="max-h-48 overflow-y-auto">
+                          <p className="text-[10px] text-gray-400 leading-relaxed whitespace-pre-wrap">{storyBrief.content}</p>
+                        </div>
+                        <button
+                          onClick={() => { setEditingBrief(true); setBriefDraft(storyBrief.content); }}
+                          className="self-start text-[10px] text-gray-500 hover:text-gray-300 underline"
+                        >
+                          Edit brief
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {briefError && (
+                  <p className="px-2.5 pb-2 text-[10px] text-red-400">{briefError}</p>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Not configured notice */}
           {!statusLoading && !aiStatus?.configured && (

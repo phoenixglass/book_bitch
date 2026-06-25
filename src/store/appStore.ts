@@ -29,6 +29,7 @@ import type {
   AIResult,
   ManuscriptSettings,
   EditorSettings,
+  StoryBrief,
 } from '../types';
 
 function makeId() {
@@ -232,6 +233,7 @@ export const useAppStore = create<AppState>()(
       aiPanelOpen: false,
       pendingAIResult: null as AIResult | null,
       aiContextObject: null as { type: AIObjectType; id: string } | null,
+      storyBrief: null as StoryBrief | null,
 
       // ── Editor appearance settings ────────────────────────────────────────
       editorSettings: {
@@ -1344,6 +1346,10 @@ export const useAppStore = create<AppState>()(
         set({ aiContextObject: obj });
       },
 
+      setStoryBrief: (brief) => {
+        set({ storyBrief: brief });
+      },
+
       // ── Editor Appearance ─────────────────────────────────────────────────
 
       updateEditorSettings: (patch) => {
@@ -1376,6 +1382,7 @@ export const useAppStore = create<AppState>()(
           links: state.links,
           history: state.history,
           savedFilters: state.savedFilters,
+          storyBrief: state.storyBrief,
         };
         const blob = new Blob([JSON.stringify(backup, null, 2)], {
           type: 'application/json;charset=utf-8',
@@ -1412,6 +1419,7 @@ export const useAppStore = create<AppState>()(
           savedFilters: (data.savedFilters as SavedFilter[]) ?? [],
           editorSettings: (data.editorSettings as EditorSettings) ?? undefined,
           manuscriptSettings: (data.manuscriptSettings as ManuscriptSettings) ?? undefined,
+          storyBrief: (data.storyBrief as StoryBrief | null) ?? null,
           localLastModified: cloudTimestamp ?? new Date().toISOString(),
           selectedId: null,
         });
@@ -1438,6 +1446,7 @@ export const useAppStore = create<AppState>()(
             links: data.links ?? [],
             history: data.history ?? [],
             savedFilters: data.savedFilters ?? [],
+            storyBrief: data.storyBrief ?? null,
             selectedId: null,
           });
           get().recordEvent({

@@ -437,6 +437,14 @@ export interface ManuscriptSettings {
   queryLetterContent: string;
 }
 
+// ─── Story Brief ─────────────────────────────────────────────────────────────
+
+export interface StoryBrief {
+  content: string;
+  generatedAt: number;
+  wordCountAtGeneration: number;
+}
+
 // ─── AI Settings ─────────────────────────────────────────────────────────────
 
 export type AIMode =
@@ -647,6 +655,7 @@ export interface AppState {
   aiPanelOpen: boolean;
   pendingAIResult: AIResult | null;
   aiContextObject: { type: AIObjectType; id: string } | null;
+  storyBrief: StoryBrief | null;
 
   // Editor appearance settings
   editorSettings: EditorSettings;
@@ -759,6 +768,7 @@ export interface AppState {
   setAIPanelOpen: (open: boolean) => void;
   setPendingAIResult: (result: AIResult | null) => void;
   setAIContextObject: (obj: { type: AIObjectType; id: string } | null) => void;
+  setStoryBrief: (brief: StoryBrief | null) => void;
 
   // ─── Editor Appearance ─────────────────────────────────────────────────────
   updateEditorSettings: (patch: Partial<EditorSettings>) => void;
