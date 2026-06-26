@@ -1273,6 +1273,7 @@ export function AIPanel() {
   const [showBriefContent, setShowBriefContent] = useState(false);
   const [editingBrief, setEditingBrief] = useState(false);
   const [briefDraft, setBriefDraft] = useState('');
+  const [enteringBriefManually, setEnteringBriefManually] = useState(false);
 
   const actions = ctx ? availableActionsForType(ctx.objectType, aiSettings.mode) : [];
 
@@ -1547,6 +1548,14 @@ export function AIPanel() {
                         {showBriefContent ? 'hide' : 'view'}
                       </button>
                     )}
+                    {!storyBrief && !enteringBriefManually && (
+                      <button
+                        onClick={() => { setEnteringBriefManually(true); setBriefDraft(''); }}
+                        className="text-[10px] px-2 py-0.5 rounded bg-[#1e3a5f]/60 text-blue-300 hover:bg-[#1e3a5f] hover:text-white transition-colors"
+                      >
+                        Paste
+                      </button>
+                    )}
                     <button
                       onClick={handleGenerateBrief}
                       disabled={briefLoading}
@@ -1566,10 +1575,43 @@ export function AIPanel() {
                   </div>
                 </div>
 
-                {!storyBrief && !briefLoading && (
+                {!storyBrief && !briefLoading && !enteringBriefManually && (
                   <p className="px-2.5 pb-2 text-[10px] text-gray-600 leading-relaxed">
-                    Generate a brief so the AI knows your full story — characters, plot, tone, gaps.
+                    Generate a brief so the AI knows your full story — characters, plot, tone, gaps. Or paste one you've already written.
                   </p>
+                )}
+
+                {!storyBrief && enteringBriefManually && (
+                  <div className="px-2.5 pb-2 flex flex-col gap-1.5">
+                    <textarea
+                      value={briefDraft}
+                      onChange={e => setBriefDraft(e.target.value)}
+                      rows={12}
+                      placeholder="Paste your project brief here — characters, premise, plot, tone, active threads…"
+                      className="w-full bg-[#0f1022] border border-[#2d3748] rounded px-2 py-1.5 text-[11px] text-gray-300 font-mono leading-relaxed resize-y outline-none focus:border-purple-700 placeholder-gray-700"
+                    />
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => {
+                          if (briefDraft.trim()) {
+                            setStoryBrief({ content: briefDraft.trim(), generatedAt: Date.now(), wordCountAtGeneration: totalWordCount(binder) });
+                            setEnteringBriefManually(false);
+                            setBriefDraft('');
+                          }
+                        }}
+                        disabled={!briefDraft.trim()}
+                        className="text-[10px] px-2 py-0.5 rounded bg-purple-700 text-white hover:bg-purple-600 disabled:opacity-40 disabled:cursor-default"
+                      >
+                        Save Brief
+                      </button>
+                      <button
+                        onClick={() => { setEnteringBriefManually(false); setBriefDraft(''); }}
+                        className="text-[10px] px-2 py-0.5 rounded bg-[#2d3748] text-gray-400 hover:text-white"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
                 )}
 
                 {storyBrief && !showBriefContent && (
