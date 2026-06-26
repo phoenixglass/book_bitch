@@ -169,10 +169,10 @@ function SceneCard({ item, isExpanded, onToggleExpand, onOpen, onDuplicate, onDe
             <span className="text-gray-300">{meta.povCharacter}</span>
           </div>
         )}
-        {meta.location && (
+        {(meta.locationOverall || meta.location) && (
           <div className="truncate">
             <span className="text-gray-600">Loc: </span>
-            <span className="text-gray-300">{meta.location}</span>
+            <span className="text-gray-300">{meta.locationOverall || meta.location}</span>
           </div>
         )}
         {meta.plotline && (
@@ -181,11 +181,11 @@ function SceneCard({ item, isExpanded, onToggleExpand, onOpen, onDuplicate, onDe
             <span className="text-gray-300">{meta.plotline}</span>
           </div>
         )}
-        {(meta.timelineDateStart) && (
+        {(meta.timelineSpecificDate || meta.timelineDateStart) && (
           <div className="col-span-2 truncate">
             <span className="text-gray-600">Date: </span>
             <span className="text-gray-300">
-              {meta.timelineDateStart}
+              {meta.timelineSpecificDate || meta.timelineDateStart}
               {meta.timelineDateEnd ? ` – ${meta.timelineDateEnd}` : ''}
               {meta.timelineUncertain ? ' ~' : ''}
             </span>

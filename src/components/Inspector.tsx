@@ -100,19 +100,35 @@ function SceneTab({ item, updateMeta }: { item: BinderItem; updateMeta: (patch: 
       </div>
 
       <StrField
-        label="Location"
+        label="Location (specific)"
         value={meta.location ?? ''}
         onChange={(v) => updateMeta({ location: v })}
-        placeholder="Where does this take place?"
+        placeholder="Specific setting within the scene"
+      />
+
+      <StrField
+        label="Overall Location"
+        value={meta.locationOverall ?? ''}
+        onChange={(v) => updateMeta({ locationOverall: v })}
+        placeholder="City, region, or country (e.g. Valdai)"
       />
 
       <div className="grid grid-cols-2 gap-2">
         <StrField
-          label="Timeline Start"
+          label="Timeline Clue"
           value={meta.timelineDateStart ?? ''}
           onChange={(v) => updateMeta({ timelineDateStart: v })}
-          placeholder="e.g. March 1941"
+          placeholder="e.g. two weeks after arrival"
         />
+        <StrField
+          label="Specific Date"
+          value={meta.timelineSpecificDate ?? ''}
+          onChange={(v) => updateMeta({ timelineSpecificDate: v })}
+          placeholder="e.g. 8/3/2025"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
         <StrField
           label="Timeline End"
           value={meta.timelineDateEnd ?? ''}

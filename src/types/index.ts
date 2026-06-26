@@ -35,7 +35,9 @@ export interface SceneMetadata {
   povCharacter: string;
   charactersPresent: string[];
   location: string;
+  locationOverall: string;
   timelineDateStart: string;
+  timelineSpecificDate: string;
   timelineDateEnd: string;
   timelineUncertain: boolean;
   timelineLabel: string;
@@ -507,6 +509,7 @@ export interface AIMetadataOutput {
   charactersPresent: string[];
   location: string;
   timelineDateClue: string;
+  timelineSpecificDate: string;
   emotionalTemperature: number;
   tensionLevel: number;
   themes: string[];
