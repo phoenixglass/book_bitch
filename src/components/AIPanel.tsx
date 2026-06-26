@@ -533,8 +533,9 @@ const METADATA_DISPLAY_FIELDS: { key: keyof AIMetadataOutput; label: string; for
   { key: 'synopsis', label: 'Synopsis' },
   { key: 'povCharacter', label: 'POV Character' },
   { key: 'charactersPresent', label: 'Characters Present', format: 'list' },
-  { key: 'location', label: 'Location' },
+  { key: 'location', label: 'Location (specific)' },
   { key: 'timelineDateClue', label: 'Timeline Clue' },
+  { key: 'timelineSpecificDate', label: 'Specific Date' },
   { key: 'emotionalTemperature', label: 'Emotional Temperature', format: 'number' },
   { key: 'tensionLevel', label: 'Tension Level', format: 'number' },
   { key: 'themes', label: 'Themes', format: 'list' },
@@ -581,6 +582,7 @@ function MetadataResult({
     if (accepted.charactersPresent) { metaPatch.charactersPresent = output.charactersPresent; hasMeta = true; }
     if (accepted.location) { metaPatch.location = output.location; hasMeta = true; }
     if (accepted.timelineDateClue) { metaPatch.timelineDateStart = output.timelineDateClue; hasMeta = true; }
+    if (accepted.timelineSpecificDate) { metaPatch.timelineSpecificDate = output.timelineSpecificDate; hasMeta = true; }
     if (accepted.emotionalTemperature) { metaPatch.emotionalTemperature = output.emotionalTemperature; hasMeta = true; }
     if (accepted.tensionLevel) { metaPatch.tensionLevel = output.tensionLevel; hasMeta = true; }
     if (accepted.themes) { metaPatch.themes = output.themes; hasMeta = true; }
