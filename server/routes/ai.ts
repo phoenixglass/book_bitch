@@ -57,7 +57,7 @@ aiRouter.post('/questions', async (req: Request, res: Response) => {
   }
 
   const plainText = stripHTML(content ?? '');
-  const { text: truncatedText, truncated } = truncate(plainText);
+  const { text: truncatedText, truncated } = truncate(plainText, 48000);
 
   const preamble = modePreamble(mode, allowDrafting);
   const categoryHint = category && category !== 'any'
@@ -155,7 +155,7 @@ aiRouter.post('/summarize', async (req: Request, res: Response) => {
   }
 
   const plainText = stripHTML(content);
-  const { text: truncatedText, truncated } = truncate(plainText);
+  const { text: truncatedText, truncated } = truncate(plainText, 48000);
   const preamble = modePreamble(mode, allowDrafting);
 
   const systemPrompt = [
@@ -236,7 +236,7 @@ aiRouter.post('/metadata', async (req: Request, res: Response) => {
   }
 
   const plainText = stripHTML(content);
-  const { text: truncatedText, truncated } = truncate(plainText);
+  const { text: truncatedText, truncated } = truncate(plainText, 48000);
   const preamble = modePreamble(mode, allowDrafting);
 
   const systemPrompt = [
@@ -491,7 +491,7 @@ aiRouter.post('/placement', async (req: Request, res: Response) => {
   }
 
   const plainText = stripHTML(content);
-  const { text: truncatedText, truncated } = truncate(plainText);
+  const { text: truncatedText, truncated } = truncate(plainText, 48000);
   const preamble = modePreamble(mode, allowDrafting);
 
   const isOmitted = objectType === 'omitted_material';
@@ -751,7 +751,7 @@ aiRouter.post('/plotline', async (req: Request, res: Response) => {
   }
 
   const plainText = stripHTML(content);
-  const { text: truncatedText, truncated } = truncate(plainText);
+  const { text: truncatedText, truncated } = truncate(plainText, 48000);
   const preamble = modePreamble(mode, allowDrafting);
 
   const existingList = allProjectPlotlines.length > 0
@@ -762,9 +762,11 @@ aiRouter.post('/plotline', async (req: Request, res: Response) => {
     'You are a writing assistant helping a novelist identify which narrative thread or plotline a scene belongs to.',
     preamble,
     'Your task: suggest 2–3 plotline or narrative thread names for the provided scene.',
+    storyContext ? 'A Story Brief with full manuscript context is included in the user message — use it to ground your suggestions in the actual story arcs and characters.' : '',
     'Rules:',
-    '- Prefer existing project plotlines where relevant (exact name matches).',
-    '- If no existing plotline fits, suggest a concise new name (2–5 words).',
+    '- Analyse the scene content first. Create a new plotline name if this scene\'s thread is not clearly covered by an existing plotline.',
+    '- Only reuse an existing plotline name if it genuinely matches this scene\'s narrative thread — do not force a fit.',
+    '- New plotline names should be concise (2–5 words) and describe the narrative arc, not just a character name.',
     '- Each suggestion must include a brief reason grounded in the scene text.',
     '- Do not invent details not present in the text or metadata.',
     '- Always use provided metadata (location, characters, POV) — do not override it with assumptions.',
@@ -833,6 +835,7 @@ aiRouter.post('/tags', async (req: Request, res: Response) => {
     allProjectTags = [],
     mode = 'metadata_assistance',
     allowDrafting = false,
+    storyContext,
   } = req.body as {
     title?: string;
     content?: string;
@@ -840,6 +843,7 @@ aiRouter.post('/tags', async (req: Request, res: Response) => {
     allProjectTags?: string[];
     mode?: string;
     allowDrafting?: boolean;
+    storyContext?: string;
   };
 
   if (!content) {
@@ -848,7 +852,7 @@ aiRouter.post('/tags', async (req: Request, res: Response) => {
   }
 
   const plainText = stripHTML(content);
-  const { text: truncatedText, truncated } = truncate(plainText, 4000);
+  const { text: truncatedText, truncated } = truncate(plainText, 12000);
   const preamble = modePreamble(mode, allowDrafting);
 
   const existingTagList = allProjectTags.length > 0
@@ -859,6 +863,7 @@ aiRouter.post('/tags', async (req: Request, res: Response) => {
     `You are a writing assistant helping a novelist tag their ${objectType} for organization.`,
     preamble,
     'Your task: suggest relevant tags for the provided text.',
+    storyContext ? 'A Story Brief with full manuscript context is included in the user message — use it to suggest tags that are relevant to this story\'s specific themes, characters, and locations.' : '',
     'Rules:',
     '- Prefer existing project tags where relevant (exact name matches).',
     '- New tag suggestions should be short (1–3 words), lowercase.',
@@ -875,7 +880,14 @@ aiRouter.post('/tags', async (req: Request, res: Response) => {
     .filter(Boolean)
     .join('\n');
 
-  const userPrompt = [`Title: ${title ?? 'Untitled'}`, `Type: ${objectType}`, '', 'Content:', truncatedText].join('\n');
+  const userPrompt = [
+    storyContextBlock(storyContext),
+    `Title: ${title ?? 'Untitled'}`,
+    `Type: ${objectType}`,
+    '',
+    'Content:',
+    truncatedText,
+  ].join('\n');
 
   try {
     const raw = await callAI(config, systemPrompt, userPrompt);
