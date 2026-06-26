@@ -327,12 +327,70 @@ app.post('/api/ai/tags', async (req: Request, res: Response) => {
 app.post('/api/ai/plotline', async (req: Request, res: Response) => {
   const config = getAIConfig();
   if (!config) { res.status(503).json({ error: 'AI is not configured.' }); return; }
-  const { title, content, allProjectPlotlines = [], mode = 'metadata_assistance', allowDrafting = false } = req.body as { title?: string; content?: string; allProjectPlotlines?: string[]; mode?: string; allowDrafting?: boolean };
+  const { title, content, notes = '', sceneMetadata = {}, allProjectPlotlines = [], mode = 'metadata_assistance', allowDrafting = false, storyContext } = req.body as { title?: string; content?: string; notes?: string; sceneMetadata?: Record<string, unknown>; allProjectPlotlines?: string[]; mode?: string; allowDrafting?: boolean; storyContext?: string };
   if (!content) { res.status(400).json({ error: 'No content provided.' }); return; }
-  const { text: truncatedText, truncated } = truncate(stripHTML(content), 4000);
+  const plainText = stripHTML(content);
+  const { text: truncatedText, truncated } = truncate(plainText, 48000);
+  const preamble = modePreamble(mode ?? 'metadata_assistance', allowDrafting ?? false);
   const existingList = allProjectPlotlines.length > 0 ? `Existing plotlines in this project: ${allProjectPlotlines.join(', ')}` : 'No existing plotlines defined in this project yet.';
-  const systemPrompt = ['You are a writing assistant helping a novelist identify which narrative thread or plotline a scene belongs to.', modePreamble(mode ?? 'metadata_assistance', allowDrafting ?? false), 'Your task: suggest 1–3 plotline or narrative thread names for the provided scene.', 'Rules:', '- Prefer existing project plotlines where relevant (exact name matches).', '- If no existing plotline fits, suggest a concise new name (2–5 words).', '- Each suggestion must include a brief reason grounded in the scene text.', '- Do not invent details not in the text.', existingList, '', 'Return ONLY valid JSON in this exact structure:', JSON.stringify({ suggestions: [{ name: 'Plotline or thread name', reason: 'One sentence grounding this in the scene text' }] })].filter(Boolean).join('\n');
-  const userPrompt = [`Scene title: ${title ?? 'Untitled'}`, '', 'Scene text:', truncatedText].join('\n');
+
+  const canonicalPlotlines = [
+    'The Marriage Plot — Phoenix and her husband, spanning 2016 to the present. A relationship marked by real harm — his drinking, the 2017 nursery incident, years of surveillance and control flowing in both directions — moving through partial repair that\'s neither resolved nor undone by the time she\'s taken. This explains who Phoenix is before any of this happens, and rhymes uncomfortably with the relationship she builds in Russia.',
+    'The Obsession Plot — The years-long development of Phoenix\'s fixation on Putin, tracked through the blog: from the 2017 John Oliver parody, through the 2023 marriage-crisis entry where the real origin surfaces, through the Pinterest boards and the biographies and the painted dicks, into something inseparable from her identity as a writer by the time she\'s approached in Florence.',
+    'The Abduction and Vetting Plot — How she ends up in Russia: the surveillance memo, the false pretenses at the workshop, the drugging, the quarantine, the medical processing. Establishes the mechanics of capture and the apparatus\'s logic for why she, specifically, was useful to them.',
+    'The Ghostwriting Plot — The actual assignment. The dictation sessions, the autobiography taking shape, Phoenix\'s growing understanding that the document is structurally incapable of holding the truth, and her craft anxiety about ventriloquizing a man she\'s never written before. Carries the book\'s thesis about writing itself.',
+    'The Two-Notebook Plot — The official notebook versus the stolen one, and the blog as a third document running alongside both. The structural spine: the record of what\'s allowed to exist versus what isn\'t, and which one survives.',
+    'The Relationship Plot — The escalation between Phoenix and Putin specifically: the mug, the keyholes, the bunker and Cheremushkin, the birthday, the belly, Sochi. Asks what it costs to be truly seen by someone, and what it costs to truly see someone back.',
+    'The Apparatus Plot — The world around them: the FSO, paranoia escalating through 2026, coup fears, the tightening circle, Ksenia\'s disappearance, the dimpled guard, Galina. Provides the political ground the personal story stands on and produces both Phoenix\'s unusual safety and the conditions for the book\'s destruction.',
+    'The Witness Plot — What Phoenix actually sees and understands about who he is: the rat story, the Kursk exchange, the mirror quote, the SPIEF realization about her own lack of purpose. Builds toward full clarity about both his humanity and his danger, arriving at "there\'s a little Putin in all of us" without softening the moral record.',
+    'The Reveal-and-Destruction Plot — The apparatus or Putin himself discovering the true content of what she\'s produced, the consequences that follow, and the eventual destruction of the manuscript. The tragic engine of the book.',
+    'The Homecoming Plot — Phoenix\'s return to Connecticut: the blog continuing in a changed register, the final entry on his birthday, what\'s left of the marriage, what she carries home that nobody can take from her.',
+  ];
+
+  const systemPrompt = [
+    'You are a writing assistant helping a novelist identify which narrative thread or plotline a scene belongs to.',
+    preamble,
+    'Your task: suggest 2–3 plotline or narrative thread names for the provided scene.',
+    storyContext ? 'A Story Brief with full manuscript context is included in the user message — use it to ground your suggestions in the actual story arcs and characters.' : '',
+    '',
+    'This project has the following canonical plotlines. Prefer these names and definitions when they match the scene:',
+    canonicalPlotlines.map((p, i) => `${i + 1}. ${p}`).join('\n'),
+    '',
+    'Rules:',
+    '- Match the scene to one or more canonical plotlines above when the fit is genuine.',
+    '- A scene may belong to multiple plotlines — suggest all that genuinely apply (up to 3).',
+    '- Create a new plotline name only if the scene\'s thread is clearly not covered by any canonical plotline.',
+    '- New plotline names should be concise (2–5 words) and describe the narrative arc, not just a character name.',
+    '- Each suggestion must include a brief reason grounded in the scene text.',
+    '- Do not invent details not present in the text or metadata.',
+    '- Always use provided metadata (location, characters, POV) — do not override it with assumptions.',
+    existingList,
+    '',
+    'Return ONLY valid JSON in this exact structure:',
+    JSON.stringify({ suggestions: [{ name: 'First plotline or thread name', reason: 'One sentence grounding this in the scene text' }, { name: 'Second plotline or thread name', reason: 'One sentence grounding this in the scene text' }, { name: 'Third plotline or thread name (optional)', reason: 'One sentence grounding this in the scene text' }] }),
+  ].filter(Boolean).join('\n');
+
+  const metaLines: string[] = [];
+  if ((sceneMetadata as Record<string, unknown>).location) metaLines.push(`Location: ${(sceneMetadata as Record<string, unknown>).location}`);
+  if ((sceneMetadata as Record<string, unknown>).povCharacter) metaLines.push(`POV character: ${(sceneMetadata as Record<string, unknown>).povCharacter}`);
+  if (Array.isArray((sceneMetadata as Record<string, unknown>).charactersPresent) && ((sceneMetadata as Record<string, unknown>).charactersPresent as string[]).length > 0) {
+    metaLines.push(`Characters present: ${((sceneMetadata as Record<string, unknown>).charactersPresent as string[]).join(', ')}`);
+  }
+  if (Array.isArray((sceneMetadata as Record<string, unknown>).themes) && ((sceneMetadata as Record<string, unknown>).themes as string[]).length > 0) {
+    metaLines.push(`Themes: ${((sceneMetadata as Record<string, unknown>).themes as string[]).join(', ')}`);
+  }
+  if ((sceneMetadata as Record<string, unknown>).synopsis) metaLines.push(`Synopsis: ${(sceneMetadata as Record<string, unknown>).synopsis}`);
+
+  const userPrompt = [
+    storyContext ? `[Story Brief]\n${storyContext}\n[End Story Brief]` : '',
+    `Scene title: ${title ?? 'Untitled'}`,
+    metaLines.length > 0 ? `\nScene metadata:\n${metaLines.join('\n')}` : '',
+    notes ? `\nAuthor notes:\n${stripHTML(notes)}` : '',
+    '',
+    'Scene text:',
+    truncatedText,
+  ].filter(s => s !== undefined).join('\n');
+
   try {
     const raw = await callAI(config, systemPrompt, userPrompt);
     const parsed = extractJSON(raw) as { suggestions: Array<{ name: string; reason: string }> };
