@@ -962,7 +962,7 @@ aiRouter.post('/generate-brief', async (req: Request, res: Response) => {
   ].join('\n');
 
   try {
-    const brief = (await callAI(config, systemPrompt, userPrompt, 4096)).trim();
+    const brief = (await callAI(config, systemPrompt, userPrompt, 8192)).trim();
     if (!brief) {
       res.status(502).json({ error: 'AI returned an empty response. Try again.' });
       return;

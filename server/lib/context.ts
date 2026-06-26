@@ -11,7 +11,7 @@ export function stripHTML(html: string): string {
     .trim();
 }
 
-export function truncate(text: string, maxChars = 8000): { text: string; truncated: boolean } {
+export function truncate(text: string, maxChars = 24000): { text: string; truncated: boolean } {
   if (text.length <= maxChars) return { text, truncated: false };
   return {
     text: text.slice(0, maxChars) + '\n\n[Content truncated — too long for a single AI call]',
