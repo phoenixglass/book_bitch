@@ -109,21 +109,12 @@ export const CODEX_EXTRACT_SYSTEM = [
   '',
   'For EVERY entity, cite the exact item id and title you were given in sourceAppearances with a brief evidence quote.',
   'Deduplicate within this excerpt: one entry per entity, listing aliases.',
-  'Be selective: skip trivial one-word mentions with no narrative weight. Include only entities that have clear relevance to the story or world.',
+  'Be selective: only include entities with clear narrative weight. Skip trivial one-word mentions, background noise, and generic references with no story function.',
   '',
-  'Return ONLY valid JSON: { "entries": [ ... ] }. Keep each entry COMPACT — use null for unused fields. Each entry:',
-  JSON.stringify({
-    name: 'Entity name',
-    codexType: 'character|reference|place|object|motif|institution|publication|event|document|theme|relationship|custom',
-    characterTier: 'major|secondary|minor|null (characters only)',
-    confidence: 0.9,
-    description: 'One factual sentence.',
-    isActualStoryCharacter: true,
-    isPassingReference: false,
-    aliases: ['alt name if any'],
-    sourceAppearances: [{ itemId: 'the id from [ITEM id=...]', itemTitle: 'title', evidence: 'brief quote' }],
-    suggestedTags: [],
-  }),
+  'OUTPUT FORMAT — NDJSON: output each entity as one complete JSON object on its own line. No outer array, no wrapper object, no markdown fences. If you run out of space, stop after the last complete line — partial objects are useless.',
+  'Each line must be a complete, valid JSON object with these fields (omit optional fields if empty/null):',
+  '{"name":"Entity Name","codexType":"character","characterTier":"major","confidence":0.9,"description":"One factual sentence.","isActualStoryCharacter":true,"isPassingReference":false,"aliases":[],"sourceAppearances":[{"itemId":"id-from-ITEM-tag","itemTitle":"title","evidence":"brief quote"}],"suggestedTags":[]}',
+  '(For non-character types, omit characterTier, isActualStoryCharacter, isPassingReference or set to null/false as appropriate.)',
 ].join('\n');
 
 const CODEX_CHUNK_CHARS = 18000;

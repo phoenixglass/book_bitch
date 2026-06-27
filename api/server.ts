@@ -68,6 +68,27 @@ function extractJSON(rawText: string): unknown {
   throw new Error('Could not extract valid JSON from AI response');
 }
 
+// Parse NDJSON (one JSON object per line). Captures all complete lines even if
+// the AI response is truncated — partial last lines are silently dropped.
+// Falls back to wrapped { entries: [...] } or bare array formats.
+function parseCodexChunk(raw: string): RawCodexEntry[] {
+  const lines = raw.split('\n').map((l) => l.trim()).filter((l) => l.startsWith('{'));
+  if (lines.length > 0) {
+    const entries: RawCodexEntry[] = [];
+    for (const line of lines) {
+      try { entries.push(JSON.parse(line) as RawCodexEntry); } catch { /* skip malformed line */ }
+    }
+    if (entries.length > 0) return entries;
+  }
+  try {
+    const parsed = extractJSON(raw);
+    if (Array.isArray(parsed)) return parsed as RawCodexEntry[];
+    const obj = parsed as { entries?: RawCodexEntry[] };
+    if (Array.isArray(obj?.entries)) return obj.entries;
+  } catch { /* fall through */ }
+  return [];
+}
+
 // ── AI Config ──────────────────────────────────────────────────────────────
 
 interface AIConfig {
@@ -263,15 +284,9 @@ app.post('/api/ai/codex-extract', async (req: Request, res: Response) => {
         const userPrompt = codexUserPrompt(chunk, i, chunks.length);
         return callAI(config, CODEX_EXTRACT_SYSTEM, userPrompt, 8192)
           .then((raw) => {
-            try {
-              const parsed = extractJSON(raw);
-              if (Array.isArray(parsed)) return parsed as RawCodexEntry[];
-              const obj = parsed as { entries?: RawCodexEntry[] };
-              return Array.isArray(obj?.entries) ? obj.entries : [];
-            } catch (e) {
-              console.error(`[codex-extract] chunk ${i + 1}/${chunks.length} parse error:`, e instanceof Error ? e.message : e);
-              return [] as RawCodexEntry[];
-            }
+            const entries = parseCodexChunk(raw);
+            if (entries.length === 0) console.error(`[codex-extract] chunk ${i + 1}/${chunks.length}: 0 entries. Response length=${raw.length}. First 300 chars: ${raw.slice(0, 300)}`);
+            return entries;
           });
       }),
     );
