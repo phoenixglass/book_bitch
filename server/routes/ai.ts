@@ -318,6 +318,7 @@ aiRouter.post('/codex-extract', async (req: Request, res: Response) => {
 
   const totalWordCount = prepared.reduce((n, s) => n + s.text.split(/\s+/).filter(Boolean).length, 0);
   const chunks = chunkCodexItems(prepared);
+  console.log(`[codex-extract] ${prepared.length} scenes → ${chunks.length} chunks, ${totalWordCount} words`);
 
   try {
     const chunkResults = await Promise.all(
@@ -325,7 +326,8 @@ aiRouter.post('/codex-extract', async (req: Request, res: Response) => {
         const userPrompt = codexUserPrompt(chunk, i, chunks.length);
         return callAI(config, CODEX_EXTRACT_SYSTEM, userPrompt, 8192).then((raw) => {
           const entries = parseCodexChunk(raw);
-          if (entries.length === 0) console.error(`[codex-extract] chunk ${i + 1}/${chunks.length}: 0 entries. Response length=${raw.length}. First 300 chars: ${raw.slice(0, 300)}`);
+          console.log(`[codex-extract] chunk ${i + 1}/${chunks.length}: ${entries.length} entries, response ${raw.length} chars`);
+          if (entries.length === 0) console.error(`  → first 400 chars of response: ${raw.slice(0, 400)}`);
           return entries;
         });
       }),
