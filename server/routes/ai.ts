@@ -305,11 +305,14 @@ aiRouter.post('/codex-extract', async (req: Request, res: Response) => {
     const chunkResults = await Promise.all(
       chunks.map((chunk, i) => {
         const userPrompt = codexUserPrompt(chunk, i, chunks.length);
-        return callAI(config, CODEX_EXTRACT_SYSTEM, userPrompt, 4096).then((raw) => {
+        return callAI(config, CODEX_EXTRACT_SYSTEM, userPrompt, 8192).then((raw) => {
           try {
             const parsed = extractJSON(raw) as { entries?: RawCodexEntry[] };
             return Array.isArray(parsed?.entries) ? parsed.entries : [];
-          } catch { return [] as RawCodexEntry[]; }
+          } catch (e) {
+            console.error(`[codex-extract] chunk ${i + 1}/${chunks.length} parse error:`, e instanceof Error ? e.message : e);
+            return [] as RawCodexEntry[];
+          }
         });
       }),
     );
