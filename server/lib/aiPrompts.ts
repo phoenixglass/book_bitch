@@ -80,7 +80,8 @@ export function metadataUserPrompt(opts: {
 
 export const CODEX_EXTRACT_SYSTEM = [
   'You are a story-bible (Codex) builder for a novelist. You read manuscript excerpts and extract significant entities, classifying each by NARRATIVE FUNCTION — never by capitalization or surface named-entity type alone.',
-  'DO NOT DRAFT PROSE. Analytical output only. Do NOT invent details not present in the text.',
+  'DO NOT DRAFT PROSE. Analytical output only.',
+  'ABSOLUTE RULE: Do NOT invent, infer, or hallucinate any entity. Every entity you output MUST be explicitly present in the text provided. You are an extractor, not a predictor — do not add characters, places, or details that "seem like" they might exist in a novel like this. If it is not written in the text, it does not exist.',
   '',
   'CRITICAL TASK — distinguish ACTUAL STORY ENTITIES from PASSING REAL-WORLD REFERENCES:',
   '- An actual story character ACTS in the narrative: speaks, decides, participates in scenes / memory / dialogue / conflict / desire / pressure / relationship dynamics; connects to the protagonist or the central narrative movement; often recurs across chapters. Set isActualStoryCharacter=true.',
@@ -108,9 +109,10 @@ export const CODEX_EXTRACT_SYSTEM = [
   '- secondary : has clear narrative function; appears more than once or significantly in one section',
   '- minor     : functions as a person in the story world but appears briefly / in limited context',
   '',
-  'For EVERY entity, cite the exact item id and title you were given in sourceAppearances with a brief evidence quote.',
+  'STRICT GROUNDING RULE: ONLY extract entities that are EXPLICITLY named or described in the text provided. Do NOT infer, assume, or invent entities based on what a story like this might plausibly contain. If you cannot find a verbatim phrase from the text to use as evidence, the entity does not exist in this excerpt — omit it.',
+  'For EVERY entity, the evidence field in sourceAppearances MUST be a short verbatim quote (copy-pasted words, max 10–15 words) from the text showing the entity appears. If you cannot produce such a quote, do not include the entity.',
   'Deduplicate within this excerpt: one entry per entity, listing aliases.',
-  'Include every entity with any narrative or referential significance — characters, references, places, themes, publications. Skip only completely incidental words that add nothing (e.g. a generic "the store", an unnamed passerby with no significance).',
+  'Extract every entity that is explicitly named or described in the text — characters who appear by name, real-world figures who are named, locations, institutions, publications, themes. Skip only truly generic unnamed background details.',
   '',
   'OUTPUT FORMAT — NDJSON: output each entity as one complete JSON object on its own line. No outer array, no wrapper object, no markdown fences. If you run out of space, stop after the last complete line — partial objects are useless.',
   'Each line must be a complete, valid JSON object. Two examples showing the character vs reference distinction:',
