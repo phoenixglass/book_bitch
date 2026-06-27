@@ -291,18 +291,30 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
       const docData = await fetchDocData(driveFileId);
       const tabs: any[] = docData.tabs || [];
 
-      updateItem(folderId, { children: [], title: docData.title || 'Untitled' });
+      // Update folder title but preserve all children (don't wipe them)
+      updateItem(folderId, { title: docData.title || 'Untitled' });
+
+      // Helper: find existing child by title, update its content; create new if not found
+      const mergeChapter = (title: string, html: string) => {
+        const folder = useAppStore.getState().binder
+          .flatMap(function flatten(item: any): any[] { return [item, ...(item.children || []).flatMap(flatten)]; })
+          .find((item: any) => item.id === folderId);
+        const existing = folder?.children?.find((c: any) => c.title === title);
+        if (existing) {
+          updateItem(existing.id, { content: html });
+        } else {
+          addItem(folderId, 'document');
+          const newId = useAppStore.getState().selectedId;
+          if (newId) updateItem(newId, { title, content: html });
+        }
+      };
 
       if (tabs.length > 1) {
         for (const tab of flattenTabs(tabs)) {
           const tabTitle =
             tab.tabProperties?.title || `Tab ${(tab.tabProperties?.index ?? 0) + 1}`;
           const html = docElementsToHtml(tab.documentTab?.body?.content || []);
-          addItem(folderId, 'document');
-          const docId = useAppStore.getState().selectedId;
-          if (docId) {
-            updateItem(docId, { title: tabTitle, content: html });
-          }
+          mergeChapter(tabTitle, html);
         }
       } else {
         const bodyContent =
@@ -315,11 +327,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
 
         for (let i = 0; i < chapters.length; i++) {
           const html = chapterHtmls[i] ?? docElementsToHtml(chapters[i].elements);
-          addItem(folderId, 'document');
-          const docId = useAppStore.getState().selectedId;
-          if (docId) {
-            updateItem(docId, { title: chapters[i].title, content: html });
-          }
+          mergeChapter(chapters[i].title, html);
         }
       }
 
