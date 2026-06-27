@@ -224,10 +224,16 @@ export type CodexType =
   | 'object'
   | 'motif'
   | 'institution'
+  | 'publication'   // newspaper, magazine, TV show, media outlet
+  | 'reference'     // real-world person / cultural / political reference (not a story character)
+  | 'relationship'  // a relationship / dynamic between entities
   | 'event'
   | 'document'
   | 'theme'
   | 'custom';
+
+// Character significance tier, stored on character codex entries.
+export type CharacterTier = 'major' | 'secondary' | 'minor';
 
 export interface CodexEntry {
   id: string;
@@ -260,8 +266,52 @@ export interface CodexEntry {
   meaning?: string;
   appearances?: string;
   evolution?: string;
+  // AI-classification metadata (from Codex extraction)
+  characterTier?: CharacterTier;     // for characters: major | secondary | minor
+  narrativeFunction?: string;        // how the entity functions in the story
+  isActualStoryCharacter?: boolean;  // distinguishes characters from passing references
+  isPassingReference?: boolean;      // real-world / one-off mention, not a story figure
   createdAt: number;
   updatedAt: number;
+}
+
+// ─── Codex Extraction Candidate (AI Scan, pre-save review) ───────────────────
+
+export interface CodexSourceAppearance {
+  itemId: string;
+  itemTitle: string;
+  evidence: string;        // short quote / excerpt or reason for detection
+  context?: string;        // role/context clue
+  occurrenceCount: number;
+}
+
+export interface CodexExtractionCandidate {
+  name: string;
+  codexType: CodexType;
+  characterTier?: CharacterTier;
+  confidence: number;            // 0.0 – 1.0
+  description: string;
+  narrativeFunction?: string;
+  isActualStoryCharacter: boolean;
+  isPassingReference: boolean;
+  aliases: string[];
+  sourceAppearances: CodexSourceAppearance[];
+  suggestedTags?: string[];
+  role?: string;
+  pronouns?: string;
+  relationships?: string;
+  physicalDetails?: string;
+  atmosphere?: string;
+  meaning?: string;
+  appearances?: string;
+  notes?: string;
+}
+
+export interface CodexExtractCoverage {
+  itemsAnalyzed: number;
+  itemsWithEntities: number;
+  chunkCount: number;
+  totalWordCount: number;
 }
 
 // ─── Questions ───────────────────────────────────────────────────────────────
@@ -518,6 +568,20 @@ export interface AIMetadataOutput {
   whatChanged: string;
   unansweredQuestions: string[];
   suggestedTags: string[];
+  // Story-Brief-informed chapter-level fields
+  chapterFunction?: string;          // role of this chapter in the larger story
+  form?: string;                     // manuscript | blog_entry | notes | fragment | research | other
+  activeCharacters?: string[];       // characters actively functioning in the chapter
+  minorReferences?: string[];        // public figures / one-off mentions, separated from characters
+  institutionsPublications?: string[]; // institutions / media / publications mentioned
+  emotionalStakes?: string;
+  centralTension?: string;
+  motifsThemes?: string[];
+  continuityNotes?: string[];
+  relationshipDynamics?: string[];
+  confidence?: number;
+  reasoning?: string;                // brief reasoning grounded in Story Brief + chapter
+  briefIncluded?: boolean;           // whether the saved Story Brief was part of the request
   truncated?: boolean;
   // tracks which fields the user has accepted (undefined = not yet decided)
   accepted?: Partial<Record<string, boolean>>;

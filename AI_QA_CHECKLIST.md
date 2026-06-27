@@ -198,6 +198,56 @@ After each item type test, confirm:
 
 ---
 
+## 10. Codex Generation (Full Binder) & Story-Brief Metadata
+
+These tests cover the rebuilt Codex generation and chapter-metadata context retrieval.
+Run them against the **Observations** project.
+
+### TEST 1 — Full Binder Coverage
+- [ ] Open the Observations project (multiple chapters in the Manuscript binder).
+- [ ] Go to **Codex → ✨ Generate**. The scope panel opens.
+- [ ] Confirm scope defaults to **Full Observations binder**.
+- [ ] Confirm the panel shows the item count and approximate word count **before** running, and states that Trash is excluded and empty items skipped.
+- [ ] Click **Run Codex generation**. After it finishes, the review header shows a coverage bar: `N/M chapters contributed`, chunk count, words analyzed.
+- [ ] Confirm `chapters contributed` reflects chapters **beyond the first few** (expand a few candidates' "appears in N chapters" to verify source chapters are cited from across the binder).
+
+### TEST 2 — Entity Type Classification
+- [ ] Confirm **Phoenix** and **Putin** are classified as **Character** (with a tier badge: Major/Secondary/Minor) and marked "actual character".
+- [ ] Confirm **Hillary Clinton** / **John Oliver** are classified as **Real-world Reference** (🌐) and marked "passing reference", NOT Character — unless the text gives them active story function.
+- [ ] Confirm **The New York Times** is classified as **Publication / Media** (📰) or Institution, not Character.
+- [ ] Confirm places, institutions, motifs, documents, or themes appear as non-character types where appropriate.
+- [ ] Use the per-candidate **type dropdown** to reclassify one candidate before saving; confirm the change holds.
+
+### TEST 3 — Passing References
+- [ ] Confirm one-off public figures / media references are separated (🌐 reference, "passing reference" badge) and are **unchecked by default**.
+- [ ] Use **"Only actual entities"** to confirm references get deselected.
+- [ ] Reject (uncheck) the passing references and **Save selected**. Confirm they are not added to the Codex.
+
+### TEST 4 — Deduplication / Merging
+- [ ] Run Codex generation once and save Phoenix + Putin.
+- [ ] Run Codex generation again. Confirm Phoenix and Putin now show a yellow **"merges into …"** badge.
+- [ ] Save again → navigate the Codex list → confirm there is still ONE Phoenix and ONE Putin (no duplicates); their related scene IDs/aliases were merged.
+
+### TEST 5 — Story Brief in Metadata
+- [ ] In the AI panel, confirm a saved **Story Brief** exists (generate one if needed).
+- [ ] Select a manuscript chapter → AI panel → **Generate Metadata**.
+- [ ] Confirm the result shows the green banner **"✓ Story Brief included"**.
+- [ ] Confirm generated metadata reflects the larger premise (e.g. character roles, central dynamics from the Brief), not only the chapter text.
+- [ ] Delete the Story Brief and re-run → confirm the amber **"⚠ No Story Brief found"** banner appears instead.
+
+### TEST 6 — Metadata Field Accuracy & Partial Persistence
+- [ ] Confirm metadata separates: **Active Characters**, **Minor / Real-world References**, **Institutions / Publications**, and **Motifs/Themes** into distinct fields.
+- [ ] Accept some fields (e.g. Synopsis + Active Characters) and reject others.
+- [ ] Click **Apply Selected** → confirm only accepted fields apply (qualitative extras append to the chapter Notes under "— AI chapter metadata —").
+- [ ] Refresh the page → confirm only the accepted fields persisted; rejected fields did not change anything.
+
+### TEST 7 — No Silent Truncation
+- [ ] On a large binder, run Codex generation on Full binder scope.
+- [ ] Confirm the scope panel warns when the binder is large and states it will be analyzed in chunks (no chapters dropped).
+- [ ] Confirm the coverage bar's "chapters contributed" and chunk count show the whole binder was processed — it does NOT stop at the first few chapters.
+
+---
+
 ## Notes for QA Tester
 
 - AI output quality varies; the QA goal is that actions run, data saves to the correct model, and no errors occur.
