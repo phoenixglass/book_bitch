@@ -1,5 +1,14 @@
 import Anthropic from '@anthropic-ai/sdk';
 import express, { type Request, type Response } from 'express';
+import {
+  metadataSystemPrompt,
+  metadataUserPrompt,
+  CODEX_EXTRACT_SYSTEM,
+  chunkCodexItems,
+  codexUserPrompt,
+  mergeCodexEntries,
+  type RawCodexEntry,
+} from '../server/lib/aiPrompts.js';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -57,6 +66,27 @@ function extractJSON(rawText: string): unknown {
     try { return JSON.parse(text.slice(arrStart, arrEnd + 1)); } catch { /* fall through */ }
   }
   throw new Error('Could not extract valid JSON from AI response');
+}
+
+// Parse NDJSON (one JSON object per line). Captures all complete lines even if
+// the AI response is truncated — partial last lines are silently dropped.
+// Falls back to wrapped { entries: [...] } or bare array formats.
+function parseCodexChunk(raw: string): RawCodexEntry[] {
+  const lines = raw.split('\n').map((l) => l.trim()).filter((l) => l.startsWith('{'));
+  if (lines.length > 0) {
+    const entries: RawCodexEntry[] = [];
+    for (const line of lines) {
+      try { entries.push(JSON.parse(line) as RawCodexEntry); } catch { /* skip malformed line */ }
+    }
+    if (entries.length > 0) return entries;
+  }
+  try {
+    const parsed = extractJSON(raw);
+    if (Array.isArray(parsed)) return parsed as RawCodexEntry[];
+    const obj = parsed as { entries?: RawCodexEntry[] };
+    if (Array.isArray(obj?.entries)) return obj.entries;
+  } catch { /* fall through */ }
+  return [];
 }
 
 // ── AI Config ──────────────────────────────────────────────────────────────
@@ -208,16 +238,24 @@ app.post('/api/ai/summarize', async (req: Request, res: Response) => {
 app.post('/api/ai/metadata', async (req: Request, res: Response) => {
   const config = getAIConfig();
   if (!config) { res.status(503).json({ error: 'AI is not configured.' }); return; }
-  const { title, content, mode = 'metadata_assistance', allowDrafting = false } = req.body as { title?: string; content?: string; mode?: string; allowDrafting?: boolean };
+  const {
+    title, content, mode = 'metadata_assistance', allowDrafting = false,
+    storyContext, existingMetadata = {}, relevantCodex = [], projectStructure,
+  } = req.body as {
+    title?: string; content?: string; mode?: string; allowDrafting?: boolean;
+    storyContext?: string; existingMetadata?: Record<string, unknown>;
+    relevantCodex?: string[]; projectStructure?: string;
+  };
   if (!content) { res.status(400).json({ error: 'No scene content provided.' }); return; }
-  const { text: truncatedText, truncated } = truncate(stripHTML(content));
-  const systemPrompt = ['You are a writing assistant helping a novelist organize scene metadata.', modePreamble(mode ?? 'metadata_assistance', allowDrafting ?? false), 'Your task: suggest metadata values based ONLY on evidence in the provided scene text.', 'Rules:', '- Only suggest values supported by the text.', '- emotionalTemperature and tensionLevel are integers 1–10.', '', 'Return ONLY valid JSON in this exact structure:', JSON.stringify({ synopsis: '2–3 sentence synopsis', povCharacter: 'Name or empty string', charactersPresent: ['names'], location: 'Primary location or empty string', timelineDateClue: 'Date/time references or empty string', emotionalTemperature: 5, tensionLevel: 5, themes: ['theme'], motifs: ['motif'], sceneFunction: 'What this scene accomplishes (1 sentence)', whatChanged: 'What shifted by the end (1 sentence)', unansweredQuestions: ['Question raised'], suggestedTags: ['tag'] })].filter(Boolean).join('\n');
-  const userPrompt = [`Scene title: ${title ?? 'Untitled'}`, '', 'Scene text:', truncatedText].join('\n');
+  const { text: truncatedText, truncated } = truncate(stripHTML(content), 40000);
+  const briefIncluded = !!storyContext?.trim();
+  const systemPrompt = metadataSystemPrompt(modePreamble(mode ?? 'metadata_assistance', allowDrafting ?? false), briefIncluded);
+  const userPrompt = metadataUserPrompt({ title, storyContext, existingMetadata, relevantCodex, projectStructure, chapterText: truncatedText });
   try {
-    const raw = await callAI(config, systemPrompt, userPrompt);
+    const raw = await callAI(config, systemPrompt, userPrompt, 3072);
     const parsed = extractJSON(raw) as Record<string, unknown>;
     if (!parsed || typeof parsed.synopsis !== 'string') { res.status(502).json({ error: 'AI returned an unexpected format.' }); return; }
-    res.json({ ...parsed, truncated });
+    res.json({ ...parsed, briefIncluded, truncated });
   } catch (err) {
     res.status(502).json({ error: `AI call failed: ${err instanceof Error ? err.message : String(err)}` });
   }
@@ -228,16 +266,45 @@ app.post('/api/ai/codex-extract', async (req: Request, res: Response) => {
   const config = getAIConfig();
   if (!config) { res.status(503).json({ error: 'AI is not configured.' }); return; }
   const { scenes } = req.body as { scenes: Array<{ id: string; title: string; text: string }> };
-  if (!scenes || scenes.length === 0) { res.status(400).json({ error: 'No scenes provided.' }); return; }
-  const combinedText = scenes.map((s) => `=== ${s.title} ===\n${s.text}`).join('\n\n');
-  const { text: truncatedText, truncated } = truncate(combinedText, 20000);
-  const systemPrompt = ['You are a writing assistant helping a novelist build a world-bible (Codex) from their manuscript.', 'DO NOT DRAFT PROSE: Your output is analytical only.', 'Your task: extract and identify all significant named entities from the provided manuscript scenes.', 'Rules:', '- Extract only entities that are clearly named and appear meaningfully in the text.', '- Do NOT invent details not stated in the text.', '- Deduplicate: if the same entity appears in multiple scenes, create ONE entry.', '', 'Return ONLY valid JSON in this exact structure:', JSON.stringify({ entries: [{ name: 'Entity name', codexType: 'character', description: '2-4 sentence description', aliases: ['alternative names'], role: 'protagonist|antagonist|supporting|minor', relationships: 'Key relationships', physicalDetails: 'Physical description', atmosphere: 'Mood and sensory details', meaning: 'Symbolic meaning', appearances: 'Where and how it appears' }] })].join('\n');
-  const userPrompt = [`Manuscript: ${scenes.length} scene(s). Extract all significant named entities.`, '', truncatedText, truncated ? '\n[Content truncated]' : ''].join('\n');
+  if (!scenes || scenes.length === 0) { res.status(400).json({ error: 'No scenes provided. Select content to analyze.' }); return; }
+
+  // Strip HTML once, drop empties, then chunk by item boundary so EVERY item is
+  // analyzed — never silently truncated to the first few chapters.
+  const prepared = scenes
+    .map((s) => ({ id: s.id, title: s.title || 'Untitled', text: stripHTML(s.text ?? '') }))
+    .filter((s) => s.text.length > 0);
+  if (prepared.length === 0) { res.status(400).json({ error: 'Selected items contain no text to analyze.' }); return; }
+
+  const totalWordCount = prepared.reduce((n, s) => n + s.text.split(/\s+/).filter(Boolean).length, 0);
+  const chunks = chunkCodexItems(prepared);
+
   try {
-    const raw = await callAI(config, systemPrompt, userPrompt, 4096);
-    const parsed = extractJSON(raw) as { entries: unknown[] };
-    if (!parsed || !Array.isArray(parsed.entries)) { res.status(502).json({ error: 'AI returned an unexpected format.' }); return; }
-    res.json({ entries: parsed.entries, truncated });
+    const chunkResults = await Promise.all(
+      chunks.map((chunk, i) => {
+        const userPrompt = codexUserPrompt(chunk, i, chunks.length);
+        return callAI(config, CODEX_EXTRACT_SYSTEM, userPrompt, 8192)
+          .then((raw) => {
+            const entries = parseCodexChunk(raw);
+            if (entries.length === 0) console.error(`[codex-extract] chunk ${i + 1}/${chunks.length}: 0 entries. Response length=${raw.length}. First 300 chars: ${raw.slice(0, 300)}`);
+            return entries;
+          });
+      }),
+    );
+
+    const merged = mergeCodexEntries(chunkResults.flat());
+    const itemsWithEntities = new Set<string>();
+    for (const e of merged) for (const a of e.sourceAppearances ?? []) if (a.itemId) itemsWithEntities.add(a.itemId);
+
+    res.json({
+      entries: merged,
+      coverage: {
+        itemsAnalyzed: prepared.length,
+        itemsWithEntities: itemsWithEntities.size,
+        chunkCount: chunks.length,
+        totalWordCount,
+      },
+      truncated: false,
+    });
   } catch (err) {
     res.status(502).json({ error: `AI call failed: ${err instanceof Error ? err.message : String(err)}` });
   }

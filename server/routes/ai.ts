@@ -1,6 +1,33 @@
 import { Router, Request, Response } from 'express';
 import { getAIConfig, callAI, extractJSON } from '../lib/ai.js';
 import { stripHTML, truncate, modePreamble } from '../lib/context.js';
+import {
+  metadataSystemPrompt,
+  metadataUserPrompt,
+  CODEX_EXTRACT_SYSTEM,
+  chunkCodexItems,
+  codexUserPrompt,
+  mergeCodexEntries,
+  type RawCodexEntry,
+} from '../lib/aiPrompts.js';
+
+function parseCodexChunk(raw: string): RawCodexEntry[] {
+  const lines = raw.split('\n').map((l) => l.trim()).filter((l) => l.startsWith('{'));
+  if (lines.length > 0) {
+    const entries: RawCodexEntry[] = [];
+    for (const line of lines) {
+      try { entries.push(JSON.parse(line) as RawCodexEntry); } catch { /* skip malformed line */ }
+    }
+    if (entries.length > 0) return entries;
+  }
+  try {
+    const parsed = extractJSON(raw);
+    if (Array.isArray(parsed)) return parsed as RawCodexEntry[];
+    const obj = parsed as { entries?: RawCodexEntry[] };
+    if (Array.isArray(obj?.entries)) return obj.entries;
+  } catch { /* fall through */ }
+  return [];
+}
 
 export const aiRouter = Router();
 
@@ -222,12 +249,18 @@ aiRouter.post('/metadata', async (req: Request, res: Response) => {
     return;
   }
 
-  const { title, content, mode = 'metadata_assistance', allowDrafting = false, storyContext } = req.body as {
+  const {
+    title, content, mode = 'metadata_assistance', allowDrafting = false,
+    storyContext, existingMetadata = {}, relevantCodex = [], projectStructure,
+  } = req.body as {
     title?: string;
     content?: string;
     mode?: string;
     allowDrafting?: boolean;
     storyContext?: string;
+    existingMetadata?: Record<string, unknown>;
+    relevantCodex?: string[];
+    projectStructure?: string;
   };
 
   if (!content) {
@@ -238,55 +271,19 @@ aiRouter.post('/metadata', async (req: Request, res: Response) => {
   const plainText = stripHTML(content);
   const { text: truncatedText, truncated } = truncate(plainText, 48000);
   const preamble = modePreamble(mode, allowDrafting);
+  const briefIncluded = !!storyContext?.trim();
 
-  const systemPrompt = [
-    'You are a writing assistant helping a novelist organize scene metadata.',
-    preamble,
-    'Your task: suggest metadata values based on evidence in the provided scene text, informed by the Story Brief.',
-    storyContext ? 'CRITICAL: A Story Brief is included at the top of the user message. Read it first. Use it to correctly name characters, identify locations, and understand each character\'s role. If a character appears in the scene and is named in the Brief, use their name — never write "an unidentified woman", "a man", or similar vague references.' : '',
-    'Rules:',
-    '- Base values on evidence in the text; use the Story Brief to resolve character names and context.',
-    '- Do not invent details not grounded in either the scene or the Brief.',
-    '- emotionalTemperature and tensionLevel are integers 1–10.',
-    '- suggestedTags should be short (1–3 words), useful for manuscript organization.',
-    '',
-    'Return ONLY valid JSON in this exact structure:',
-    JSON.stringify({
-      synopsis: '2–3 sentence synopsis of what happens in the scene',
-      povCharacter: 'Name of the POV character, or empty string',
-      charactersPresent: ['Character names physically present in the scene'],
-      location: 'Primary location (specific setting described in the scene), or empty string',
-      timelineDateClue: 'Any relative or contextual date/time references found in the text (e.g. "two weeks after arrival", "the morning after the ball"), or empty string',
-      timelineSpecificDate: 'A specific calendar date if one is explicitly stated in the text (e.g. "March 3, 1941" or "8/3/2025"), or empty string',
-      emotionalTemperature: 5,
-      tensionLevel: 5,
-      themes: ['theme or motif present in the scene'],
-      motifs: ['recurring symbol or motif'],
-      sceneFunction: 'What this scene accomplishes narratively (1 sentence)',
-      whatChanged: 'What shifted by the end of the scene (1 sentence)',
-      unansweredQuestions: ['Question this scene raises but does not answer'],
-      suggestedTags: ['tag1', 'tag2'],
-    }),
-  ]
-    .filter(Boolean)
-    .join('\n');
-
-  const userPrompt = [
-    storyContextBlock(storyContext),
-    `Scene title: ${title ?? 'Untitled'}`,
-    '',
-    'Scene text:',
-    truncatedText,
-  ].join('\n');
+  const systemPrompt = metadataSystemPrompt(preamble, briefIncluded);
+  const userPrompt = metadataUserPrompt({ title, storyContext, existingMetadata, relevantCodex, projectStructure, chapterText: truncatedText });
 
   try {
-    const raw = await callAI(config, systemPrompt, userPrompt);
+    const raw = await callAI(config, systemPrompt, userPrompt, 3072);
     const parsed = extractJSON(raw) as Record<string, unknown>;
     if (!parsed || typeof parsed.synopsis !== 'string') {
       res.status(502).json({ error: 'AI returned an unexpected format. Try again.' });
       return;
     }
-    res.json({ ...parsed, truncated });
+    res.json({ ...parsed, briefIncluded, truncated });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(502).json({ error: `AI call failed: ${msg}` });
@@ -294,138 +291,6 @@ aiRouter.post('/metadata', async (req: Request, res: Response) => {
 });
 
 // ── POST /api/ai/codex-extract ───────────────────────────────────────────────
-
-const CODEX_EXTRACT_SYSTEM = [
-  'You are a writing assistant helping a novelist build a world-bible (Codex) from their manuscript.',
-  'DO NOT DRAFT PROSE: Your output is analytical only.',
-  'Your task: extract and identify all significant named entities from the provided manuscript scenes.',
-  'Rules:',
-  '- Extract only entities that are clearly named and appear meaningfully in the text.',
-  '- Do NOT invent details not stated in the text.',
-  '- Deduplicate: if the same entity appears in multiple scenes, create ONE entry.',
-  '- Descriptions should be factual, present-tense, 2–4 sentences.',
-  '- Only include type-specific fields when there is actual evidence in the text.',
-  '- CRITICAL: Carefully classify each entity by its type—do NOT default to "character" for everything.',
-  '',
-  'Entity types with classification rules:',
-  '- character: A named person or being with agency (can act, speak, make decisions). Examples: "Sarah," "King Arthur," "the captain," "Aunt Rose"',
-  '- place: A named location, setting, building, or region. Examples: "Manhattan," "the library," "The Purple Rose café," "Wales," "the kitchen," "Room 412"',
-  '- object: A named physical object with narrative significance. Examples: "the dagger," "Tesla\'s journal," "the red car," "the portrait"',
-  '- motif: A recurring symbol, image, or pattern that repeats across the text. Examples: "the broken clock," "water imagery," "the maze," "the letter"',
-  '- institution: A named organization, company, group, government, or system. Examples: "The Academy," "MIT," "the Mafia," "the Church," "Parliament"',
-  '- event: A named past, current, or future event referenced in the text. Examples: "the War," "the Coup," "the Reunion," "the Festival"',
-  '- theme: A broad thematic concern strongly present in the text. Examples: "loss," "identity," "corruption," "redemption"',
-  '',
-  'CLASSIFICATION GUIDANCE:',
-  '- If it\'s a location/place where things happen → place, NOT character',
-  '- If it\'s a person/being → character',
-  '- If it\'s a thing/item that can be held → object',
-  '- If it\'s an organization/institution → institution',
-  '',
-  'Return ONLY valid JSON in this exact structure (entries must use the correct codexType, not just "character"):',
-  JSON.stringify({
-    entries: [
-      {
-        name: 'Sarah',
-        codexType: 'character',
-        description: 'Example character entry.',
-        aliases: [],
-        role: 'protagonist|antagonist|supporting|minor',
-        pronouns: 'she/her',
-        relationships: 'Key relationships mentioned',
-        physicalDetails: 'Physical description from text',
-        atmosphere: null,
-        meaning: null,
-        appearances: null,
-      },
-      {
-        name: 'The Old Library',
-        codexType: 'place',
-        description: 'Example place entry.',
-        aliases: [],
-        role: null,
-        pronouns: null,
-        relationships: null,
-        physicalDetails: null,
-        atmosphere: 'Mood and sensory details as described',
-        meaning: null,
-        appearances: null,
-      },
-      {
-        name: 'The Golden Key',
-        codexType: 'object',
-        description: 'Example object entry.',
-        aliases: [],
-        role: null,
-        pronouns: null,
-        relationships: null,
-        physicalDetails: null,
-        atmosphere: null,
-        meaning: 'Symbolic meaning or narrative function',
-        appearances: 'Where and how it appears in the text',
-      },
-      {
-        name: 'The Academy',
-        codexType: 'institution',
-        description: 'Example institution entry.',
-        aliases: [],
-        role: null,
-        pronouns: null,
-        relationships: null,
-        physicalDetails: null,
-        atmosphere: null,
-        meaning: null,
-        appearances: null,
-      },
-    ],
-  }),
-].join('\n');
-
-const CHUNK_SIZE = 20000;
-
-function chunkScenes(scenes: Array<{ id: string; title: string; text: string }>): string[] {
-  const chunks: string[] = [];
-  let current = '';
-  for (const scene of scenes) {
-    const block = `=== ${scene.title} ===\n${scene.text}`;
-    if (current.length > 0 && current.length + block.length + 2 > CHUNK_SIZE) {
-      chunks.push(current);
-      current = block;
-    } else {
-      current = current.length > 0 ? current + '\n\n' + block : block;
-    }
-    // If a single scene exceeds the chunk size, hard-truncate it
-    if (current.length > CHUNK_SIZE) {
-      current = current.slice(0, CHUNK_SIZE);
-    }
-  }
-  if (current.length > 0) chunks.push(current);
-  return chunks;
-}
-
-interface RawEntry {
-  name?: string;
-  codexType?: string;
-  [key: string]: unknown;
-}
-
-function mergeEntries(allEntries: RawEntry[]): RawEntry[] {
-  const seen = new Map<string, RawEntry>();
-  for (const entry of allEntries) {
-    if (!entry.name || !entry.codexType) continue;
-    const key = `${entry.codexType}::${String(entry.name).toLowerCase().trim()}`;
-    if (!seen.has(key)) {
-      seen.set(key, entry);
-    } else {
-      // Merge: keep existing but fill in any missing fields from the later chunk
-      const existing = seen.get(key)!;
-      for (const [k, v] of Object.entries(entry)) {
-        if (v && !existing[k]) existing[k] = v;
-      }
-    }
-  }
-  return Array.from(seen.values());
-}
 
 aiRouter.post('/codex-extract', async (req: Request, res: Response) => {
   const config = getAIConfig();
@@ -443,25 +308,45 @@ aiRouter.post('/codex-extract', async (req: Request, res: Response) => {
     return;
   }
 
-  const chunks = chunkScenes(scenes);
+  const prepared = scenes
+    .map((s) => ({ id: s.id, title: s.title || 'Untitled', text: stripHTML(s.text ?? '') }))
+    .filter((s) => s.text.length > 0);
+  if (prepared.length === 0) {
+    res.status(400).json({ error: 'Selected items contain no text to analyze.' });
+    return;
+  }
+
+  const totalWordCount = prepared.reduce((n, s) => n + s.text.split(/\s+/).filter(Boolean).length, 0);
+  const chunks = chunkCodexItems(prepared);
+  console.log(`[codex-extract] ${prepared.length} scenes → ${chunks.length} chunks, ${totalWordCount} words`);
 
   try {
     const chunkResults = await Promise.all(
-      chunks.map((chunkText, i) => {
-        const userPrompt = [
-          `Manuscript chunk ${i + 1} of ${chunks.length}. Extract all significant named entities.`,
-          '',
-          chunkText,
-        ].join('\n');
-        return callAI(config, CODEX_EXTRACT_SYSTEM, userPrompt, 4096).then((raw) => {
-          const parsed = extractJSON(raw) as { entries: RawEntry[] };
-          return Array.isArray(parsed?.entries) ? parsed.entries : [];
+      chunks.map((chunk, i) => {
+        const userPrompt = codexUserPrompt(chunk, i, chunks.length);
+        return callAI(config, CODEX_EXTRACT_SYSTEM, userPrompt, 8192).then((raw) => {
+          const entries = parseCodexChunk(raw);
+          console.log(`[codex-extract] chunk ${i + 1}/${chunks.length}: ${entries.length} entries, response ${raw.length} chars`);
+          if (entries.length === 0) console.error(`  → first 400 chars of response: ${raw.slice(0, 400)}`);
+          return entries;
         });
       }),
     );
 
-    const merged = mergeEntries(chunkResults.flat());
-    res.json({ entries: merged, truncated: false });
+    const merged = mergeCodexEntries(chunkResults.flat());
+    const itemsWithEntities = new Set<string>();
+    for (const e of merged) for (const a of e.sourceAppearances ?? []) if (a.itemId) itemsWithEntities.add(a.itemId);
+
+    res.json({
+      entries: merged,
+      coverage: {
+        itemsAnalyzed: prepared.length,
+        itemsWithEntities: itemsWithEntities.size,
+        chunkCount: chunks.length,
+        totalWordCount,
+      },
+      truncated: false,
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(502).json({ error: `AI call failed: ${msg}` });
