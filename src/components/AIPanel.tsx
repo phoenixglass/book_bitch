@@ -531,39 +531,19 @@ function SummarizeResult({
 
 const METADATA_DISPLAY_FIELDS: { key: keyof AIMetadataOutput; label: string; format?: 'list' | 'number' }[] = [
   { key: 'synopsis', label: 'Synopsis' },
-  { key: 'chapterFunction', label: 'Chapter Function (in larger story)' },
-  { key: 'form', label: 'Form' },
   { key: 'povCharacter', label: 'POV Character' },
-  { key: 'activeCharacters', label: 'Active Characters', format: 'list' },
   { key: 'charactersPresent', label: 'Characters Present', format: 'list' },
-  { key: 'minorReferences', label: 'Minor / Real-world References', format: 'list' },
-  { key: 'institutionsPublications', label: 'Institutions / Publications', format: 'list' },
   { key: 'location', label: 'Location (specific)' },
   { key: 'timelineDateClue', label: 'Timeline Clue' },
   { key: 'timelineSpecificDate', label: 'Specific Date' },
   { key: 'emotionalTemperature', label: 'Emotional Temperature', format: 'number' },
   { key: 'tensionLevel', label: 'Tension Level', format: 'number' },
-  { key: 'emotionalStakes', label: 'Emotional Stakes' },
-  { key: 'centralTension', label: 'Central Tension' },
   { key: 'themes', label: 'Themes', format: 'list' },
   { key: 'motifs', label: 'Motifs', format: 'list' },
   { key: 'sceneFunction', label: 'Scene Function' },
-  { key: 'whatChanged', label: 'What Changes by the End' },
-  { key: 'relationshipDynamics', label: 'Relationship Dynamics', format: 'list' },
-  { key: 'continuityNotes', label: 'Continuity Notes', format: 'list' },
+  { key: 'whatChanged', label: 'What Changed' },
   { key: 'unansweredQuestions', label: 'Unanswered Questions', format: 'list' },
   { key: 'suggestedTags', label: 'Suggested Tags', format: 'list' },
-];
-
-// Fields that, when accepted, are appended to the chapter's Notes (no SceneMetadata slot).
-const METADATA_NOTE_FIELDS: { key: keyof AIMetadataOutput; label: string }[] = [
-  { key: 'chapterFunction', label: 'Chapter function' },
-  { key: 'minorReferences', label: 'Minor / real-world references' },
-  { key: 'institutionsPublications', label: 'Institutions / publications' },
-  { key: 'emotionalStakes', label: 'Emotional stakes' },
-  { key: 'centralTension', label: 'Central tension' },
-  { key: 'relationshipDynamics', label: 'Relationship dynamics' },
-  { key: 'continuityNotes', label: 'Continuity notes' },
 ];
 
 function MetadataResult({
@@ -599,9 +579,6 @@ function MetadataResult({
 
     if (accepted.synopsis) patch.synopsis = output.synopsis;
     if (accepted.povCharacter) { metaPatch.povCharacter = output.povCharacter; hasMeta = true; }
-    // Active characters are the actual story characters in the chapter; prefer them
-    // for charactersPresent, falling back to the broader list.
-    if (accepted.activeCharacters && output.activeCharacters) { metaPatch.charactersPresent = output.activeCharacters; hasMeta = true; }
     if (accepted.charactersPresent) { metaPatch.charactersPresent = output.charactersPresent; hasMeta = true; }
     if (accepted.location) { metaPatch.location = output.location; hasMeta = true; }
     if (accepted.timelineDateClue) { metaPatch.timelineDateStart = output.timelineDateClue; hasMeta = true; }
@@ -614,19 +591,6 @@ function MetadataResult({
     if (accepted.whatChanged) { metaPatch.whatChanged = output.whatChanged; hasMeta = true; }
     if (accepted.suggestedTags) { metaPatch.tags = output.suggestedTags; hasMeta = true; }
     if (hasMeta) patch.sceneMetadata = metaPatch;
-
-    // Qualitative fields with no SceneMetadata slot get appended to chapter Notes.
-    const noteLines: string[] = [];
-    for (const f of METADATA_NOTE_FIELDS) {
-      if (!accepted[f.key]) continue;
-      const v = output[f.key];
-      if (v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0)) continue;
-      noteLines.push(`${f.label}: ${Array.isArray(v) ? (v as string[]).join('; ') : String(v)}`);
-    }
-    if (noteLines.length > 0) {
-      const existingNotes = currentScene?.notes?.trim() ?? '';
-      patch.notes = `${existingNotes ? existingNotes + '\n\n' : ''}— AI chapter metadata —\n${noteLines.join('\n')}`;
-    }
 
     if (Object.keys(patch).length > 0) {
       updateItem(ctx.objectId, patch as Parameters<typeof updateItem>[1]);
@@ -673,14 +637,6 @@ function MetadataResult({
     <div className="flex flex-col gap-2">
       {output.truncated && (
         <p className="text-[11px] text-amber-500">Content was truncated before analysis.</p>
-      )}
-      <div className={`text-[11px] px-2 py-1 rounded ${output.briefIncluded ? 'bg-green-900/20 text-green-400' : 'bg-amber-900/20 text-amber-400'}`}>
-        {output.briefIncluded
-          ? '✓ Story Brief included — chapter analyzed in the context of the whole project.'
-          : '⚠ No Story Brief found — metadata generated from this chapter alone. Generate a Story Brief for project-aware results.'}
-      </div>
-      {output.reasoning && (
-        <p className="text-[11px] text-gray-500 italic leading-relaxed">{output.reasoning}</p>
       )}
       <p className="text-[11px] text-gray-500">
         Check the fields you want to apply, then click Apply Selected.
@@ -1297,7 +1253,6 @@ export function AIPanel() {
     setAIPanelOpen,
     projectTags,
     binder,
-    codexEntries,
     storyBrief,
     setStoryBrief,
   } = useAppStore();
@@ -1442,14 +1397,6 @@ export function AIPanel() {
         body.currentPriority = (ctx.metadata?.priority as string) ?? '';
         body.notes = ctx.notes ?? '';
         body.answer = (ctx.metadata?.answer as string) ?? '';
-      }
-
-      if (action === 'metadata') {
-        // Existing metadata on the chapter, so the AI can refine rather than overwrite blind.
-        const scene = findItem(binder, ctx.objectId);
-        if (scene?.sceneMetadata) body.existingMetadata = scene.sceneMetadata;
-        // Existing Codex entries are project context for resolving who/what appears.
-        body.relevantCodex = codexEntries.map((c) => c.name).slice(0, 60);
       }
 
       if (storyBrief?.content) {
