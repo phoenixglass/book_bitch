@@ -87,6 +87,7 @@ export const CODEX_EXTRACT_SYSTEM = [
   '- A real-world person REFERENCE is merely mentioned — a public figure, political/cultural/media reference, article subject, historical name — and does NOT act inside the story world. Classify as codexType "reference", isActualStoryCharacter=false, isPassingReference=true. NEVER promote these into characters.',
   '- A newspaper, magazine, TV programme, or media outlet is "publication". A government body, agency, company, or organization is "institution". Keep these out of the character list.',
   '- Do not rely on a name being capitalized. A protagonist and the central figure she interacts with are characters; a politician, comedian, or media personality merely named in passing is a "reference"; an outlet like a newspaper is a "publication".',
+  '- SELF-CHECK RULE: Before writing each entry, ask: "Does this person speak, act, or appear in a scene with the narrator/protagonist? Or are they only talked about, watched on TV, read about, or invoked as context?" If only the latter → codexType must be "reference", never "character". A real-world figure who prompted the narrator to think or write about something is NOT thereby a character — they remain a reference.',
   '',
   'ENTITY TYPES (choose the single best fit per entity):',
   '- character    : a person/being who acts in the story world',
@@ -109,12 +110,12 @@ export const CODEX_EXTRACT_SYSTEM = [
   '',
   'For EVERY entity, cite the exact item id and title you were given in sourceAppearances with a brief evidence quote.',
   'Deduplicate within this excerpt: one entry per entity, listing aliases.',
-  'Be selective: only include entities with clear narrative weight. Skip trivial one-word mentions, background noise, and generic references with no story function.',
+  'Include every entity with any narrative or referential significance — characters, references, places, themes, publications. Skip only completely incidental words that add nothing (e.g. a generic "the store", an unnamed passerby with no significance).',
   '',
   'OUTPUT FORMAT — NDJSON: output each entity as one complete JSON object on its own line. No outer array, no wrapper object, no markdown fences. If you run out of space, stop after the last complete line — partial objects are useless.',
-  'Each line must be a complete, valid JSON object with these fields (omit optional fields if empty/null):',
-  '{"name":"Entity Name","codexType":"character","characterTier":"major","confidence":0.9,"description":"One factual sentence.","isActualStoryCharacter":true,"isPassingReference":false,"aliases":[],"sourceAppearances":[{"itemId":"id-from-ITEM-tag","itemTitle":"title","evidence":"brief quote"}],"suggestedTags":[]}',
-  '(For non-character types, omit characterTier, isActualStoryCharacter, isPassingReference or set to null/false as appropriate.)',
+  'Each line must be a complete, valid JSON object. Two examples showing the character vs reference distinction:',
+  '{"name":"Maya","codexType":"character","characterTier":"major","confidence":0.95,"description":"Maya is the narrator\'s best friend who appears throughout the story, offering advice and comic relief.","isActualStoryCharacter":true,"isPassingReference":false,"aliases":["May"],"sourceAppearances":[{"itemId":"ch1","itemTitle":"Chapter 1","evidence":"Maya laughed and poured another glass"}],"suggestedTags":["friend","recurring"]}',
+  '{"name":"Barack Obama","codexType":"reference","characterTier":null,"confidence":0.8,"description":"The 44th US President, invoked by the narrator as a benchmark of political normalcy lost after the 2016 election.","isActualStoryCharacter":false,"isPassingReference":true,"aliases":["Obama"],"sourceAppearances":[{"itemId":"ch2","itemTitle":"Election Night","evidence":"Obama would never have let this happen"}],"suggestedTags":["politics","reference"]}',
 ].join('\n');
 
 const CODEX_CHUNK_CHARS = 18000;
