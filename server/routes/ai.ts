@@ -465,6 +465,17 @@ aiRouter.post('/codex-suggest', async (req: Request, res: Response) => {
     .map(([k, v]) => `${k}: ${v}`)
     .join('\n');
 
+  const knownFieldsByType: Record<string, string[]> = {
+    character: ['role', 'age', 'pronouns', 'relationships', 'physicalDetails', 'voiceNotes', 'arcNotes', 'secrets', 'contradictions'],
+    place: ['atmosphere'],
+    motif: ['meaning', 'appearances', 'evolution'],
+    object: ['meaning', 'appearances', 'evolution'],
+  };
+  const knownFields = knownFieldsByType[codexType] ?? [];
+  const knownFieldsNote = knownFields.length > 0
+    ? `- For a ${codexType}, use these exact field names when applicable: ${knownFields.join(', ')}. Use camelCase (e.g., physicalDetails, voiceNotes).`
+    : '';
+
   const systemPrompt = [
     `You are a writing assistant helping a novelist enrich their world-bible codex entry for a ${codexType}.`,
     preamble,
@@ -474,6 +485,7 @@ aiRouter.post('/codex-suggest', async (req: Request, res: Response) => {
     '- Do NOT invent facts not implied by the text.',
     '- Identify contradictions or unresolved questions if present.',
     '- Field suggestions should be specific to the codex entry type.',
+    knownFieldsNote,
     '',
     'Return ONLY valid JSON in this exact structure:',
     JSON.stringify({

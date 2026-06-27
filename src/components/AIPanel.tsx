@@ -243,11 +243,18 @@ function useAIContext(): SelectedAIContext | null {
         codexType: c.codexType,
         aliases: c.aliases,
         role: c.role,
+        age: c.age,
         pronouns: c.pronouns,
         relationships: c.relationships,
         physicalDetails: c.physicalDetails,
+        voiceNotes: c.voiceNotes,
+        arcNotes: c.arcNotes,
+        secrets: c.secrets,
+        contradictions: c.contradictions,
         atmosphere: c.atmosphere,
         meaning: c.meaning,
+        appearances: c.appearances,
+        evolution: c.evolution,
         customFields: c.customFields,
       },
       area,
@@ -892,6 +899,45 @@ function PlacementResult({
   );
 }
 
+// Maps normalized (lowercase, no separators) field names to CodexEntry property keys.
+const CODEX_FIELD_MAP: Record<string, string> = {
+  role: 'role',
+  age: 'age',
+  pronouns: 'pronouns',
+  relationships: 'relationships',
+  physicaldetails: 'physicalDetails',
+  voicenotes: 'voiceNotes',
+  arcnotes: 'arcNotes',
+  secrets: 'secrets',
+  contradictions: 'contradictions',
+  atmosphere: 'atmosphere',
+  meaning: 'meaning',
+  appearances: 'appearances',
+  evolution: 'evolution',
+  description: 'description',
+};
+
+const CODEX_FIELD_LABELS: Record<string, string> = {
+  role: 'Role',
+  age: 'Age / DOB',
+  pronouns: 'Pronouns',
+  relationships: 'Relationships',
+  physicalDetails: 'Physical Details',
+  voiceNotes: 'Voice Notes',
+  arcNotes: 'Arc Notes',
+  secrets: 'Secrets',
+  contradictions: 'Contradictions / Tensions',
+  atmosphere: 'Atmosphere',
+  meaning: 'Meaning / Function',
+  appearances: 'Appearances',
+  evolution: 'Evolution',
+  description: 'Description',
+};
+
+function normalizeFieldKey(field: string): string {
+  return field.toLowerCase().replace(/[\s_\-/]+/g, '');
+}
+
 function CodexSuggestResult({
   output,
   ctx,
@@ -916,11 +962,25 @@ function CodexSuggestResult({
   function handleApply() {
     const selectedSuggestions = output.fieldSuggestions.filter((_, i) => accepted.has(i));
     if (selectedSuggestions.length === 0) return;
-    const customFieldPatch: Record<string, string> = {};
-    selectedSuggestions.forEach(s => { customFieldPatch[s.field] = s.value; });
+
+    const directPatch: Record<string, string> = {};
+    const newCustomFields: Record<string, string> = {};
+
+    selectedSuggestions.forEach(s => {
+      const canonicalKey = CODEX_FIELD_MAP[normalizeFieldKey(s.field)];
+      if (canonicalKey) {
+        directPatch[canonicalKey] = s.value;
+      } else {
+        newCustomFields[s.field] = s.value;
+      }
+    });
+
+    const existingCustomFields = (ctx.metadata?.customFields as Record<string, string>) ?? {};
     updateCodexEntry(ctx.objectId, {
-      customFields: customFieldPatch,
-      notes: selectedSuggestions.map(s => `[${s.field}] ${s.value}`).join('\n') + '\n(from AI suggestion)',
+      ...directPatch,
+      ...(Object.keys(newCustomFields).length > 0
+        ? { customFields: { ...existingCustomFields, ...newCustomFields } }
+        : {}),
     });
     setApplied(true);
   }
@@ -971,7 +1031,9 @@ function CodexSuggestResult({
                   className="accent-purple-500 mt-0.5 shrink-0"
                 />
                 <div>
-                  <p className="text-[10px] text-purple-400">{s.field}</p>
+                  <p className="text-[10px] text-purple-400">
+                    {CODEX_FIELD_LABELS[CODEX_FIELD_MAP[normalizeFieldKey(s.field)] ?? ''] ?? s.field}
+                  </p>
                   <p className="text-xs text-gray-200">{s.value}</p>
                   {s.reason && <p className="text-[10px] text-gray-500 italic">{s.reason}</p>}
                 </div>
