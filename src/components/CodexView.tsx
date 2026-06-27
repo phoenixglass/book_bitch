@@ -1,23 +1,42 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useAppStore } from '../store/appStore';
 import { TagInput } from './TagInput';
-import { getFullBinderContent } from '../lib/binder';
-import type { CodexEntry, CodexType, CodexExtractionCandidate, CodexExtractCoverage } from '../types';
+import type { BinderItem, CodexEntry, CodexType } from '../types';
+
+interface ExtractedEntry {
+  name: string;
+  codexType: CodexType;
+  description: string;
+  aliases?: string[];
+  role?: string;
+  relationships?: string;
+  physicalDetails?: string;
+  atmosphere?: string;
+  meaning?: string;
+  appearances?: string;
+}
+
+function collectScenes(items: BinderItem[]): Array<{ id: string; title: string; text: string }> {
+  const scenes: Array<{ id: string; title: string; text: string }> = [];
+  for (const item of items) {
+    if (item.type === 'document' && item.content?.trim()) {
+      scenes.push({ id: item.id, title: item.title || 'Untitled', text: item.content });
+    }
+    if (item.children?.length) scenes.push(...collectScenes(item.children));
+  }
+  return scenes;
+}
 
 const TYPE_LABELS: Record<CodexType, string> = {
   character: 'Character', place: 'Place', object: 'Object', motif: 'Motif',
-  institution: 'Institution', publication: 'Publication / Media', reference: 'Real-world Reference',
-  relationship: 'Relationship', event: 'Event', document: 'Document',
+  institution: 'Institution', event: 'Event', document: 'Document',
   theme: 'Theme', custom: 'Custom',
 };
 
 const TYPE_ICONS: Record<CodexType, string> = {
   character: '👤', place: '📍', object: '🔮', motif: '🌀',
-  institution: '🏛️', publication: '📰', reference: '🌐', relationship: '🔗',
-  event: '📅', document: '📄', theme: '💡', custom: '⚙️',
+  institution: '🏛️', event: '📅', document: '📄', theme: '💡', custom: '⚙️',
 };
-
-const TIER_LABELS: Record<string, string> = { major: 'Major', secondary: 'Secondary', minor: 'Minor' };
 
 function CodexDetail({ entry, onClose }: { entry: CodexEntry; onClose: () => void }) {
   const { updateCodexEntry, deleteCodexEntry } = useAppStore();
@@ -106,41 +125,6 @@ function CodexDetail({ entry, onClose }: { entry: CodexEntry; onClose: () => voi
             className="w-full bg-[#16213e] border border-[#2d3748] rounded px-3 py-2 text-gray-300 text-xs outline-none focus:border-[#6b46c1] resize-y placeholder-gray-600"
           />
         </div>
-
-        {/* AI classification metadata */}
-        {(entry.narrativeFunction || entry.characterTier || entry.isActualStoryCharacter || entry.isPassingReference) && (
-          <div className="border border-[#0f3460] rounded p-3 flex flex-col gap-2">
-            <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider">Classification</p>
-            {isCharacter && (
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-gray-500">Tier</label>
-                <select
-                  value={entry.characterTier ?? ''}
-                  onChange={(e) => updateCodexEntry(entry.id, { characterTier: (e.target.value || undefined) as CodexEntry['characterTier'] })}
-                  className="bg-[#1a1a2e] border border-[#2d3748] rounded px-2 py-0.5 text-xs text-gray-300 outline-none focus:border-[#6b46c1]"
-                >
-                  <option value="">—</option>
-                  <option value="major">Major</option>
-                  <option value="secondary">Secondary</option>
-                  <option value="minor">Minor</option>
-                </select>
-                {entry.isPassingReference && <span className="text-xs text-amber-400">passing reference</span>}
-                {entry.isActualStoryCharacter && <span className="text-xs text-green-400">actual character</span>}
-              </div>
-            )}
-            {entry.narrativeFunction && (
-              <div>
-                <label className="text-xs text-gray-500 block mb-0.5">Narrative function</label>
-                <textarea
-                  value={entry.narrativeFunction}
-                  onChange={(e) => updateCodexEntry(entry.id, { narrativeFunction: e.target.value })}
-                  rows={2}
-                  className="w-full bg-[#1a1a2e] border border-[#2d3748] rounded px-2 py-1 text-gray-300 outline-none focus:border-[#6b46c1] text-xs resize-none"
-                />
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Character-specific fields */}
         {isCharacter && (
@@ -303,10 +287,7 @@ function CodexDetail({ entry, onClose }: { entry: CodexEntry; onClose: () => voi
 }
 
 export function CodexView() {
-  const {
-    codexEntries, addCodexEntry, updateCodexEntry, pendingSelectId, setPendingSelectId,
-    binder, fragments, omittedMaterial, notebookEntries, setAIContextObject, selectedId: manuscriptSelectedId,
-  } = useAppStore();
+  const { codexEntries, addCodexEntry, pendingSelectId, setPendingSelectId, binder, setAIContextObject } = useAppStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -324,141 +305,63 @@ export function CodexView() {
 
   // ── Scan state ──────────────────────────────────────────────────────────────
   const [scanning, setScanning] = useState(false);
-  const [scanResults, setScanResults] = useState<CodexExtractionCandidate[] | null>(null);
+  const [scanResults, setScanResults] = useState<ExtractedEntry[] | null>(null);
   const [scanSelected, setScanSelected] = useState<boolean[]>([]);
   const [scanError, setScanError] = useState<string | null>(null);
-  const [coverage, setCoverage] = useState<CodexExtractCoverage | null>(null);
-  const [expandedSources, setExpandedSources] = useState<Set<number>>(new Set());
+  const [scanTruncated, setScanTruncated] = useState(false);
 
-  // ── Scan scope / options ──────────────────────────────────────────────────
-  const [scope, setScope] = useState<'full' | 'current'>('full');
-  const [includeFragments, setIncludeFragments] = useState(false);
-  const [includeOmitted, setIncludeOmitted] = useState(false);
-  const [includeResearch, setIncludeResearch] = useState(false);
-  const [showScopePanel, setShowScopePanel] = useState(false);
-
-  const existingByName = useMemo(() => {
-    const map = new Map<string, CodexEntry>();
-    for (const e of codexEntries) {
-      map.set(e.name.toLowerCase().trim(), e);
-      for (const a of e.aliases) map.set(a.toLowerCase().trim(), e);
-    }
-    return map;
-  }, [codexEntries]);
-
-  // Build the item list that WILL be analyzed, given the current scope/options.
-  const scanItems = useMemo(() => {
-    if (scope === 'current') {
-      const findDoc = (items: typeof binder): { id: string; title: string; text: string }[] => {
-        for (const it of items) {
-          if (it.id === manuscriptSelectedId && it.type === 'document') {
-            return [{ id: it.id, title: it.title || 'Untitled', text: it.content }];
-          }
-          const found = it.children?.length ? findDoc(it.children) : [];
-          if (found.length) return found;
-        }
-        return [];
-      };
-      return { items: findDoc(binder), stats: null as ReturnType<typeof getFullBinderContent>['stats'] | null };
-    }
-    const res = getFullBinderContent(
-      { binder, fragments, omittedMaterial, notebookEntries },
-      { includeManuscript: true, includeFragments, includeOmittedMaterial: includeOmitted, includeResearch },
-    );
-    return { items: res.items.map((i) => ({ id: i.id, title: i.title, text: i.text })), stats: res.stats };
-  }, [scope, binder, fragments, omittedMaterial, notebookEntries, includeFragments, includeOmitted, includeResearch, manuscriptSelectedId]);
-
-  const scanItemCount = scanItems.items.length;
-  const scanWordCount = useMemo(
-    () => scanItems.items.reduce((n, s) => n + (s.text.replace(/<[^>]+>/g, ' ').trim().split(/\s+/).filter(Boolean).length), 0),
-    [scanItems],
+  const existingNames = useMemo(
+    () => new Set(codexEntries.map((e) => e.name.toLowerCase())),
+    [codexEntries],
   );
 
   const handleScan = useCallback(async () => {
-    if (scanItems.items.length === 0) {
-      setScanError(scope === 'current'
-        ? 'No chapter is selected, or the selected item has no text. Select a manuscript chapter first.'
-        : 'No manuscript content found. Write some chapters first.');
+    const scenes = collectScenes(binder);
+    if (scenes.length === 0) {
+      setScanError('No manuscript content found. Write some scenes first.');
       return;
     }
     setScanning(true);
     setScanError(null);
     setScanResults(null);
-    setCoverage(null);
-    setShowScopePanel(false);
     try {
       const resp = await fetch('/api/ai/codex-extract', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenes: scanItems.items }),
+        body: JSON.stringify({ scenes }),
       });
-      const data = await resp.json() as { entries?: CodexExtractionCandidate[]; error?: string; coverage?: CodexExtractCoverage };
+      const data = await resp.json() as { entries?: ExtractedEntry[]; error?: string; truncated?: boolean };
       if (!resp.ok) throw new Error(data.error ?? 'Unknown error');
-      const entries = (data.entries ?? []) as CodexExtractionCandidate[];
+      const entries = (data.entries ?? []) as ExtractedEntry[];
       setScanResults(entries);
-      // Default: select likely actual entities; leave passing references unchecked.
-      setScanSelected(entries.map((e) => !e.isPassingReference));
-      setCoverage(data.coverage ?? null);
+      setScanSelected(entries.map(() => true));
+      setScanTruncated(data.truncated ?? false);
     } catch (err) {
       setScanError(err instanceof Error ? err.message : String(err));
     } finally {
       setScanning(false);
     }
-  }, [scanItems, scope]);
-
-  function reclassify(i: number, codexType: CodexType) {
-    setScanResults((prev) => prev ? prev.map((e, j) => j === i ? { ...e, codexType } : e) : prev);
-  }
+  }, [binder]);
 
   function importSelected() {
     if (!scanResults) return;
-    let created = 0;
-    let mergedCount = 0;
     scanResults.forEach((entry, i) => {
       if (!scanSelected[i]) return;
-      const sceneIds = Array.from(new Set((entry.sourceAppearances ?? []).map((a) => a.itemId).filter(Boolean)));
-      const existing = existingByName.get(entry.name.toLowerCase().trim())
-        ?? entry.aliases.map((a) => existingByName.get(a.toLowerCase().trim())).find(Boolean);
-      if (existing) {
-        // Merge into the existing entry rather than duplicating.
-        updateCodexEntry(existing.id, {
-          aliases: Array.from(new Set([...existing.aliases, ...entry.aliases])),
-          relatedSceneIds: Array.from(new Set([...existing.relatedSceneIds, ...sceneIds])),
-          description: existing.description?.trim() ? existing.description : entry.description,
-          narrativeFunction: existing.narrativeFunction ?? entry.narrativeFunction,
-          characterTier: existing.characterTier ?? entry.characterTier,
-          isActualStoryCharacter: entry.isActualStoryCharacter,
-          isPassingReference: entry.isPassingReference,
-        });
-        mergedCount += 1;
-      } else {
-        addCodexEntry({
-          name: entry.name,
-          codexType: entry.codexType,
-          description: entry.description,
-          aliases: entry.aliases ?? [],
-          role: entry.role,
-          relationships: entry.relationships,
-          physicalDetails: entry.physicalDetails,
-          atmosphere: entry.atmosphere,
-          meaning: entry.meaning,
-          appearances: entry.appearances,
-          relatedSceneIds: sceneIds,
-          characterTier: entry.characterTier,
-          narrativeFunction: entry.narrativeFunction,
-          isActualStoryCharacter: entry.isActualStoryCharacter,
-          isPassingReference: entry.isPassingReference,
-          tags: entry.suggestedTags ?? [],
-        });
-        created += 1;
-      }
+      addCodexEntry({
+        name: entry.name,
+        codexType: entry.codexType,
+        description: entry.description,
+        aliases: entry.aliases ?? [],
+        role: entry.role,
+        relationships: entry.relationships,
+        physicalDetails: entry.physicalDetails,
+        atmosphere: entry.atmosphere,
+        meaning: entry.meaning,
+        appearances: entry.appearances,
+      });
     });
     setScanResults(null);
     setScanSelected([]);
-    setCoverage(null);
-    if (created || mergedCount) {
-      setScanError(null);
-    }
   }
 
   const filtered = useMemo(() => {
@@ -495,12 +398,12 @@ export function CodexView() {
             <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Codex</span>
             <div className="flex items-center gap-1">
               <button
-                onClick={() => setShowScopePanel((v) => !v)}
+                onClick={handleScan}
                 disabled={scanning}
-                title="Generate Codex from the binder using AI"
+                title="Extract entities from manuscript using AI"
                 className="text-xs bg-[#0f3460] text-blue-300 px-2 py-0.5 rounded hover:bg-[#1a4a7a] disabled:opacity-50 transition-colors"
               >
-                {scanning ? '⏳ Scanning…' : '✨ Generate'}
+                {scanning ? '⏳' : '✨'} Scan
               </button>
               <button
                 onClick={() => { const id = addCodexEntry(); setSelectedId(id); }}
@@ -510,47 +413,6 @@ export function CodexView() {
               </button>
             </div>
           </div>
-
-          {showScopePanel && (
-            <div className="mb-2 p-2 rounded border border-[#0f3460] bg-[#0d1117] flex flex-col gap-2">
-              <p className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">Codex generation scope</p>
-              <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
-                <input type="radio" name="codex-scope" checked={scope === 'full'} onChange={() => setScope('full')} className="accent-purple-500" />
-                Full Observations binder
-              </label>
-              <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
-                <input type="radio" name="codex-scope" checked={scope === 'current'} onChange={() => setScope('current')} className="accent-purple-500" />
-                Current chapter only
-              </label>
-              {scope === 'full' && (
-                <div className="flex flex-col gap-1 pl-1 border-l border-[#0f3460]">
-                  <label className="flex items-center gap-2 text-[11px] text-gray-400 cursor-pointer">
-                    <input type="checkbox" checked={includeFragments} onChange={(e) => setIncludeFragments(e.target.checked)} className="accent-purple-500" /> Include Fragments
-                  </label>
-                  <label className="flex items-center gap-2 text-[11px] text-gray-400 cursor-pointer">
-                    <input type="checkbox" checked={includeOmitted} onChange={(e) => setIncludeOmitted(e.target.checked)} className="accent-purple-500" /> Include Omitted material
-                  </label>
-                  <label className="flex items-center gap-2 text-[11px] text-gray-400 cursor-pointer">
-                    <input type="checkbox" checked={includeResearch} onChange={(e) => setIncludeResearch(e.target.checked)} className="accent-purple-500" /> Include Research
-                  </label>
-                </div>
-              )}
-              <div className="text-[11px] text-gray-400 border-t border-[#0f3460] pt-1.5">
-                <div><span className="text-gray-300 font-semibold">{scanItemCount}</span> item{scanItemCount === 1 ? '' : 's'} · ~<span className="text-gray-300 font-semibold">{scanWordCount.toLocaleString()}</span> words</div>
-                <div className="text-gray-600 mt-0.5">Trash is always excluded. Empty items are skipped.</div>
-                {scanWordCount > 120000 && (
-                  <div className="text-yellow-600 mt-0.5">Large binder — it will be analyzed in chunks across multiple AI calls (no chapters are dropped).</div>
-                )}
-              </div>
-              <button
-                onClick={handleScan}
-                disabled={scanning || scanItemCount === 0}
-                className="text-xs bg-[#6b46c1] text-white px-2 py-1 rounded hover:bg-[#553c9a] disabled:opacity-40 transition-colors"
-              >
-                {scanning ? 'Scanning…' : `Run Codex generation on ${scanItemCount} item${scanItemCount === 1 ? '' : 's'}`}
-              </button>
-            </div>
-          )}
           <input
             value={filterText}
             onChange={(e) => setFilterText(e.target.value)}
@@ -605,67 +467,49 @@ export function CodexView() {
       {scanResults !== null ? (
         <div className="flex-1 flex flex-col overflow-hidden bg-[#0d1117]">
           <div className="flex items-center gap-2 px-4 py-2 border-b border-[#0f3460] shrink-0">
-            <button onClick={() => { setScanResults(null); setScanSelected([]); setCoverage(null); }} className="text-gray-500 hover:text-gray-300 text-xs">← Back</button>
+            <button onClick={() => { setScanResults(null); setScanSelected([]); }} className="text-gray-500 hover:text-gray-300 text-xs">← Back</button>
             <span className="text-sm font-semibold text-white flex-1">
-              {scanResults.length} candidate{scanResults.length === 1 ? '' : 's'} — review before saving
+              Extracted {scanResults.length} {scanResults.length === 1 ? 'entity' : 'entities'} from manuscript
+              {filterType && <span className="text-gray-500 font-normal"> · showing {TYPE_LABELS[filterType as CodexType]} only</span>}
             </span>
+            {scanTruncated && (
+              <span className="text-xs text-yellow-500" title="Manuscript was too long — only the first portion was scanned">⚠ Partial scan</span>
+            )}
             <button
               onClick={importSelected}
               disabled={!scanSelected.some(Boolean)}
               className="text-xs bg-[#6b46c1] text-white px-3 py-1 rounded hover:bg-[#553c9a] disabled:opacity-40 transition-colors"
             >
-              Save {scanSelected.filter(Boolean).length} selected
+              Import {scanSelected.filter(Boolean).length} selected
             </button>
           </div>
-
-          {/* Coverage summary */}
-          <div className="px-4 py-2 border-b border-[#0f3460] bg-[#0d1117] shrink-0 text-[11px] text-gray-400 flex flex-wrap gap-x-4 gap-y-1">
-            {coverage && (
-              <>
-                <span>📄 {coverage.itemsWithEntities}/{coverage.itemsAnalyzed} chapters contributed</span>
-                <span>🧩 {coverage.chunkCount} chunk{coverage.chunkCount === 1 ? '' : 's'}</span>
-                <span>📝 {coverage.totalWordCount.toLocaleString()} words analyzed</span>
-              </>
-            )}
-            {(() => {
-              const c = scanResults;
-              const chars = c.filter((e) => e.codexType === 'character').length;
-              const refs = c.filter((e) => e.codexType === 'reference' || e.isPassingReference).length;
-              const insts = c.filter((e) => e.codexType === 'institution' || e.codexType === 'publication').length;
-              const places = c.filter((e) => e.codexType === 'place').length;
-              const motifs = c.filter((e) => e.codexType === 'motif' || e.codexType === 'theme').length;
-              return (
-                <>
-                  <span className="text-gray-300">👤 {chars} characters</span>
-                  <span>🌐 {refs} references</span>
-                  <span>🏛️ {insts} institutions/media</span>
-                  <span>📍 {places} places</span>
-                  <span>🌀 {motifs} motifs/themes</span>
-                </>
-              );
-            })()}
-          </div>
-
           <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
-            {scanResults.length === 0 && (
-              <p className="text-sm text-gray-500 text-center mt-8">No entities found. Try adding more content or widening the scope.</p>
+            {scanResults.filter(e => !filterType || e.codexType === filterType).length === 0 && (
+              <p className="text-sm text-gray-500 text-center mt-8">
+                {filterType ? `No ${TYPE_LABELS[filterType as CodexType]} entities found in manuscript.` : 'No entities found. Try adding more content to your manuscript.'}
+              </p>
             )}
             <div className="flex items-center gap-2 mb-1">
-              <button onClick={() => setScanSelected(scanResults.map(() => true))} className="text-xs text-gray-500 hover:text-gray-300">Select all</button>
+              <button
+                onClick={() => setScanSelected(scanResults.map((e, i) => !filterType || e.codexType === filterType ? true : scanSelected[i]))}
+                className="text-xs text-gray-500 hover:text-gray-300"
+              >Select all</button>
               <span className="text-gray-700">·</span>
-              <button onClick={() => setScanSelected(scanResults.map(() => false))} className="text-xs text-gray-500 hover:text-gray-300">Deselect all</button>
-              <span className="text-gray-700">·</span>
-              <button onClick={() => setScanSelected(scanResults.map((e) => !e.isPassingReference))} className="text-xs text-gray-500 hover:text-gray-300" title="Select likely actual story entities, skip passing references">Only actual entities</button>
+              <button
+                onClick={() => setScanSelected(scanResults.map((e, i) => !filterType || e.codexType === filterType ? false : scanSelected[i]))}
+                className="text-xs text-gray-500 hover:text-gray-300"
+              >Deselect all</button>
             </div>
             {scanResults.map((entry, i) => {
-              const existing = existingByName.get(entry.name.toLowerCase().trim())
-                ?? entry.aliases.map((a) => existingByName.get(a.toLowerCase().trim())).find(Boolean);
-              const sourcesOpen = expandedSources.has(i);
+              if (filterType && entry.codexType !== filterType) return null;
+              const isDuplicate = existingNames.has(entry.name.toLowerCase());
               return (
-                <div
+                <label
                   key={i}
-                  className={`flex items-start gap-3 p-3 rounded border transition-colors ${
-                    scanSelected[i] ? 'border-[#6b46c1]/60 bg-[#6b46c1]/10' : 'border-[#2d3748] bg-[#16213e]'
+                  className={`flex items-start gap-3 p-3 rounded border cursor-pointer transition-colors ${
+                    scanSelected[i]
+                      ? 'border-[#6b46c1]/60 bg-[#6b46c1]/10'
+                      : 'border-[#2d3748] bg-[#16213e]'
                   }`}
                 >
                   <input
@@ -681,70 +525,23 @@ export function CodexView() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-semibold text-white">{entry.name}</span>
-                      <select
-                        value={entry.codexType}
-                        onChange={(e) => reclassify(i, e.target.value as CodexType)}
-                        title="Reclassify before saving"
-                        className="text-xs bg-[#0d1117] border border-[#2d3748] rounded px-1 py-0.5 text-gray-300 outline-none focus:border-[#6b46c1]"
-                      >
-                        {(Object.entries(TYPE_LABELS) as [CodexType, string][]).map(([v, l]) => (
-                          <option key={v} value={v}>{TYPE_ICONS[v]} {l}</option>
-                        ))}
-                      </select>
-                      {entry.codexType === 'character' && entry.characterTier && (
-                        <span className="text-xs text-purple-300 bg-purple-900/20 px-1.5 py-0.5 rounded">{TIER_LABELS[entry.characterTier] ?? entry.characterTier}</span>
-                      )}
-                      {entry.isActualStoryCharacter && (
-                        <span className="text-xs text-green-400 bg-green-900/20 px-1.5 py-0.5 rounded" title="Functions as an actual character in the story">actual character</span>
-                      )}
-                      {entry.isPassingReference && (
-                        <span className="text-xs text-amber-400 bg-amber-900/20 px-1.5 py-0.5 rounded" title="Passing real-world / one-off mention, not a story character">passing reference</span>
-                      )}
-                      {typeof entry.confidence === 'number' && (
-                        <span className="text-[10px] text-gray-500" title="Model confidence">{Math.round(entry.confidence * 100)}%</span>
-                      )}
-                      {existing && (
-                        <span className="text-xs text-yellow-600 bg-yellow-900/20 px-1.5 py-0.5 rounded" title="Will be merged into the existing Codex entry, not duplicated">
-                          merges into “{existing.name}”
+                      <span className="text-xs text-gray-500 bg-[#0d1117] px-1.5 py-0.5 rounded">
+                        {TYPE_ICONS[entry.codexType]} {TYPE_LABELS[entry.codexType]}
+                      </span>
+                      {isDuplicate && (
+                        <span className="text-xs text-yellow-600 bg-yellow-900/20 px-1.5 py-0.5 rounded" title="An entry with this name already exists in your Codex">
+                          already exists
                         </span>
                       )}
                     </div>
                     {entry.description && (
                       <p className="text-xs text-gray-400 mt-1 leading-relaxed">{entry.description}</p>
                     )}
-                    {entry.narrativeFunction && (
-                      <p className="text-xs text-gray-500 mt-0.5"><span className="text-gray-600">Function:</span> {entry.narrativeFunction}</p>
-                    )}
                     {entry.aliases && entry.aliases.length > 0 && (
                       <p className="text-xs text-gray-600 mt-0.5">aka {entry.aliases.join(', ')}</p>
                     )}
-                    {entry.sourceAppearances && entry.sourceAppearances.length > 0 && (
-                      <div className="mt-1">
-                        <button
-                          onClick={() => setExpandedSources((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(i)) next.delete(i); else next.add(i);
-                            return next;
-                          })}
-                          className="text-[11px] text-blue-400 hover:text-blue-300"
-                        >
-                          {sourcesOpen ? '▾' : '▸'} appears in {new Set(entry.sourceAppearances.map((a) => a.itemId)).size} chapter{new Set(entry.sourceAppearances.map((a) => a.itemId)).size === 1 ? '' : 's'}
-                        </button>
-                        {sourcesOpen && (
-                          <ul className="mt-1 pl-3 flex flex-col gap-1 border-l border-[#0f3460]">
-                            {entry.sourceAppearances.map((a, k) => (
-                              <li key={k} className="text-[11px] text-gray-500">
-                                <span className="text-gray-400">{a.itemTitle || a.itemId}</span>
-                                {a.occurrenceCount ? <span className="text-gray-600"> ·×{a.occurrenceCount}</span> : null}
-                                {a.evidence ? <span className="text-gray-600 italic"> — “{a.evidence}”</span> : null}
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    )}
                   </div>
-                </div>
+                </label>
               );
             })}
           </div>
