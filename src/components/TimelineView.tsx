@@ -39,20 +39,23 @@ export function TimelineView() {
   }, [allScenes, filterPov, filterPlotline, filterLocation, filterStatus]);
 
   const sorted = useMemo(() => {
-    function parseDateSortKey(dateStr: string | undefined): number {
+    function parseDateSortKey(meta: typeof filtered[0]['sceneMetadata']): number {
+      const dateStr = meta?.timelineSpecificDate || meta?.timelineDateStart;
       if (!dateStr) return Number.MAX_SAFE_INTEGER;
       const parts = dateStr.split('/');
       if (parts.length === 3) {
-        // M/D/YYYY
+        // mm/dd/yyyy
         const year = parseInt(parts[2], 10);
         const month = parseInt(parts[0], 10);
         const day = parseInt(parts[1], 10);
-        return year * 10000 + month * 100 + day;
+        if (!isNaN(year) && !isNaN(month) && !isNaN(day))
+          return year * 10000 + month * 100 + day;
       } else if (parts.length === 2) {
-        // M/YYYY
+        // mm/yyyy
         const year = parseInt(parts[1], 10);
         const month = parseInt(parts[0], 10);
-        return year * 10000 + month * 100;
+        if (!isNaN(year) && !isNaN(month))
+          return year * 10000 + month * 100;
       }
       return Number.MAX_SAFE_INTEGER;
     }
@@ -63,8 +66,8 @@ export function TimelineView() {
         const mb = b.sceneMetadata?.manuscriptOrder ?? 9999;
         return ma - mb;
       } else {
-        const da = parseDateSortKey(a.sceneMetadata?.timelineDateStart);
-        const db = parseDateSortKey(b.sceneMetadata?.timelineDateStart);
+        const da = parseDateSortKey(a.sceneMetadata);
+        const db = parseDateSortKey(b.sceneMetadata);
         if (da !== db) return da - db;
         const ca = a.sceneMetadata?.chronologicalOrder ?? 9999;
         const cb = b.sceneMetadata?.chronologicalOrder ?? 9999;
@@ -73,15 +76,18 @@ export function TimelineView() {
     });
   }, [filtered, order]);
 
+  const hasChronoPlacement = (s: typeof sorted[0]) =>
+    !!(s.sceneMetadata?.timelineSpecificDate || s.sceneMetadata?.timelineDateStart || s.sceneMetadata?.chronologicalOrder);
+
   const unplaced = sorted.filter(s =>
     order === 'manuscript'
       ? !s.sceneMetadata?.manuscriptOrder
-      : !s.sceneMetadata?.chronologicalOrder && !s.sceneMetadata?.timelineDateStart,
+      : !hasChronoPlacement(s),
   );
   const placed = sorted.filter(s =>
     order === 'manuscript'
       ? !!s.sceneMetadata?.manuscriptOrder
-      : !!(s.sceneMetadata?.chronologicalOrder || s.sceneMetadata?.timelineDateStart),
+      : hasChronoPlacement(s),
   );
 
   function openScene(id: string) {
