@@ -311,6 +311,27 @@ export function SceneCards() {
       );
     }
 
+    function parseDateSortKey(meta: BinderItem['sceneMetadata']): number {
+      const dateStr = meta?.timelineSpecificDate || meta?.timelineDateStart;
+      if (!dateStr) return Number.MAX_SAFE_INTEGER;
+      const parts = dateStr.split('/');
+      if (parts.length === 3) {
+        // mm/dd/yyyy
+        const year = parseInt(parts[2], 10);
+        const month = parseInt(parts[0], 10);
+        const day = parseInt(parts[1], 10);
+        if (!isNaN(year) && !isNaN(month) && !isNaN(day))
+          return year * 10000 + month * 100 + day;
+      } else if (parts.length === 2) {
+        // mm/yyyy
+        const year = parseInt(parts[1], 10);
+        const month = parseInt(parts[0], 10);
+        if (!isNaN(year) && !isNaN(month))
+          return year * 10000 + month * 100;
+      }
+      return Number.MAX_SAFE_INTEGER;
+    }
+
     scenes = [...scenes].sort((a, b) => {
       let va: number | string = 0;
       let vb: number | string = 0;
@@ -319,7 +340,14 @@ export function SceneCards() {
         case 'status': va = a.status; vb = b.status; break;
         case 'wordCount': va = countWords(a.content); vb = countWords(b.content); break;
         case 'manuscript': va = a.sceneMetadata?.manuscriptOrder ?? 9999; vb = b.sceneMetadata?.manuscriptOrder ?? 9999; break;
-        case 'chrono': va = a.sceneMetadata?.chronologicalOrder ?? 9999; vb = b.sceneMetadata?.chronologicalOrder ?? 9999; break;
+        case 'chrono': {
+          const da = parseDateSortKey(a.sceneMetadata);
+          const db = parseDateSortKey(b.sceneMetadata);
+          if (da !== db) return sortDir === 'asc' ? da - db : db - da;
+          va = a.sceneMetadata?.chronologicalOrder ?? 9999;
+          vb = b.sceneMetadata?.chronologicalOrder ?? 9999;
+          break;
+        }
         case 'updated': va = a.updatedAt ?? 0; vb = b.updatedAt ?? 0; break;
       }
       const cmp = va < vb ? -1 : va > vb ? 1 : 0;
