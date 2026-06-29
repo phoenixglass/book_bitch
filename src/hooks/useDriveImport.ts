@@ -14,6 +14,20 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
   const { addItem, updateItem, selectItem } = useAppStore();
   const [isLoading, setIsLoading] = useState(false);
 
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  function findBinderItemByDriveId(driveFileId: string): { id: string; type: string } | null {
+    function search(items: any[]): { id: string; type: string } | null {
+      for (const item of items) {
+        if (item.driveFileId === driveFileId) return { id: item.id, type: item.type };
+        const found = search(item.children || []);
+        if (found) return found;
+      }
+      return null;
+    }
+    return search(useAppStore.getState().binder);
+  }
+
   // ── Auth ──────────────────────────────────────────────────────────────────
 
   async function getAccessToken(): Promise<string> {
@@ -129,6 +143,17 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
 
     if (targetSection !== 'manuscript') {
       await importGoogleDocToSection(file.id, file.name, docData, tabs, targetSection);
+      return;
+    }
+
+    // If already imported, re-sync to preserve metadata instead of creating duplicates
+    const existing = findBinderItemByDriveId(file.id);
+    if (existing) {
+      if (existing.type === 'folder') {
+        await resyncDriveFolder(existing.id, file.id);
+      } else {
+        await resyncDriveDoc(existing.id, file.id);
+      }
       return;
     }
 
