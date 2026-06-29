@@ -73,6 +73,17 @@ export function RichEditor({ itemId, content, compositionMode }: EditorProps) {
       attributes: {
         class: compositionMode ? 'composition-editor' : '',
       },
+      transformPastedHTML(html) {
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        doc.querySelectorAll<HTMLElement>('[style]').forEach((el) => {
+          el.style.removeProperty('color');
+          el.style.removeProperty('background-color');
+          el.style.removeProperty('background');
+          if (!el.getAttribute('style')) el.removeAttribute('style');
+        });
+        doc.querySelectorAll('[color]').forEach((el) => el.removeAttribute('color'));
+        return doc.body.innerHTML;
+      },
     },
   });
 

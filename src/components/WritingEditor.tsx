@@ -63,6 +63,19 @@ export function WritingEditor({ itemId, content, onChange }: WritingEditorProps)
     onUpdate({ editor: e }) {
       onChange(e.getHTML());
     },
+    editorProps: {
+      transformPastedHTML(html) {
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        doc.querySelectorAll<HTMLElement>('[style]').forEach((el) => {
+          el.style.removeProperty('color');
+          el.style.removeProperty('background-color');
+          el.style.removeProperty('background');
+          if (!el.getAttribute('style')) el.removeAttribute('style');
+        });
+        doc.querySelectorAll('[color]').forEach((el) => el.removeAttribute('color'));
+        return doc.body.innerHTML;
+      },
+    },
   });
 
   useEffect(() => {
