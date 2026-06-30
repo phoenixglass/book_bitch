@@ -111,7 +111,7 @@ const ACTIONS_BY_TYPE: Record<AIObjectType, ActionDef[]> = {
   research_item: [
     { value: 'summarize', label: 'Summarize Research', desc: 'Produce a concise summary of this research entry' },
     { value: 'tags', label: 'Suggest Tags', desc: 'Recommend tags for organisation' },
-    { value: 'extract-questions', label: 'Extract Questions', desc: 'Pull out open questions raised by this research' },
+    { value: 'questions', label: 'Generate Research Questions', desc: 'Generate questions connecting this research to your specific story' },
   ],
 };
 
