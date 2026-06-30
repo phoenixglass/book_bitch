@@ -10,7 +10,7 @@ const SCOPES =
 
 let cachedAccessToken: string | null = null;
 
-export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omitted' = 'manuscript') {
+export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omitted' | 'research' = 'manuscript') {
   const { addItem, updateItem, selectItem } = useAppStore();
   const [isLoading, setIsLoading] = useState(false);
 
@@ -172,9 +172,9 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     docName: string,
     docData: any,
     tabs: any[],
-    section: 'fragments' | 'omitted',
+    section: 'fragments' | 'omitted' | 'research',
   ) {
-    const { importToFragments, importToOmitted, setArea } = useAppStore.getState();
+    const { importToFragments, importToOmitted, importToResearch, setArea } = useAppStore.getState();
     const flatTabs = flattenTabs(tabs);
 
     type ItemInput = { title: string; content: string; importSource: ImportSourceMeta; reason?: string };
@@ -235,6 +235,9 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     if (section === 'fragments') {
       importToFragments(items);
       setArea('fragments');
+    } else if (section === 'research') {
+      importToResearch(items.map((i) => ({ ...i, researchType: 'source' as const })));
+      setArea('research');
     } else {
       importToOmitted(items.map((i) => ({ ...i, reason: 'Imported from Google Drive' })));
       setArea('omitted');
@@ -375,7 +378,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     const html = csvToHtml(csv);
 
     if (targetSection !== 'manuscript') {
-      const { importToFragments, importToOmitted, setArea } = useAppStore.getState();
+      const { importToFragments, importToOmitted, importToResearch, setArea } = useAppStore.getState();
       const importSource: ImportSourceMeta = {
         fileName: file.name,
         fileType: 'google_doc',
@@ -385,6 +388,9 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
       if (targetSection === 'fragments') {
         importToFragments([{ title: file.name, content: html, importSource }]);
         setArea('fragments');
+      } else if (targetSection === 'research') {
+        importToResearch([{ title: file.name, content: html, researchType: 'spreadsheet', importSource }]);
+        setArea('research');
       } else {
         importToOmitted([{ title: file.name, content: html, reason: 'Imported from Google Drive', importSource }]);
         setArea('omitted');
@@ -410,7 +416,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     const content = await res.text();
 
     if (targetSection !== 'manuscript') {
-      const { importToFragments, importToOmitted, setArea } = useAppStore.getState();
+      const { importToFragments, importToOmitted, importToResearch, setArea } = useAppStore.getState();
       const importSource: ImportSourceMeta = {
         fileName: file.name,
         fileType: 'google_doc',
@@ -420,6 +426,9 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
       if (targetSection === 'fragments') {
         importToFragments([{ title: file.name, content, importSource }]);
         setArea('fragments');
+      } else if (targetSection === 'research') {
+        importToResearch([{ title: file.name, content, importSource }]);
+        setArea('research');
       } else {
         importToOmitted([{ title: file.name, content, reason: 'Imported from Google Drive', importSource }]);
         setArea('omitted');

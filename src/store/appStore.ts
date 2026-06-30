@@ -12,6 +12,8 @@ import type {
   NotebookEntry,
   CodexEntry,
   CodexType,
+  ResearchEntry,
+  ResearchType,
   Question,
   QuestionCategory,
   QuestionStatus,
@@ -211,6 +213,7 @@ export const useAppStore = create<AppState>()(
       codexEntries: [] as CodexEntry[],
       questions: [] as Question[],
       moodboardItems: [] as MoodboardItem[],
+      researchEntries: [] as ResearchEntry[],
       projectTags: [] as Tag[],
       links: [] as Link[],
       history: [] as HistoryEvent[],
@@ -1182,6 +1185,92 @@ export const useAppStore = create<AppState>()(
         set((s) => ({ codexEntries: s.codexEntries.filter((e) => e.id !== id) }));
       },
 
+      // ── Research ─────────────────────────────────────────────────────────
+
+      addResearchEntry: (partial = {}) => {
+        const id = makeId();
+        const entry: ResearchEntry = {
+          id,
+          title: 'Untitled Research',
+          content: '',
+          researchType: 'note' as ResearchType,
+          tags: [],
+          relatedSceneIds: [],
+          relatedFragmentIds: [],
+          relatedCodexIds: [],
+          relatedQuestionIds: [],
+          relatedNotebookIds: [],
+          notes: '',
+          source: '',
+          createdAt: now(),
+          updatedAt: now(),
+          ...partial,
+        };
+        set((s) => ({ researchEntries: [...s.researchEntries, entry] }));
+        get().recordEvent({
+          eventType: 'created',
+          objectType: 'research_item',
+          objectId: id,
+          objectTitle: entry.title,
+          description: `Research entry created: "${entry.title}"`,
+        });
+        return id;
+      },
+
+      updateResearchEntry: (id, patch) => {
+        set((s) => ({
+          researchEntries: s.researchEntries.map((e) =>
+            e.id === id ? { ...e, ...patch, updatedAt: now() } : e,
+          ),
+        }));
+      },
+
+      deleteResearchEntry: (id) => {
+        const entry = get().researchEntries.find((e) => e.id === id);
+        get().recordEvent({
+          eventType: 'deleted',
+          objectType: 'research_item',
+          objectId: id,
+          objectTitle: entry?.title ?? id,
+          description: `Research entry deleted: "${entry?.title ?? id}"`,
+        });
+        set((s) => ({ researchEntries: s.researchEntries.filter((e) => e.id !== id) }));
+      },
+
+      importToResearch: (items) => {
+        const ids: string[] = [];
+        for (const item of items) {
+          const id = makeId();
+          const entry: ResearchEntry = {
+            id,
+            title: item.title || 'Untitled Research',
+            content: item.content,
+            researchType: item.researchType ?? ('note' as ResearchType),
+            tags: [],
+            relatedSceneIds: [],
+            relatedFragmentIds: [],
+            relatedCodexIds: [],
+            relatedQuestionIds: [],
+            relatedNotebookIds: [],
+            notes: '',
+            source: item.importSource?.fileName ?? '',
+            importSource: item.importSource,
+            createdAt: now(),
+            updatedAt: now(),
+          };
+          set((s) => ({ researchEntries: [...s.researchEntries, entry] }));
+          get().recordEvent({
+            eventType: 'imported',
+            objectType: 'research_item',
+            objectId: id,
+            objectTitle: entry.title,
+            description: `Research entry "${entry.title}" imported from "${item.importSource?.fileName ?? 'file'}"`,
+          });
+          ids.push(id);
+        }
+        return ids;
+      },
+
       // ── Questions ────────────────────────────────────────────────────────
 
       addQuestion: (partial = {}) => {
@@ -1378,6 +1467,7 @@ export const useAppStore = create<AppState>()(
           codexEntries: state.codexEntries,
           questions: state.questions,
           moodboardItems: state.moodboardItems,
+          researchEntries: state.researchEntries,
           projectTags: state.projectTags,
           links: state.links,
           history: state.history,
@@ -1413,6 +1503,7 @@ export const useAppStore = create<AppState>()(
           codexEntries: (data.codexEntries as CodexEntry[]) ?? [],
           questions: (data.questions as Question[]) ?? [],
           moodboardItems: (data.moodboardItems as MoodboardItem[]) ?? [],
+          researchEntries: (data.researchEntries as ResearchEntry[]) ?? [],
           projectTags: (data.projectTags as Tag[]) ?? [],
           links: (data.links as Link[]) ?? [],
           history: (data.history as HistoryEvent[]) ?? [],
@@ -1442,6 +1533,7 @@ export const useAppStore = create<AppState>()(
             codexEntries: data.codexEntries ?? [],
             questions: data.questions ?? [],
             moodboardItems: data.moodboardItems ?? [],
+            researchEntries: data.researchEntries ?? [],
             projectTags: data.projectTags ?? [],
             links: data.links ?? [],
             history: data.history ?? [],

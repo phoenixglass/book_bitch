@@ -99,6 +99,7 @@ aiRouter.post('/questions', async (req: Request, res: Response) => {
     codex_entry: 'codex entry',
     question: 'project question',
     moodboard_item: 'moodboard item',
+    research_item: 'research entry',
   } as Record<string, string>)[objectType] ?? objectType;
 
   const taskDesc = extractFromNote

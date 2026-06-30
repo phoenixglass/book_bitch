@@ -13,6 +13,7 @@ const NAV_ITEMS: { area: AppArea; icon: string; label: string }[] = [
   { area: 'codex', icon: '📚', label: 'Codex' },
   { area: 'questions', icon: '❓', label: 'Questions' },
   { area: 'moodboard', icon: '🖼️', label: 'Moodboard' },
+  { area: 'research', icon: '🔬', label: 'Research' },
   { area: 'history', icon: '🕰️', label: 'History' },
 ];
 

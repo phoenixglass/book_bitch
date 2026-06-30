@@ -19,6 +19,7 @@ import { NotebookView } from './components/NotebookView';
 import { CodexView } from './components/CodexView';
 import { QuestionsView } from './components/QuestionsView';
 import { MoodboardView } from './components/MoodboardView';
+import { ResearchView } from './components/ResearchView';
 import { HistoryView } from './components/HistoryView';
 import { TrashView } from './components/TrashView';
 import { GlobalSearch } from './components/GlobalSearch';
@@ -197,6 +198,7 @@ function App() {
           {area === 'codex' && <CodexView />}
           {area === 'questions' && <QuestionsView />}
           {area === 'moodboard' && <MoodboardView />}
+          {area === 'research' && <ResearchView />}
           {area === 'history' && <HistoryView />}
           {area === 'trash' && <TrashView />}
 

@@ -203,6 +203,73 @@ export function parseMarkdown(text: string, options: ParseOptions = {}): ParsedI
   return items;
 }
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function parseDelimitedLine(line: string, delimiter: string): string[] {
+  const cells: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        cur += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === delimiter) {
+      cells.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  cells.push(cur);
+  return cells;
+}
+
+export function delimitedToHtml(text: string, delimiter: string): string {
+  const lines = text.split(/\r\n|\n/).filter((l) => l.trim() !== '');
+  if (lines.length === 0) return '';
+  let html = '<table><tbody>';
+  lines.forEach((line, idx) => {
+    const cells = parseDelimitedLine(line, delimiter);
+    const tag = idx === 0 ? 'th' : 'td';
+    html += '<tr>' + cells.map((c) => `<${tag}>${escapeHtml(c)}</${tag}>`).join('') + '</tr>';
+  });
+  return html + '</tbody></table>';
+}
+
+export function parseDelimited(
+  text: string,
+  delimiter: string,
+  options: ParseOptions = {},
+): ParsedItem[] {
+  const { fileName } = options;
+  const html = delimitedToHtml(text, delimiter);
+  const rowCount = Math.max(0, text.split(/\r\n|\n/).filter((l) => l.trim() !== '').length - 1);
+  return [
+    {
+      id: crypto.randomUUID(),
+      title: fileName ?? 'Imported Spreadsheet',
+      content: html,
+      wordCount: rowCount,
+    },
+  ];
+}
+
 export function parsePlainText(text: string, options: ParseOptions = {}): ParsedItem[] {
   const { fileName } = options;
   const html = `<p>${text
@@ -230,6 +297,16 @@ export async function parseFile(
   if (file.name.endsWith('.docx') || file.name.endsWith('.doc')) {
     const buf = await file.arrayBuffer();
     return parseDocx(buf, opts);
+  }
+
+  if (file.name.endsWith('.csv')) {
+    const text = await file.text();
+    return parseDelimited(text, ',', opts);
+  }
+
+  if (file.name.endsWith('.tsv')) {
+    const text = await file.text();
+    return parseDelimited(text, '\t', opts);
   }
 
   const text = await file.text();
