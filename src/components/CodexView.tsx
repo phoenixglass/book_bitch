@@ -330,8 +330,13 @@ export function CodexView() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scenes }),
       });
+      if (!resp.ok) {
+        const text = await resp.text();
+        let message = `Server returned ${resp.status}`;
+        try { const e = JSON.parse(text) as { error?: string }; if (e.error) message = e.error; } catch { /* not JSON */ }
+        throw new Error(message);
+      }
       const data = await resp.json() as { entries?: ExtractedEntry[]; error?: string; truncated?: boolean };
-      if (!resp.ok) throw new Error(data.error ?? 'Unknown error');
       const entries = (data.entries ?? []) as ExtractedEntry[];
       setScanResults(entries);
       setScanSelected(entries.map(() => true));
