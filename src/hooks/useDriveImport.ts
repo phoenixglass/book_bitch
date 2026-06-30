@@ -148,7 +148,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
   }
 
   // Downloads a binary Drive file and parses it server-side (for PDF) or client-side (for DOCX/XLSX).
-  async function importBinaryFile(file: any, fileType: 'docx' | 'xlsx' | 'pdf') {
+  async function importBinaryFile(file: any, fileType: 'docx' | 'doc' | 'xlsx' | 'xls' | 'pdf') {
     const res = await fetchWithAuth(
       `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`
     );
@@ -182,12 +182,12 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
 
     const importSource: ImportSourceMeta = {
       fileName: baseName,
-      fileType: fileType === 'docx' ? 'docx' : fileType === 'xlsx' ? 'xlsx' : 'pdf',
+      fileType: (fileType === 'docx' || fileType === 'doc') ? 'docx' : (fileType === 'xlsx' || fileType === 'xls') ? 'xlsx' : 'pdf',
       importedAt: Date.now(),
       googleFileId: file.id,
     };
 
-    const isSpreadsheet = fileType === 'xlsx' || fileType === 'xls';
+    const isSpreadsheet = fileType === 'xlsx' || (fileType as string) === 'xls';
 
     if (targetSection !== 'manuscript') {
       const { importToFragments, importToOmitted, importToResearch, setArea } = useAppStore.getState();
