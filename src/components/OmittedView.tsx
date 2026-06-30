@@ -635,7 +635,7 @@ export function OmittedView() {
                     ref={uploadRef}
                     type="file"
                     multiple={false}
-                    accept=".txt,.md,.html,.htm,.docx,.doc"
+                    accept=".txt,.md,.html,.htm,.docx,.doc,.xlsx,.xls,.pdf"
                     onChange={handleUpload}
                     className="hidden"
                   />

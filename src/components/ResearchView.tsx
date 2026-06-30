@@ -10,6 +10,14 @@ import type { ResearchEntry, ResearchType, ImportSourceMeta } from '../types';
 
 const TYPE_LABELS: Record<ResearchType, string> = {
   note: 'Note',
+  book: 'Book',
+  article: 'Article',
+  news: 'News Article',
+  study: 'Study / Paper',
+  interview: 'Interview',
+  documentary: 'Documentary',
+  podcast: 'Podcast',
+  website: 'Website',
   source: 'Source',
   spreadsheet: 'Spreadsheet',
   link: 'Link',
@@ -18,10 +26,18 @@ const TYPE_LABELS: Record<ResearchType, string> = {
 
 const TYPE_ICONS: Record<ResearchType, string> = {
   note: '📝',
+  book: '📚',
+  article: '📄',
+  news: '📰',
+  study: '🔬',
+  interview: '🎤',
+  documentary: '🎬',
+  podcast: '🎙️',
+  website: '🌐',
   source: '📰',
   spreadsheet: '📊',
   link: '🔗',
-  other: '🔬',
+  other: '📌',
 };
 
 function ResearchDetail({ entry, onClose }: { entry: ResearchEntry; onClose: () => void }) {
@@ -219,7 +235,7 @@ export function ResearchView() {
 
     const splitLevel: SplitLevel = 1;
     const items = await parseFile(file, { splitLevel });
-    const isSpreadsheet = /\.(csv|tsv)$/i.test(file.name);
+    const isSpreadsheet = /\.(csv|tsv|xlsx|xls)$/i.test(file.name);
 
     if (items.length === 1 && !items[0].sourceHeading) {
       importToResearch([
@@ -252,7 +268,7 @@ export function ResearchView() {
     section: 'manuscript' | 'fragments' | 'omitted' | 'research',
   ) {
     const { file } = pendingImport!;
-    const isSpreadsheet = /\.(csv|tsv)$/i.test(file.name);
+    const isSpreadsheet = /\.(csv|tsv|xlsx|xls)$/i.test(file.name);
     const importSource: ImportSourceMeta = {
       fileName: file.name.replace(/\.[^/.]+$/, ''),
       fileType: file.name.split('.').pop() ?? 'txt',
@@ -295,7 +311,7 @@ export function ResearchView() {
                   ref={uploadRef}
                   type="file"
                   multiple={false}
-                  accept=".txt,.md,.html,.htm,.docx,.doc,.csv,.tsv"
+                  accept=".txt,.md,.html,.htm,.docx,.doc,.xlsx,.xls,.csv,.tsv,.pdf"
                   onChange={handleUpload}
                   className="hidden"
                 />

@@ -1,4 +1,5 @@
 import mammoth from 'mammoth';
+import * as XLSX from 'xlsx';
 
 export interface ParsedItem {
   id: string;
@@ -288,6 +289,59 @@ export function parsePlainText(text: string, options: ParseOptions = {}): Parsed
   ];
 }
 
+export async function parseXlsx(
+  arrayBuffer: ArrayBuffer,
+  options: ParseOptions = {},
+): Promise<ParsedItem[]> {
+  const { fileName } = options;
+  const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+  const items: ParsedItem[] = [];
+
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    const csv = XLSX.utils.sheet_to_csv(sheet);
+    const sheetItems = parseDelimited(csv, ',', { ...options, fileName: sheetName });
+    // If only one sheet and it has no heading split, use the file name as title
+    if (workbook.SheetNames.length === 1 && sheetItems.length === 1) {
+      sheetItems[0].title = fileName ?? sheetName;
+    }
+    items.push(...sheetItems);
+  }
+
+  return items.length > 0 ? items : [{
+    id: crypto.randomUUID(),
+    title: fileName ?? 'Spreadsheet',
+    content: '<p>(empty spreadsheet)</p>',
+    wordCount: 0,
+  }];
+}
+
+export async function parsePdfViaServer(
+  arrayBuffer: ArrayBuffer,
+  options: ParseOptions = {},
+): Promise<ParsedItem[]> {
+  const { fileName } = options;
+  const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+  const res = await fetch('/api/parse/binary', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fileType: 'pdf', data: base64 }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(err.error ?? `PDF parse failed: ${res.status}`);
+  }
+  const { html } = await res.json() as { html: string };
+  return [
+    {
+      id: crypto.randomUUID(),
+      title: fileName ?? 'Imported PDF',
+      content: html,
+      wordCount: countWords(html),
+    },
+  ];
+}
+
 export async function parseFile(
   file: File,
   options: ParseOptions = {},
@@ -297,6 +351,16 @@ export async function parseFile(
   if (file.name.endsWith('.docx') || file.name.endsWith('.doc')) {
     const buf = await file.arrayBuffer();
     return parseDocx(buf, opts);
+  }
+
+  if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+    const buf = await file.arrayBuffer();
+    return parseXlsx(buf, opts);
+  }
+
+  if (file.name.endsWith('.pdf')) {
+    const buf = await file.arrayBuffer();
+    return parsePdfViaServer(buf, opts);
   }
 
   if (file.name.endsWith('.csv')) {

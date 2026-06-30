@@ -221,6 +221,14 @@ export interface NotebookEntry {
 
 export type ResearchType =
   | 'note'
+  | 'book'
+  | 'article'
+  | 'news'
+  | 'study'
+  | 'interview'
+  | 'documentary'
+  | 'podcast'
+  | 'website'
   | 'source'
   | 'spreadsheet'
   | 'link'

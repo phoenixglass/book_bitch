@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import type { ImportSourceMeta } from '../types';
-import { delimitedToHtml } from '../utils/documentParser';
+import { delimitedToHtml, parseDocx, parseXlsx } from '../utils/documentParser';
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 const SCOPES =
@@ -114,6 +114,9 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
   // Extensions importGenericFile can safely treat as plain text.
   const TEXT_SAFE_EXTENSIONS = /\.(txt|md|markdown|html|htm)$/i;
   const DELIMITED_EXTENSIONS = /\.(csv|tsv)$/i;
+  const DOCX_EXTENSIONS = /\.(docx|doc)$/i;
+  const XLSX_EXTENSIONS = /\.(xlsx|xls)$/i;
+  const PDF_EXTENSIONS = /\.pdf$/i;
 
   async function handlePickerResult(data: any) {
     const files: any[] = data.docs || [];
@@ -127,15 +130,85 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
           await importDelimitedFile(file);
         } else if (TEXT_SAFE_EXTENSIONS.test(file.name) || file.mimeType?.startsWith('text/')) {
           await importGenericFile(file);
+        } else if (DOCX_EXTENSIONS.test(file.name) || file.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.mimeType === 'application/msword') {
+          await importBinaryFile(file, 'docx');
+        } else if (XLSX_EXTENSIONS.test(file.name) || file.mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || file.mimeType === 'application/vnd.ms-excel') {
+          await importBinaryFile(file, 'xlsx');
+        } else if (PDF_EXTENSIONS.test(file.name) || file.mimeType === 'application/pdf') {
+          await importBinaryFile(file, 'pdf');
         } else {
           alert(
-            `"${file.name}" can't be imported from Drive — only Google Docs/Sheets, plain text, Markdown, HTML, and CSV/TSV files are supported. ` +
-            `Word documents can be imported via the file upload button instead. Excel files aren't supported — export them to CSV first.`
+            `"${file.name}" can't be imported from Drive — supported formats are Google Docs/Sheets, Word (.docx), PDF, Excel (.xlsx), plain text, Markdown, HTML, and CSV/TSV.`
           );
         }
       } catch (err) {
         console.error('Failed to import file:', err);
       }
+    }
+  }
+
+  // Downloads a binary Drive file and parses it server-side (for PDF) or client-side (for DOCX/XLSX).
+  async function importBinaryFile(file: any, fileType: 'docx' | 'xlsx' | 'pdf') {
+    const res = await fetchWithAuth(
+      `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`
+    );
+    if (!res.ok) throw new Error(`Failed to download file: ${res.statusText}`);
+    const arrayBuffer = await res.arrayBuffer();
+
+    const baseName: string = file.name.replace(/\.[^/.]+$/, '');
+    let html = '';
+
+    if (fileType === 'docx' || fileType === 'doc') {
+      const items = await parseDocx(arrayBuffer, { fileName: baseName });
+      html = items.map((i) => i.content).join('\n');
+    } else if (fileType === 'xlsx' || fileType === 'xls') {
+      const items = await parseXlsx(arrayBuffer, { fileName: baseName });
+      html = items.map((i) => i.content).join('\n');
+    } else if (fileType === 'pdf') {
+      // Server-side parsing: send as base64
+      const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+      const parseRes = await fetch('/api/parse/binary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileType: 'pdf', data: base64 }),
+      });
+      if (!parseRes.ok) {
+        const err = await parseRes.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? `Parse failed: ${parseRes.status}`);
+      }
+      const parsed = await parseRes.json() as { html: string };
+      html = parsed.html;
+    }
+
+    const importSource: ImportSourceMeta = {
+      fileName: baseName,
+      fileType: fileType === 'docx' ? 'docx' : fileType === 'xlsx' ? 'xlsx' : 'pdf',
+      importedAt: Date.now(),
+      googleFileId: file.id,
+    };
+
+    const isSpreadsheet = fileType === 'xlsx' || fileType === 'xls';
+
+    if (targetSection !== 'manuscript') {
+      const { importToFragments, importToOmitted, importToResearch, setArea } = useAppStore.getState();
+      if (targetSection === 'fragments') {
+        importToFragments([{ title: baseName, content: html, importSource }]);
+        setArea('fragments');
+      } else if (targetSection === 'research') {
+        importToResearch([{ title: baseName, content: html, researchType: isSpreadsheet ? 'spreadsheet' : 'source', importSource }]);
+        setArea('research');
+      } else {
+        importToOmitted([{ title: baseName, content: html, reason: 'Imported from Google Drive', importSource }]);
+        setArea('omitted');
+      }
+      return;
+    }
+
+    addItem(null, 'document');
+    const docId = useAppStore.getState().selectedId;
+    if (docId) {
+      updateItem(docId, { title: baseName, content: html });
+      selectItem(docId);
     }
   }
 

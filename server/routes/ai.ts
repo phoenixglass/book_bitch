@@ -102,15 +102,22 @@ aiRouter.post('/questions', async (req: Request, res: Response) => {
     research_item: 'research entry',
   } as Record<string, string>)[objectType] ?? objectType;
 
+  const isResearch = objectType === 'research_item';
   const taskDesc = extractFromNote
     ? `Your task: extract 4–8 open questions that are explicitly or implicitly present in the provided ${objectLabel}. These are questions the author raises, implies, or leaves unresolved.`
-    : `Your task: generate 5–8 insightful craft questions about the ${objectLabel} provided.`;
+    : isResearch && storyContext
+      ? `Your task: generate 5–8 questions that explore how this ${objectLabel} connects to the novelist's specific work-in-progress (described in the Story Brief above). Focus on how the facts, themes, or details in this research bear on the characters, plot, timeline, setting, or themes of THAT story — not research questions in general. Reference specific character names, plot threads, or events from the Brief when relevant.`
+      : `Your task: generate 5–8 insightful craft questions about the ${objectLabel} provided.`;
 
   const systemPrompt = [
     `You are a writing coach helping a novelist think more deeply about their work.`,
     preamble,
     taskDesc,
-    storyContext ? 'CRITICAL: A Story Brief is included at the top of the user message. Read it first. Use character names, plot threads, and story context from the Brief to make your questions specific to this actual story — never refer to characters with vague labels when the Brief names them.' : '',
+    storyContext
+      ? isResearch
+        ? 'CRITICAL: A Story Brief is included at the top of the user message. Your questions MUST connect this research to that specific novel — name characters, plot threads, and settings from the Brief. Every question should help the author see how this research material is relevant to THEIR story.'
+        : 'CRITICAL: A Story Brief is included at the top of the user message. Read it first. Use character names, plot threads, and story context from the Brief to make your questions specific to this actual story — never refer to characters with vague labels when the Brief names them.'
+      : '',
     'Rules:',
     '- Ask questions only. Never draft prose, dialogue, or scene content.',
     '- Make questions specific to the provided text, not generic.',
