@@ -247,6 +247,8 @@ export interface ResearchEntry {
   relatedNotebookIds: string[];
   notes: string;
   source: string;
+  // Ordering & trash
+  trashedAt?: number;
   // Import provenance
   importSource?: ImportSourceMeta;
   createdAt: number;
@@ -790,6 +792,10 @@ export interface AppState {
   addResearchEntry: (partial?: Partial<ResearchEntry>) => string;
   updateResearchEntry: (id: string, patch: Partial<ResearchEntry>) => void;
   deleteResearchEntry: (id: string) => void;
+  trashResearchEntry: (id: string) => void;
+  trashResearchEntries: (ids: string[]) => void;
+  restoreResearchEntryFromTrash: (id: string) => void;
+  permanentlyDeleteResearchEntry: (id: string) => void;
   importToResearch: (items: Array<{ title: string; content: string; researchType?: ResearchType; importSource?: ImportSourceMeta }>) => string[];
 
   // ─── Questions ─────────────────────────────────────────────────────────────

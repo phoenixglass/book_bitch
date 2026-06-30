@@ -34,7 +34,7 @@ function parseDragData(e: React.DragEvent): { type: string; id: string } | null 
 }
 
 function getDragTypeFromEvent(e: React.DragEvent): string | null {
-  for (const t of ['fragment', 'scene', 'omitted']) {
+  for (const t of ['fragment', 'scene', 'omitted', 'research']) {
     if (e.dataTransfer.types.includes(`${BB_TYPE_KEY}-${t}`)) return t;
   }
   return null;
@@ -48,8 +48,10 @@ export function SideNav() {
     questions,
     fragments,
     omittedMaterial,
+    researchEntries,
     trashFragment,
     trashOmitted,
+    trashResearchEntry,
     removeItem,
     sendSceneToFragments,
     sendSceneToOmitted,
@@ -69,7 +71,8 @@ export function SideNav() {
   const totalTrashCount =
     (useAppStore.getState().binder.find((b) => b.id === 'trash')?.children.length ?? 0) +
     fragments.filter((f) => f.trashedAt).length +
-    omittedMaterial.filter((o) => o.trashedAt).length;
+    omittedMaterial.filter((o) => o.trashedAt).length +
+    researchEntries.filter((r) => r.trashedAt).length;
 
   function handleTrashDragEnter(e: React.DragEvent) {
     e.preventDefault();
@@ -100,6 +103,8 @@ export function SideNav() {
       trashFragment(data.id);
     } else if (data.type === 'omitted') {
       trashOmitted(data.id);
+    } else if (data.type === 'research') {
+      trashResearchEntry(data.id);
     } else if (data.type === 'scene') {
       removeItem(data.id);
     }

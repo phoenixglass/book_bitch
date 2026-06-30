@@ -2,13 +2,14 @@ import { useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import type { BinderItem } from '../types';
 
-type TrashTab = 'all' | 'manuscript' | 'fragments' | 'omitted';
+type TrashTab = 'all' | 'manuscript' | 'fragments' | 'omitted' | 'research';
 
 export function TrashView() {
   const {
     binder,
     fragments,
     omittedMaterial,
+    researchEntries,
     // Binder trash
     emptyTrash,
     permanentlyDeleteItem,
@@ -20,6 +21,9 @@ export function TrashView() {
     // Omitted trash
     restoreOmittedFromTrash,
     permanentlyDeleteOmitted,
+    // Research trash
+    restoreResearchEntryFromTrash,
+    permanentlyDeleteResearchEntry,
     setArea,
   } = useAppStore();
 
@@ -35,7 +39,10 @@ export function TrashView() {
   // Omitted trash
   const omittedTrash = omittedMaterial.filter((o) => o.trashedAt);
 
-  const totalCount = binderTrash.length + fragTrash.length + omittedTrash.length;
+  // Research trash
+  const researchTrash = researchEntries.filter((r) => r.trashedAt);
+
+  const totalCount = binderTrash.length + fragTrash.length + omittedTrash.length + researchTrash.length;
 
   function handleRestoreBinder(item: BinderItem) {
     // Move from trash folder to manuscript root
@@ -54,6 +61,7 @@ export function TrashView() {
     emptyTrash();
     for (const f of fragTrash) permanentlyDeleteFragment(f.id);
     for (const o of omittedTrash) permanentlyDeleteOmitted(o.id);
+    for (const r of researchTrash) permanentlyDeleteResearchEntry(r.id);
   }
 
   const TABS: { id: TrashTab; label: string; count: number }[] = [
@@ -61,11 +69,13 @@ export function TrashView() {
     { id: 'manuscript', label: 'Manuscript', count: binderTrash.length },
     { id: 'fragments', label: 'Fragments', count: fragTrash.length },
     { id: 'omitted', label: 'Omitted', count: omittedTrash.length },
+    { id: 'research', label: 'Research', count: researchTrash.length },
   ];
 
   const showBinder = tab === 'all' || tab === 'manuscript';
   const showFrags = tab === 'all' || tab === 'fragments';
   const showOmitted = tab === 'all' || tab === 'omitted';
+  const showResearch = tab === 'all' || tab === 'research';
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden bg-[#0d1117]">
@@ -201,6 +211,36 @@ export function TrashView() {
             </div>
           </section>
         )}
+
+        {/* Research items */}
+        {showResearch && researchTrash.length > 0 && (
+          <section className="mb-6">
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+              <span>🔬</span> Research
+            </h3>
+            <div className="space-y-1">
+              {researchTrash.map((entry) => (
+                <TrashCard
+                  key={entry.id}
+                  title={entry.title}
+                  subtitle={entry.researchType.replace(/_/g, ' ')}
+                  badge="research"
+                  wordCount={entry.content ? entry.content.replace(/<[^>]+>/g, ' ').trim().split(/\s+/).length : 0}
+                  trashedAt={entry.trashedAt}
+                  onRestore={() => {
+                    restoreResearchEntryFromTrash(entry.id);
+                    setArea('research');
+                  }}
+                  onDelete={() => {
+                    if (confirm(`Permanently delete "${entry.title}"? Cannot be undone.`)) {
+                      permanentlyDeleteResearchEntry(entry.id);
+                    }
+                  }}
+                />
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );
@@ -210,6 +250,7 @@ const BADGE_COLORS = {
   manuscript: 'bg-blue-900/40 text-blue-300',
   fragment: 'bg-purple-900/40 text-purple-300',
   omitted: 'bg-amber-900/40 text-amber-300',
+  research: 'bg-teal-900/40 text-teal-300',
 };
 
 function TrashCard({
