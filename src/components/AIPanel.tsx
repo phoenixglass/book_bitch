@@ -1413,8 +1413,17 @@ export function AIPanel() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scenes }),
       });
+      if (!res.ok) {
+        const text = await res.text();
+        let message = `Server returned ${res.status}`;
+        try {
+          const errData = JSON.parse(text) as { error?: string };
+          if (errData.error) message = errData.error;
+        } catch { /* not JSON */ }
+        throw new Error(message);
+      }
       const data = await res.json() as { brief?: string; error?: string; truncated?: boolean };
-      if (!res.ok || !data.brief) {
+      if (!data.brief) {
         throw new Error(data.error ?? `Server returned ${res.status}`);
       }
       const currentWc = totalWordCount(binder);
@@ -1501,11 +1510,17 @@ export function AIPanel() {
         body: JSON.stringify(body),
       });
 
-      const data = await res.json() as Record<string, unknown>;
-
       if (!res.ok) {
-        throw new Error((data.error as string) || `Server returned ${res.status}`);
+        const text = await res.text();
+        let message = `Server returned ${res.status}`;
+        try {
+          const errData = JSON.parse(text) as { error?: string };
+          if (errData.error) message = errData.error;
+        } catch { /* not JSON */ }
+        throw new Error(message);
       }
+
+      const data = await res.json() as Record<string, unknown>;
 
       const outputType = action;
       const output = { ...data, type: outputType } as AIOutput;
