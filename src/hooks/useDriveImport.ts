@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import type { ImportSourceMeta } from '../types';
+import { delimitedToHtml } from '../utils/documentParser';
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 const SCOPES =
@@ -110,6 +111,10 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     });
   }
 
+  // Extensions importGenericFile can safely treat as plain text.
+  const TEXT_SAFE_EXTENSIONS = /\.(txt|md|markdown|html|htm)$/i;
+  const DELIMITED_EXTENSIONS = /\.(csv|tsv)$/i;
+
   async function handlePickerResult(data: any) {
     const files: any[] = data.docs || [];
     for (const file of files) {
@@ -118,8 +123,15 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
           await importGoogleDoc(file);
         } else if (file.mimeType === 'application/vnd.google-apps.spreadsheet') {
           await importGoogleSheet(file);
-        } else {
+        } else if (DELIMITED_EXTENSIONS.test(file.name) || file.mimeType === 'text/csv' || file.mimeType === 'text/tab-separated-values') {
+          await importDelimitedFile(file);
+        } else if (TEXT_SAFE_EXTENSIONS.test(file.name) || file.mimeType?.startsWith('text/')) {
           await importGenericFile(file);
+        } else {
+          alert(
+            `"${file.name}" can't be imported from Drive — only Google Docs/Sheets, plain text, Markdown, HTML, and CSV/TSV files are supported. ` +
+            `Word documents can be imported via the file upload button instead. Excel files aren't supported — export them to CSV first.`
+          );
         }
       } catch (err) {
         console.error('Failed to import file:', err);
@@ -403,6 +415,43 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     if (docId) {
       updateItem(docId, { title: file.name, content: html });
       selectItem(docId);
+    }
+  }
+
+  // ── Delimited (CSV/TSV) file import ────────────────────────────────────────
+
+  async function importDelimitedFile(file: any) {
+    const res = await fetchWithAuth(
+      `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`
+    );
+    if (!res.ok) throw new Error(`Failed to download file: ${res.statusText}`);
+    const text = await res.text();
+    const delimiter = /\.tsv$/i.test(file.name) || file.mimeType === 'text/tab-separated-values' ? '\t' : ',';
+    const html = delimitedToHtml(text, delimiter);
+
+    const { importToFragments, importToOmitted, importToResearch, setArea } = useAppStore.getState();
+    const importSource: ImportSourceMeta = {
+      fileName: file.name,
+      fileType: 'google_doc',
+      importedAt: Date.now(),
+      googleFileId: file.id,
+    };
+    if (targetSection === 'fragments') {
+      importToFragments([{ title: file.name, content: html, importSource }]);
+      setArea('fragments');
+    } else if (targetSection === 'research') {
+      importToResearch([{ title: file.name, content: html, researchType: 'spreadsheet', importSource }]);
+      setArea('research');
+    } else if (targetSection === 'omitted') {
+      importToOmitted([{ title: file.name, content: html, reason: 'Imported from Google Drive', importSource }]);
+      setArea('omitted');
+    } else {
+      addItem(null, 'document');
+      const docId = useAppStore.getState().selectedId;
+      if (docId) {
+        updateItem(docId, { title: file.name, content: html });
+        selectItem(docId);
+      }
     }
   }
 
