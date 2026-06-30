@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import pdfParse from 'pdf-parse';
+import { createRequire } from 'module';
+const _require = createRequire(import.meta.url);
+const pdfParse = _require('pdf-parse') as (buf: Buffer) => Promise<{ text: string }>;
 import mammoth from 'mammoth';
 
 export const parseRouter = Router();
