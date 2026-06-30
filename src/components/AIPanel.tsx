@@ -1403,11 +1403,20 @@ export function AIPanel() {
     setBriefLoading(true);
     setBriefError(null);
     try {
-      const scenes = collectManuscriptScenes(binder);
-      if (scenes.length === 0) {
+      const allScenes = collectManuscriptScenes(binder);
+      if (allScenes.length === 0) {
         setBriefError('No manuscript content found. Add some scenes first.');
         return;
       }
+      // Cap total payload to match server-side BRIEF_MAX_CHARS so large
+      // manuscripts don't exceed proxy body-size limits.
+      const CLIENT_BRIEF_MAX = 600_000;
+      let charCount = 0;
+      const scenes = allScenes.filter((s) => {
+        if (charCount >= CLIENT_BRIEF_MAX) return false;
+        charCount += s.text.length;
+        return true;
+      });
       const res = await fetch('/api/ai/generate-brief', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1455,9 +1464,16 @@ export function AIPanel() {
 
     try {
       const endpoint = action === 'extract-questions' ? 'questions' : action;
+      // Trim before sending — the server truncates anyway, but keeping
+      // the payload small avoids proxy/ingress body-size limits.
+      const contentForSend = content.length > 200_000 ? content.slice(0, 200_000) : content;
+      const storyContextForSend = storyBrief?.content && storyBrief.content.length > 50_000
+        ? storyBrief.content.slice(0, 50_000)
+        : storyBrief?.content;
+
       const body: Record<string, unknown> = {
         title: ctx.title,
-        content,
+        content: contentForSend,
         objectType: ctx.objectType,
         mode: aiSettings.mode,
         allowDrafting: aiSettings.allowDrafting,
@@ -1500,8 +1516,8 @@ export function AIPanel() {
         body.answer = (ctx.metadata?.answer as string) ?? '';
       }
 
-      if (storyBrief?.content) {
-        body.storyContext = storyBrief.content;
+      if (storyContextForSend) {
+        body.storyContext = storyContextForSend;
       }
 
       const res = await fetch(`/api/ai/${endpoint}`, {
