@@ -58,6 +58,7 @@ const OBJECT_TYPE_LABELS: Record<AIObjectType, string> = {
   codex_entry: 'Codex Entry',
   question: 'Project Question',
   moodboard_item: 'Moodboard Item',
+  research_item: 'Research Entry',
 };
 
 // ── Action definitions per object type ───────────────────────────────────────
@@ -103,6 +104,11 @@ const ACTIONS_BY_TYPE: Record<AIObjectType, ActionDef[]> = {
   moodboard_item: [
     { value: 'summarize', label: 'Summarize Description', desc: 'Produce a concise summary of this item\'s description and notes' },
     { value: 'tags', label: 'Suggest Tags', desc: 'Recommend tags for organisation' },
+  ],
+  research_item: [
+    { value: 'summarize', label: 'Summarize Research', desc: 'Produce a concise summary of this research entry' },
+    { value: 'tags', label: 'Suggest Tags', desc: 'Recommend tags for organisation' },
+    { value: 'extract-questions', label: 'Extract Questions', desc: 'Pull out open questions raised by this research' },
   ],
 };
 
@@ -150,6 +156,7 @@ function useAIContext(): SelectedAIContext | null {
     codexEntries,
     questions,
     moodboardItems,
+    researchEntries,
   } = useAppStore();
 
   if (area === 'manuscript' && selectedId) {
@@ -297,6 +304,24 @@ function useAIContext(): SelectedAIContext | null {
     };
   }
 
+  if (type === 'research_item') {
+    const r = researchEntries.find((x) => x.id === id);
+    if (!r) return null;
+    return {
+      objectType: 'research_item',
+      objectId: r.id,
+      title: r.title,
+      content: r.content,
+      notes: r.notes,
+      tags: r.tags,
+      metadata: {
+        researchType: r.researchType,
+        source: r.source,
+      },
+      area,
+    };
+  }
+
   return null;
 }
 
@@ -380,7 +405,7 @@ function SummarizeResult({
   output: AISummarizeOutput;
   ctx: SelectedAIContext;
 }) {
-  const { updateItem, updateFragment, updateOmittedMaterial, updateCodexEntry, updateQuestion, updateMoodboardItem, addNotebookEntry, addQuestion } = useAppStore();
+  const { updateItem, updateFragment, updateOmittedMaterial, updateCodexEntry, updateQuestion, updateMoodboardItem, updateResearchEntry, addNotebookEntry, addQuestion } = useAppStore();
   const [summarySaved, setSummarySaved] = useState(false);
   const [questionsSaved, setQuestionsSaved] = useState<Set<number>>(new Set());
 
@@ -407,6 +432,9 @@ function SummarizeResult({
         break;
       case 'moodboard_item':
         updateMoodboardItem(ctx.objectId, { notes: summary });
+        break;
+      case 'research_item':
+        updateResearchEntry(ctx.objectId, { notes: summary });
         break;
     }
     setSummarySaved(true);
@@ -714,7 +742,7 @@ function TagsResult({
   output: AITagsOutput;
   ctx: SelectedAIContext;
 }) {
-  const { updateItem, updateFragment, updateOmittedMaterial, updateNotebookEntry, updateCodexEntry, updateMoodboardItem, getOrCreateTag, binder, fragments, omittedMaterial, notebookEntries, codexEntries, moodboardItems } = useAppStore();
+  const { updateItem, updateFragment, updateOmittedMaterial, updateNotebookEntry, updateCodexEntry, updateMoodboardItem, updateResearchEntry, getOrCreateTag, binder, fragments, omittedMaterial, notebookEntries, codexEntries, moodboardItems, researchEntries } = useAppStore();
   const [applied, setApplied] = useState<Set<string>>(new Set());
 
   function getCurrentTags(): string[] {
@@ -725,6 +753,7 @@ function TagsResult({
       case 'notebook_entry': return notebookEntries.find(n => n.id === ctx.objectId)?.tags ?? [];
       case 'codex_entry': return codexEntries.find(c => c.id === ctx.objectId)?.tags ?? [];
       case 'moodboard_item': return moodboardItems.find(m => m.id === ctx.objectId)?.tags ?? [];
+      case 'research_item': return researchEntries.find(r => r.id === ctx.objectId)?.tags ?? [];
       default: return [];
     }
   }
@@ -747,6 +776,7 @@ function TagsResult({
       case 'notebook_entry': updateNotebookEntry(ctx.objectId, { tags: newTags }); break;
       case 'codex_entry': updateCodexEntry(ctx.objectId, { tags: newTags }); break;
       case 'moodboard_item': updateMoodboardItem(ctx.objectId, { tags: newTags }); break;
+      case 'research_item': updateResearchEntry(ctx.objectId, { tags: newTags }); break;
     }
 
     setApplied((prev) => new Set(prev).add(trimmed));

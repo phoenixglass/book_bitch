@@ -91,6 +91,7 @@ export type AppArea =
   | 'codex'
   | 'questions'
   | 'moodboard'
+  | 'research'
   | 'history'
   | 'search'
   | 'trash';
@@ -106,7 +107,7 @@ export interface ImportSourceMeta {
   googleFileId?: string;
   googleTabId?: string;
   googleTabTitle?: string;
-  originalSection?: 'manuscript' | 'fragments' | 'omitted';
+  originalSection?: 'manuscript' | 'fragments' | 'omitted' | 'research';
 }
 
 export interface ProjectTarget {
@@ -212,6 +213,34 @@ export interface NotebookEntry {
   relatedQuestionIds: string[];
   isPrivate: boolean;
   archived: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// ─── Research ────────────────────────────────────────────────────────────────
+
+export type ResearchType =
+  | 'note'
+  | 'source'
+  | 'spreadsheet'
+  | 'link'
+  | 'other';
+
+export interface ResearchEntry {
+  id: string;
+  title: string;
+  content: string; // HTML
+  researchType: ResearchType;
+  tags: string[];
+  relatedSceneIds: string[];
+  relatedFragmentIds: string[];
+  relatedCodexIds: string[];
+  relatedQuestionIds: string[];
+  relatedNotebookIds: string[];
+  notes: string;
+  source: string;
+  // Import provenance
+  importSource?: ImportSourceMeta;
   createdAt: number;
   updatedAt: number;
 }
@@ -327,7 +356,8 @@ export type ObjectType =
   | 'notebook_entry'
   | 'codex_entry'
   | 'question'
-  | 'moodboard_item';
+  | 'moodboard_item'
+  | 'research_item';
 
 export type RelationshipType =
   | 'mentions'
@@ -589,7 +619,8 @@ export type AIObjectType =
   | 'notebook_entry'
   | 'codex_entry'
   | 'question'
-  | 'moodboard_item';
+  | 'moodboard_item'
+  | 'research_item';
 
 export interface SelectedAIContext {
   objectType: AIObjectType;
@@ -639,6 +670,7 @@ export interface AppState {
   codexEntries: CodexEntry[];
   questions: Question[];
   moodboardItems: MoodboardItem[];
+  researchEntries: ResearchEntry[];
   projectTags: Tag[];
   links: Link[];
   history: HistoryEvent[];
@@ -745,6 +777,12 @@ export interface AppState {
   addCodexEntry: (partial?: Partial<CodexEntry>) => string;
   updateCodexEntry: (id: string, patch: Partial<CodexEntry>) => void;
   deleteCodexEntry: (id: string) => void;
+
+  // ─── Research ──────────────────────────────────────────────────────────────
+  addResearchEntry: (partial?: Partial<ResearchEntry>) => string;
+  updateResearchEntry: (id: string, patch: Partial<ResearchEntry>) => void;
+  deleteResearchEntry: (id: string) => void;
+  importToResearch: (items: Array<{ title: string; content: string; researchType?: ResearchType; importSource?: ImportSourceMeta }>) => string[];
 
   // ─── Questions ─────────────────────────────────────────────────────────────
   addQuestion: (partial?: Partial<Question>) => string;

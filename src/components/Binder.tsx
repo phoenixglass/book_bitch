@@ -451,7 +451,7 @@ export function Binder() {
 
   function handleImportConfirm(
     items: ParsedItem[],
-    section: 'manuscript' | 'fragments' | 'omitted',
+    section: 'manuscript' | 'fragments' | 'omitted' | 'research',
   ) {
     const { file } = pendingImport!;
     const importSource: ImportSourceMeta = {
@@ -478,6 +478,11 @@ export function Binder() {
         })),
       );
       store.setArea('omitted');
+    } else if (section === 'research') {
+      store.importToResearch(
+        items.map((i) => ({ ...i, importSource: { ...importSource, sourceHeading: i.sourceHeading } })),
+      );
+      store.setArea('research');
     }
     setPendingImport(null);
   }

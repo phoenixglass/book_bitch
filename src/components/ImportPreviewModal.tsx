@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import type { ParsedItem, SplitLevel } from '../utils/documentParser';
 
-type TargetSection = 'manuscript' | 'fragments' | 'omitted';
+type TargetSection = 'manuscript' | 'fragments' | 'omitted' | 'research';
 
 interface Props {
   fileName: string;
@@ -19,6 +19,7 @@ const SECTION_LABELS: Record<TargetSection, string> = {
   manuscript: '📖 Main Manuscript',
   fragments: '🧩 Fragments',
   omitted: '🗂️ Omitted Material',
+  research: '🔬 Research',
 };
 
 export function ImportPreviewModal({

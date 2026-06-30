@@ -197,7 +197,7 @@ app.post('/api/ai/questions', async (req: Request, res: Response) => {
   const categoryHint = category && category !== 'any'
     ? `Focus your questions on the category: ${category}.`
     : 'Cover a range of craft categories.';
-  const objectLabel = ({ scene: 'scene', fragment: 'fragment', omitted_material: 'omitted material item', notebook_entry: 'notebook entry', codex_entry: 'codex entry', question: 'project question', moodboard_item: 'moodboard item' } as Record<string, string>)[objectType ?? 'scene'] ?? objectType;
+  const objectLabel = ({ scene: 'scene', fragment: 'fragment', omitted_material: 'omitted material item', notebook_entry: 'notebook entry', codex_entry: 'codex entry', question: 'project question', moodboard_item: 'moodboard item', research_item: 'research entry' } as Record<string, string>)[objectType ?? 'scene'] ?? objectType;
   const taskDesc = extractFromNote
     ? `Your task: extract 4–8 open questions that are explicitly or implicitly present in the provided ${objectLabel}.`
     : `Your task: generate 5–8 insightful craft questions about the ${objectLabel} provided.`;

@@ -1,7 +1,7 @@
 import { useDriveImport } from '../hooks/useDriveImport';
 
 interface Props {
-  targetSection?: 'manuscript' | 'fragments' | 'omitted';
+  targetSection?: 'manuscript' | 'fragments' | 'omitted' | 'research';
 }
 
 export function GoogleDriveUpload({ targetSection = 'manuscript' }: Props) {

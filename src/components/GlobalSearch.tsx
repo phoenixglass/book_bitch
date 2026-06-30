@@ -12,13 +12,13 @@ interface SearchResult {
 
 const TYPE_ICONS: Record<ObjectType, string> = {
   scene: '📄', fragment: '🧩', omitted_material: '🗂️', notebook_entry: '📓',
-  codex_entry: '📚', question: '❓', moodboard_item: '🖼️',
+  codex_entry: '📚', question: '❓', moodboard_item: '🖼️', research_item: '🔬',
 };
 
 const TYPE_LABELS: Record<ObjectType, string> = {
   scene: 'Scene', fragment: 'Fragment', omitted_material: 'Omitted',
   notebook_entry: 'Notebook', codex_entry: 'Codex', question: 'Question',
-  moodboard_item: 'Moodboard',
+  moodboard_item: 'Moodboard', research_item: 'Research',
 };
 
 function stripHtml(html: string) {
@@ -49,7 +49,7 @@ function collectScenes(items: BinderItem[]): { id: string; title: string; conten
 
 export function GlobalSearch({ onClose }: { onClose: () => void }) {
   const {
-    binder, fragments, omittedMaterial, notebookEntries, codexEntries, questions, moodboardItems,
+    binder, fragments, omittedMaterial, notebookEntries, codexEntries, questions, moodboardItems, researchEntries,
     selectItem, setArea, setViewMode, searchQuery, setSearchQuery, setPendingSelectId,
   } = useAppStore();
 
@@ -119,8 +119,16 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
       }
     }
 
+    // Research
+    for (const r of researchEntries) {
+      const text = stripHtml(r.content);
+      if (r.title.toLowerCase().includes(lc) || text.toLowerCase().includes(lc)) {
+        results.push({ id: r.id, type: 'research_item', title: r.title, snippet: snippet(text, query), tags: r.tags });
+      }
+    }
+
     return filterType ? results.filter(r => r.type === filterType) : results;
-  }, [query, filterType, binder, fragments, omittedMaterial, notebookEntries, codexEntries, questions, moodboardItems]);
+  }, [query, filterType, binder, fragments, omittedMaterial, notebookEntries, codexEntries, questions, moodboardItems, researchEntries]);
 
   function navigate(result: SearchResult) {
     setSearchQuery(query);
@@ -153,6 +161,10 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
       case 'moodboard_item':
         setPendingSelectId(result.id);
         setArea('moodboard');
+        break;
+      case 'research_item':
+        setPendingSelectId(result.id);
+        setArea('research');
         break;
     }
     onClose();

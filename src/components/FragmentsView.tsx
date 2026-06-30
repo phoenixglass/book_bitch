@@ -541,7 +541,7 @@ export function FragmentsView() {
 
   function handleImportConfirm(
     items: ParsedItem[],
-    section: 'manuscript' | 'fragments' | 'omitted',
+    section: 'manuscript' | 'fragments' | 'omitted' | 'research',
   ) {
     const { file } = pendingImport!;
     const importSource: ImportSourceMeta = {
@@ -564,6 +564,11 @@ export function FragmentsView() {
         items.map((i) => ({ ...i, importSource: { ...importSource, sourceHeading: i.sourceHeading } })),
       );
       setArea('manuscript');
+    } else if (section === 'research') {
+      useAppStore.getState().importToResearch(
+        items.map((i) => ({ ...i, importSource: { ...importSource, sourceHeading: i.sourceHeading } })),
+      );
+      setArea('research');
     }
     setPendingImport(null);
   }
