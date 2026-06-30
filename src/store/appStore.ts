@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import { idbStorage } from '../utils/idbStorage';
 import type {
   AppState,
   AppArea,
@@ -1553,6 +1554,6 @@ export const useAppStore = create<AppState>()(
         }
       },
     }),
-    { name: 'book-bitch-project' },
+    { name: 'book-bitch-project', storage: createJSONStorage(() => idbStorage) },
   ),
 );
