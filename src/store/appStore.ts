@@ -1238,6 +1238,61 @@ export const useAppStore = create<AppState>()(
         set((s) => ({ researchEntries: s.researchEntries.filter((e) => e.id !== id) }));
       },
 
+      trashResearchEntry: (id) => {
+        const entry = get().researchEntries.find((e) => e.id === id);
+        if (!entry) return;
+        set((s) => ({
+          researchEntries: s.researchEntries.map((e) =>
+            e.id === id ? { ...e, trashedAt: now(), updatedAt: now() } : e,
+          ),
+        }));
+        get().recordEvent({
+          eventType: 'deleted',
+          objectType: 'research_item',
+          objectId: id,
+          objectTitle: entry.title,
+          description: `Research entry "${entry.title}" moved to Trash`,
+        });
+      },
+
+      trashResearchEntries: (ids) => {
+        const idSet = new Set(ids);
+        set((s) => ({
+          researchEntries: s.researchEntries.map((e) =>
+            idSet.has(e.id) ? { ...e, trashedAt: now(), updatedAt: now() } : e,
+          ),
+        }));
+      },
+
+      restoreResearchEntryFromTrash: (id) => {
+        const entry = get().researchEntries.find((e) => e.id === id);
+        if (!entry) return;
+        set((s) => ({
+          researchEntries: s.researchEntries.map((e) =>
+            e.id === id ? { ...e, trashedAt: undefined, updatedAt: now() } : e,
+          ),
+        }));
+        get().recordEvent({
+          eventType: 'restored',
+          objectType: 'research_item',
+          objectId: id,
+          objectTitle: entry.title,
+          description: `Research entry "${entry.title}" restored from Trash`,
+        });
+      },
+
+      permanentlyDeleteResearchEntry: (id) => {
+        const entry = get().researchEntries.find((e) => e.id === id);
+        get().recordEvent({
+          eventType: 'deleted',
+          objectType: 'research_item',
+          objectId: id,
+          objectTitle: entry?.title ?? id,
+          description: `Research entry "${entry?.title}" permanently deleted`,
+        });
+        set((s) => ({ researchEntries: s.researchEntries.filter((e) => e.id !== id) }));
+      },
+
       importToResearch: (items) => {
         const ids: string[] = [];
         for (const item of items) {
