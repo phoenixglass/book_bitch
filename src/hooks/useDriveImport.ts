@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import type { ImportSourceMeta } from '../types';
+import { delimitedToHtml } from '../utils/documentParser';
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 const SCOPES =
@@ -110,6 +111,10 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     });
   }
 
+  // Extensions importGenericFile can safely treat as plain text.
+  const TEXT_SAFE_EXTENSIONS = /\.(txt|md|markdown|html|htm)$/i;
+  const DELIMITED_EXTENSIONS = /\.(csv|tsv)$/i;
+
   async function handlePickerResult(data: any) {
     const files: any[] = data.docs || [];
     for (const file of files) {
@@ -118,8 +123,15 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
           await importGoogleDoc(file);
         } else if (file.mimeType === 'application/vnd.google-apps.spreadsheet') {
           await importGoogleSheet(file);
-        } else {
+        } else if (DELIMITED_EXTENSIONS.test(file.name) || file.mimeType === 'text/csv' || file.mimeType === 'text/tab-separated-values') {
+          await importDelimitedFile(file);
+        } else if (TEXT_SAFE_EXTENSIONS.test(file.name) || file.mimeType?.startsWith('text/')) {
           await importGenericFile(file);
+        } else {
+          alert(
+            `"${file.name}" can't be imported from Drive — only Google Docs/Sheets, plain text, Markdown, HTML, and CSV/TSV files are supported. ` +
+            `Word documents can be imported via the file upload button instead. Excel files aren't supported — export them to CSV first.`
+          );
         }
       } catch (err) {
         console.error('Failed to import file:', err);
@@ -406,6 +418,43 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     }
   }
 
+  // ── Delimited (CSV/TSV) file import ────────────────────────────────────────
+
+  async function importDelimitedFile(file: any) {
+    const res = await fetchWithAuth(
+      `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`
+    );
+    if (!res.ok) throw new Error(`Failed to download file: ${res.statusText}`);
+    const text = await res.text();
+    const delimiter = /\.tsv$/i.test(file.name) || file.mimeType === 'text/tab-separated-values' ? '\t' : ',';
+    const html = delimitedToHtml(text, delimiter);
+
+    const { importToFragments, importToOmitted, importToResearch, setArea } = useAppStore.getState();
+    const importSource: ImportSourceMeta = {
+      fileName: file.name,
+      fileType: 'google_doc',
+      importedAt: Date.now(),
+      googleFileId: file.id,
+    };
+    if (targetSection === 'fragments') {
+      importToFragments([{ title: file.name, content: html, importSource }]);
+      setArea('fragments');
+    } else if (targetSection === 'research') {
+      importToResearch([{ title: file.name, content: html, researchType: 'spreadsheet', importSource }]);
+      setArea('research');
+    } else if (targetSection === 'omitted') {
+      importToOmitted([{ title: file.name, content: html, reason: 'Imported from Google Drive', importSource }]);
+      setArea('omitted');
+    } else {
+      addItem(null, 'document');
+      const docId = useAppStore.getState().selectedId;
+      if (docId) {
+        updateItem(docId, { title: file.name, content: html });
+        selectItem(docId);
+      }
+    }
+  }
+
   // ── Generic file import ───────────────────────────────────────────────────
 
   async function importGenericFile(file: any) {
@@ -454,7 +503,44 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     const raw = await res.text();
     // Extract body content from the full HTML page
     const bodyMatch = raw.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-    return bodyMatch ? bodyMatch[1] : raw;
+    return cleanGoogleDocsHtml(bodyMatch ? bodyMatch[1] : raw);
+  }
+
+  // Google's raw HTML export wraps nearly every run of text in its own
+  // <span style="..."> carrying a dozen-plus redundant properties (font-family,
+  // color, line-height, etc.), often inflating a few-page doc to multiple
+  // megabytes of markup. That bloat froze the page when it hit the rich-text
+  // editor and the localStorage/cloud sync write. Strip everything except the
+  // formatting that actually changes the rendered output.
+  const KEEP_STYLE_PROPS = new Set(['font-weight', 'font-style', 'text-decoration', 'vertical-align']);
+  function cleanGoogleDocsHtml(html: string): string {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    doc.querySelectorAll<HTMLElement>('[style]').forEach((el) => {
+      const kept: string[] = [];
+      for (const prop of Array.from(el.style)) {
+        if (!KEEP_STYLE_PROPS.has(prop)) continue;
+        const value = el.style.getPropertyValue(prop).trim();
+        if (prop === 'font-weight' && (value === 'normal' || value === '400')) continue;
+        if (prop === 'font-style' && value === 'normal') continue;
+        if (prop === 'text-decoration' && value === 'none') continue;
+        if (prop === 'vertical-align' && (value === 'baseline' || value === '')) continue;
+        kept.push(`${prop}: ${value}`);
+      }
+      if (kept.length) {
+        el.setAttribute('style', kept.join('; '));
+      } else {
+        el.removeAttribute('style');
+      }
+      el.removeAttribute('id');
+    });
+    // Unwrap spans left with no attributes at all — pure noise wrappers
+    doc.querySelectorAll('span:not([style]):not([class])').forEach((el) => {
+      const parent = el.parentNode;
+      if (!parent) return;
+      while (el.firstChild) parent.insertBefore(el.firstChild, el);
+      parent.removeChild(el);
+    });
+    return doc.body.innerHTML;
   }
 
   // Split exported HTML at each <h1> tag, returning one chunk per chapter
