@@ -22,6 +22,16 @@ export function truncate(text: string, maxChars = 24000): { text: string; trunca
   };
 }
 
+// Story Briefs are written with '## HEADING' sections (see generate-brief route).
+// Pulling a section out by name lets us hand the model a short, concrete list
+// (e.g. character names) instead of relying on it to mine specifics out of a
+// long prose Brief, which models tend to skim past in favor of vaguer phrasing.
+export function extractBriefSection(brief: string, heading: string): string {
+  const re = new RegExp(`##\\s*${heading}\\b([\\s\\S]*?)(?=\\n##\\s|$)`, 'i');
+  const match = brief.match(re);
+  return match ? match[1].trim() : '';
+}
+
 export function modePreamble(mode: string, allowDrafting: boolean): string {
   const lines: string[] = [];
 
