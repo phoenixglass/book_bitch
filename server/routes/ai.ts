@@ -134,6 +134,9 @@ aiRouter.post('/questions', async (req: Request, res: Response) => {
     isResearch && storyContext
       ? '- Banned phrasing: do not write "your world", "your novel", "your story", "your character", or "a character who…". Name the actual character, place, or plot thread from the Brief instead. Example — BAD: "How does the world your novel inhabits reflect this power structure?" GOOD: "[Named character] depends on [named institution/ally]\'s loyalty in the Brief — how does that mirror the clan proximity described here?" (substitute real names from the Brief, not placeholders).'
       : '',
+    storyContext
+      ? '- Do not invent or assert specific dates, ages, or durations as fact unless the Brief states them explicitly. In particular, never conflate two different timeframes to manufacture a parallel — e.g. "how long a character has been fixated on/interested in someone" is NOT the same span as "how long that character has physically been in a place"; check the Brief\'s actual arc breakdown (it usually separates arcs like this explicitly) before citing a number. If the exact span isn\'t stated, ask about the relationship or contrast without asserting a duration.'
+      : '',
     '- Questions should provoke thought, not suggest answers.',
     '- Flag any culturally significant dates or events (e.g., 9/11, anniversaries of tragedies, major holidays) whose tone or context might be problematic.',
     categoryHint,
