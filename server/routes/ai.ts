@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { getAIConfig, callAI, extractJSON } from '../lib/ai.js';
-import { stripHTML, truncate, modePreamble } from '../lib/context.js';
+import { stripHTML, truncate, modePreamble, extractBriefSection } from '../lib/context.js';
 import {
   metadataSystemPrompt,
   metadataUserPrompt,
@@ -109,6 +109,14 @@ aiRouter.post('/questions', async (req: Request, res: Response) => {
       ? `Your task: generate 5–8 questions that explore how this ${objectLabel} connects to the novelist's specific work-in-progress (described in the Story Brief below in the user message). Focus on how the facts, themes, or details in this research bear on the characters, plot, timeline, setting, or themes of THAT story — not research questions in general. Always reference specific character names, plot threads, or events from the Brief. If the research is about a real person who also appears by name in the Brief, treat them directly as a character in the story — do not use hypothetical framing like "if you have a character who…".`
       : `Your task: generate 5–8 insightful craft questions about the ${objectLabel} provided.`;
 
+  // For research items, pull the CHARACTERS and ACTIVE THREADS sections out of
+  // the Brief and hand them to the model as a short, concrete cast/thread list.
+  // A long prose Brief buried in the user message is too easy to skim past —
+  // models default to vague "your world"/"your character" phrasing without a
+  // compact list of proper nouns to anchor to right next to the instructions.
+  const castSection = isResearch && storyContext ? extractBriefSection(storyContext, 'CHARACTERS') : '';
+  const threadsSection = isResearch && storyContext ? extractBriefSection(storyContext, 'ACTIVE THREADS') : '';
+
   const systemPrompt = [
     `You are a writing coach helping a novelist think more deeply about their work.`,
     preamble,
@@ -118,9 +126,14 @@ aiRouter.post('/questions', async (req: Request, res: Response) => {
         ? 'CRITICAL: A Story Brief is included at the top of the user message. Your questions MUST connect this research to that specific novel — always name characters, plot threads, and settings from the Brief by name. Never use hedged or hypothetical framing like "if you have a character who…" — the Brief tells you exactly who the characters are. Every question should help the author see how this research material is relevant to THEIR story.'
         : 'CRITICAL: A Story Brief is included at the top of the user message. Read it first. Use character names, plot threads, and story context from the Brief to make your questions specific to this actual story — never refer to characters with vague labels when the Brief names them.'
       : '',
+    castSection ? `CAST OF THIS STORY (from the Brief — you must use these exact names; do not write "your character" or "a character who…" when one of these people fits):\n${truncate(castSection, 1200).text}` : '',
+    threadsSection ? `ACTIVE PLOT THREADS IN THIS STORY (from the Brief — anchor questions to these where relevant):\n${truncate(threadsSection, 1200).text}` : '',
     'Rules:',
     '- Ask questions only. Never draft prose, dialogue, or scene content.',
     '- Make questions specific to the provided text, not generic.',
+    isResearch && storyContext
+      ? '- Banned phrasing: do not write "your world", "your novel", "your story", "your character", or "a character who…". Name the actual character, place, or plot thread from the Brief instead. Example — BAD: "How does the world your novel inhabits reflect this power structure?" GOOD: "[Named character] depends on [named institution/ally]\'s loyalty in the Brief — how does that mirror the clan proximity described here?" (substitute real names from the Brief, not placeholders).'
+      : '',
     '- Questions should provoke thought, not suggest answers.',
     '- Flag any culturally significant dates or events (e.g., 9/11, anniversaries of tragedies, major holidays) whose tone or context might be problematic.',
     categoryHint,
