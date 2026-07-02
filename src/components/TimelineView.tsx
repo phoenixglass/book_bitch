@@ -39,10 +39,20 @@ export function TimelineView() {
   }, [allScenes, filterPov, filterPlotline, filterLocation, filterStatus]);
 
   const sorted = useMemo(() => {
-    function parseDateSortKey(meta: typeof filtered[0]['sceneMetadata']): number {
-      const dateStr = meta?.timelineSpecificDate || meta?.timelineDateStart;
-      if (!dateStr) return Number.MAX_SAFE_INTEGER;
-      const parts = dateStr.split('/');
+    function tryParseDate(dateStr?: string): number | null {
+      if (!dateStr) return null;
+      const trimmed = dateStr.trim();
+
+      // yyyy-mm-dd or yyyy-mm
+      const iso = trimmed.match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$/);
+      if (iso) {
+        const year = parseInt(iso[1], 10);
+        const month = parseInt(iso[2], 10);
+        const day = iso[3] ? parseInt(iso[3], 10) : 0;
+        return year * 10000 + month * 100 + day;
+      }
+
+      const parts = trimmed.split('/');
       if (parts.length === 3) {
         // mm/dd/yyyy
         const year = parseInt(parts[2], 10);
@@ -57,6 +67,22 @@ export function TimelineView() {
         if (!isNaN(year) && !isNaN(month))
           return year * 10000 + month * 100;
       }
+
+      // fallback for free text like "August 31, 2024"
+      const parsed = Date.parse(trimmed);
+      if (!isNaN(parsed)) {
+        const d = new Date(parsed);
+        return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+      }
+
+      return null;
+    }
+
+    function parseDateSortKey(meta: typeof filtered[0]['sceneMetadata']): number {
+      const specific = tryParseDate(meta?.timelineSpecificDate);
+      if (specific !== null) return specific;
+      const clue = tryParseDate(meta?.timelineDateStart);
+      if (clue !== null) return clue;
       return Number.MAX_SAFE_INTEGER;
     }
 
@@ -148,9 +174,11 @@ export function TimelineView() {
           {placed.map((scene) => {
             const meta = scene.sceneMetadata ?? {};
             const num = order === 'manuscript' ? meta.manuscriptOrder : meta.chronologicalOrder;
-            const dateLabel = meta.timelineDateStart
-              ? `${meta.timelineDateStart}${meta.timelineDateEnd ? ` – ${meta.timelineDateEnd}` : ''}${meta.timelineUncertain ? ' ~' : ''}`
-              : null;
+            const dateLabel = order === 'chronological' && meta.timelineSpecificDate
+              ? `${meta.timelineSpecificDate}${meta.timelineUncertain ? ' ~' : ''}`
+              : meta.timelineDateStart
+                ? `${meta.timelineDateStart}${meta.timelineDateEnd ? ` – ${meta.timelineDateEnd}` : ''}${meta.timelineUncertain ? ' ~' : ''}`
+                : null;
 
             return (
               <div key={scene.id} className="flex items-start gap-0 mb-4">
