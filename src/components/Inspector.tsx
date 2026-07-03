@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAppStore, findItem } from '../store/appStore';
 import { TagInput } from './TagInput';
+import { SnapshotDiffModal, type DiffSide } from './SnapshotDiffModal';
 import type { BinderItem, Status, SceneMetadata } from '../types';
 
 const STATUSES: Status[] = [
@@ -249,6 +250,9 @@ export function Inspector() {
 
   const [tab, setTab] = useState<Tab>('synopsis');
   const [snapshotLabel, setSnapshotLabel] = useState('');
+  const [diffPair, setDiffPair] = useState<{ left: DiffSide; right: DiffSide } | null>(null);
+  const [compareLeftId, setCompareLeftId] = useState('');
+  const [compareRightId, setCompareRightId] = useState('current');
 
   const item = selectedId ? findItem(binder, selectedId) : null;
 
@@ -431,6 +435,57 @@ export function Inspector() {
                   <p className="text-xs text-gray-600 italic">No snapshots yet.</p>
                 )}
 
+                {item.snapshots.length > 0 && (
+                  <div className="bg-[#1a1a2e] border border-[#2d3748] rounded p-2 flex flex-col gap-1.5">
+                    <span className="text-xs text-gray-500">Compare</span>
+                    <div className="flex items-center gap-1.5">
+                      <select
+                        value={compareLeftId}
+                        onChange={(e) => setCompareLeftId(e.target.value)}
+                        className="flex-1 bg-[#0f1424] border border-[#2d3748] rounded px-1.5 py-1 text-xs text-gray-300 outline-none focus:border-[#6b46c1]"
+                      >
+                        <option value="">Select…</option>
+                        <option value="current">Current</option>
+                        {[...item.snapshots].reverse().map((snap) => (
+                          <option key={snap.id} value={snap.id}>
+                            {(snap.label || 'Snapshot')} — {new Date(snap.timestamp).toLocaleDateString()}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="text-gray-600 text-xs">→</span>
+                      <select
+                        value={compareRightId}
+                        onChange={(e) => setCompareRightId(e.target.value)}
+                        className="flex-1 bg-[#0f1424] border border-[#2d3748] rounded px-1.5 py-1 text-xs text-gray-300 outline-none focus:border-[#6b46c1]"
+                      >
+                        <option value="">Select…</option>
+                        <option value="current">Current</option>
+                        {[...item.snapshots].reverse().map((snap) => (
+                          <option key={snap.id} value={snap.id}>
+                            {(snap.label || 'Snapshot')} — {new Date(snap.timestamp).toLocaleDateString()}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <button
+                      disabled={!compareLeftId || !compareRightId || compareLeftId === compareRightId}
+                      onClick={() => {
+                        const resolve = (id: string): DiffSide =>
+                          id === 'current'
+                            ? { label: 'Current', timestamp: null, content: item.content }
+                            : (() => {
+                                const snap = item.snapshots.find((sn) => sn.id === id)!;
+                                return { label: snap.label || 'Snapshot', timestamp: snap.timestamp, content: snap.content };
+                              })();
+                        setDiffPair({ left: resolve(compareLeftId), right: resolve(compareRightId) });
+                      }}
+                      className="py-1 rounded bg-[#6b46c1]/30 text-purple-300 text-xs hover:bg-[#6b46c1]/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      🔍 Compare
+                    </button>
+                  </div>
+                )}
+
                 <div className="flex flex-col gap-2">
                   {[...item.snapshots].reverse().map((snap) => (
                     <div key={snap.id} className="bg-[#1a1a2e] border border-[#2d3748] rounded p-2 text-xs">
@@ -447,6 +502,15 @@ export function Inspector() {
                         {snap.content.replace(/<[^>]+>/g, ' ').trim().slice(0, 60) || '—'}
                       </p>
                       <div className="flex gap-2">
+                        <button
+                          onClick={() => setDiffPair({
+                            left: { label: snap.label || 'Snapshot', timestamp: snap.timestamp, content: snap.content },
+                            right: { label: 'Current', timestamp: null, content: item.content },
+                          })}
+                          className="flex-1 py-0.5 bg-[#2d3748] text-gray-300 rounded hover:bg-[#3d4758] transition-colors text-xs"
+                        >
+                          🔍 Diff vs Current
+                        </button>
                         <button
                           onClick={() => {
                             if (window.confirm('Restore this snapshot? Current content will be overwritten.')) {
@@ -472,6 +536,13 @@ export function Inspector() {
           </>
         )}
       </div>
+      {diffPair && (
+        <SnapshotDiffModal
+          left={diffPair.left}
+          right={diffPair.right}
+          onClose={() => setDiffPair(null)}
+        />
+      )}
     </div>
   );
 }
