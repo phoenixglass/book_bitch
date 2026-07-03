@@ -23,6 +23,7 @@
     "@tiptap/react": "^3.27.1",
     "@tiptap/starter-kit": "^3.27.1",
     "@types/pdf-parse": "^1.1.5",
+    "diff": "^9.0.0",
     "docx": "^9.7.1",
     "express": "^5.2.1",
     "mammoth": "^1.12.0",
@@ -35,6 +36,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.1",
+    "@types/diff": "^7.0.2",
     "@types/express": "^5.0.6",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.14",
