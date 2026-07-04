@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { useAppStore, totalWordCount } from '../store/appStore';
 import { EditorSettingsDialog } from './EditorSettingsDialog';
 import { useSyncContext } from './SyncProvider';
+import { ProjectSwitcher } from './ProjectSwitcher';
 import { useIsMobile } from '../hooks/useIsMobile';
 import type { ViewMode } from '../types';
 import type { MouseEvent } from 'react';
@@ -73,6 +74,9 @@ export function Toolbar({ onOpenBinder }: ToolbarProps) {
           ☰
         </button>
       )}
+
+      {/* Project switcher — desktop only, requires cloud sign-in */}
+      {!isMobile && <ProjectSwitcher />}
 
       {/* Project title */}
       <input

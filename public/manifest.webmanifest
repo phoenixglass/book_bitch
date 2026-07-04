@@ -1,0 +1,18 @@
+{
+  "name": "book_bitch",
+  "short_name": "book_bitch",
+  "description": "Write, organize, and revise your novel — offline-capable.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#16213e",
+  "theme_color": "#16213e",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

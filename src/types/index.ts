@@ -736,8 +736,12 @@ export interface AppState {
   // null means this device has never made a local change — always defer to cloud in that case
   localLastModified: string | null;
 
+  // Cloud project id this local cache belongs to (multi-project support)
+  activeProjectId: string | null;
+
   // ─── Existing actions ──────────────────────────────────────────────────────
   setProjectTitle: (title: string) => void;
+  setActiveProjectId: (id: string | null) => void;
   addItem: (parentId: string | null, type: 'folder' | 'document') => void;
   removeItem: (id: string) => void;
   updateItem: (id: string, patch: Partial<BinderItem>) => void;

@@ -276,10 +276,12 @@ export const useAppStore = create<AppState>()(
       } as ManuscriptSettings,
 
       localLastModified: null,
+      activeProjectId: null,
 
       // ── Existing actions ─────────────────────────────────────────────────
 
       setProjectTitle: (title) => set({ projectTitle: title }),
+      setActiveProjectId: (id) => set({ activeProjectId: id }),
 
       addItem: (parentId, type) => {
         const newItem = makeDocument({ type });

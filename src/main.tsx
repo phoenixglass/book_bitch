@@ -6,6 +6,14 @@ import { AuthGate } from './components/AuthGate.tsx'
 import { SyncProvider } from './components/SyncProvider.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary.tsx'
 
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      console.error('Service worker registration failed:', err);
+    });
+  });
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
