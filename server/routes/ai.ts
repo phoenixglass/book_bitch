@@ -925,3 +925,175 @@ aiRouter.post('/generate-brief', async (req: Request, res: Response) => {
     res.status(502).json({ error: `AI call failed: ${msg}` });
   }
 });
+
+// ── POST /api/ai/continuity-check ────────────────────────────────────────────
+// A whole-manuscript pass, unlike every other endpoint in this file: instead of
+// analysing one selected object, it cross-references every scene against every
+// Codex entry (and the timeline data carried in scene metadata) in a single call,
+// looking for contradictions that are invisible when reviewing objects one at a time
+// (a character's eye colour changing, an impossible date sequence, a scene whose POV
+// tag doesn't match its actual interiority).
+
+const CONTINUITY_MAX_CHARS = 550_000;
+
+interface ContinuityScene {
+  id: string;
+  title: string;
+  text: string;
+  order?: number;
+  povCharacter?: string;
+  charactersPresent?: string[];
+  location?: string;
+  timelineDateStart?: string;
+  timelineSpecificDate?: string;
+  timelineDateEnd?: string;
+  timelineUncertain?: boolean;
+}
+
+interface ContinuityCodexEntry {
+  id: string;
+  name: string;
+  codexType: string;
+  aliases?: string[];
+  description?: string;
+  role?: string;
+  age?: string;
+  pronouns?: string;
+  relationships?: string;
+  physicalDetails?: string;
+  voiceNotes?: string;
+  arcNotes?: string;
+  secrets?: string;
+  contradictions?: string;
+  atmosphere?: string;
+  meaning?: string;
+  appearances?: string;
+  evolution?: string;
+}
+
+function continuitySceneBlock(s: ContinuityScene): string {
+  const metaLines: string[] = [];
+  if (s.povCharacter) metaLines.push(`POV: ${s.povCharacter}`);
+  if (s.charactersPresent?.length) metaLines.push(`Characters present: ${s.charactersPresent.join(', ')}`);
+  if (s.location) metaLines.push(`Location: ${s.location}`);
+  if (s.timelineSpecificDate) metaLines.push(`Specific date: ${s.timelineSpecificDate}${s.timelineUncertain ? ' (uncertain)' : ''}`);
+  else if (s.timelineDateStart) metaLines.push(`Timeline clue: ${s.timelineDateStart}${s.timelineDateEnd ? ` – ${s.timelineDateEnd}` : ''}${s.timelineUncertain ? ' (uncertain)' : ''}`);
+  const orderTag = s.order !== undefined ? ` order="${s.order}"` : '';
+  return [
+    `[SCENE id="${s.id}" title="${s.title.replace(/"/g, "'")}"${orderTag}]`,
+    metaLines.length ? metaLines.join(' | ') : '',
+    s.text,
+  ].filter(Boolean).join('\n');
+}
+
+function continuityCodexBlock(c: ContinuityCodexEntry): string {
+  const fields: string[] = [];
+  if (c.aliases?.length) fields.push(`aliases: ${c.aliases.join(', ')}`);
+  if (c.role) fields.push(`role: ${c.role}`);
+  if (c.age) fields.push(`age: ${c.age}`);
+  if (c.pronouns) fields.push(`pronouns: ${c.pronouns}`);
+  if (c.physicalDetails) fields.push(`physicalDetails: ${c.physicalDetails}`);
+  if (c.relationships) fields.push(`relationships: ${c.relationships}`);
+  if (c.voiceNotes) fields.push(`voiceNotes: ${c.voiceNotes}`);
+  if (c.arcNotes) fields.push(`arcNotes: ${c.arcNotes}`);
+  if (c.secrets) fields.push(`secrets: ${c.secrets}`);
+  if (c.contradictions) fields.push(`knownContradictions: ${c.contradictions}`);
+  if (c.atmosphere) fields.push(`atmosphere: ${c.atmosphere}`);
+  if (c.meaning) fields.push(`meaning: ${c.meaning}`);
+  if (c.appearances) fields.push(`appearances: ${c.appearances}`);
+  if (c.evolution) fields.push(`evolution: ${c.evolution}`);
+  if (c.description) fields.push(`description: ${c.description}`);
+  if (fields.length === 0) return '';
+  return [
+    `[CODEX id="${c.id}" name="${c.name.replace(/"/g, "'")}" type="${c.codexType}"]`,
+    fields.join('\n'),
+  ].join('\n');
+}
+
+aiRouter.post('/continuity-check', async (req: Request, res: Response) => {
+  const config = getAIConfig();
+  if (!config) {
+    res.status(503).json({ error: 'AI is not configured. Add an API key in environment settings.' });
+    return;
+  }
+
+  const { scenes, codexEntries = [] } = req.body as {
+    scenes?: ContinuityScene[];
+    codexEntries?: ContinuityCodexEntry[];
+  };
+
+  if (!scenes || scenes.length === 0) {
+    res.status(400).json({ error: 'No manuscript content found. Add some scenes first.' });
+    return;
+  }
+
+  const preparedScenes = scenes
+    .map((s) => ({ ...s, text: stripHTML(s.text ?? '') }))
+    .filter((s) => s.text.trim().length > 0);
+  if (preparedScenes.length === 0) {
+    res.status(400).json({ error: 'Manuscript has no text to analyze.' });
+    return;
+  }
+
+  const codexBlocks = codexEntries.map(continuityCodexBlock).filter(Boolean);
+  const codexSection = codexBlocks.length > 0
+    ? `--- CODEX (world-bible entries) ---\n${codexBlocks.join('\n\n')}\n--- END CODEX ---\n\n`
+    : '';
+
+  let manuscriptText = preparedScenes.map(continuitySceneBlock).join('\n\n');
+  let truncated = false;
+  const budget = CONTINUITY_MAX_CHARS - codexSection.length;
+  if (manuscriptText.length > budget) {
+    manuscriptText = manuscriptText.slice(0, Math.max(budget, 0));
+    truncated = true;
+  }
+
+  const systemPrompt = [
+    'You are a continuity editor for a novelist. You read an entire manuscript in one pass — every scene plus the Codex (world-bible) — looking for contradictions that only surface when the whole project is considered together, not one scene or entry at a time.',
+    'DO NOT DRAFT PROSE. Analytical output only.',
+    '',
+    'Check for exactly three kinds of problems:',
+    '1. CHARACTER — a physical detail, name, age, or established fact about a character (from the Codex or from another scene) that contradicts what a later or earlier scene states. Example: eye colour, hair colour, age, a scar, a name spelling.',
+    '2. TIMELINE — dates, durations, or sequences of events across scenes that cannot logically co-exist (e.g. a character is in two places on the same date; an event referenced as "three years ago" in one scene and "last year" in another with no explanation; chronological order implied by content that contradicts the declared timeline metadata).',
+    '3. POV — a scene\'s declared POV character (from its metadata) whose actual interiority, knowledge, or voice in the prose belongs to someone else, or a scene that drifts POV mid-scene without apparent intent.',
+    '',
+    'ABSOLUTE GROUNDING RULE: only report a finding when you can cite the specific scenes (or Codex entries) that conflict, by their id and title exactly as given in the [SCENE ...] / [CODEX ...] tags. Never invent or assume facts not present in the text provided. If you are not confident two passages actually conflict, do not report it.',
+    'Do not report a "finding" for something that is merely unresolved or undeveloped — that is not a continuity error. Only report actual contradictions between two or more concrete pieces of text.',
+    'Severity: high = a clear, hard contradiction a reader would notice; medium = a plausible contradiction that may have an innocent explanation; low = a minor inconsistency worth a second look.',
+    '',
+    'Return ONLY valid JSON in this exact structure, no other text:',
+    JSON.stringify({
+      findings: [
+        {
+          category: 'character | timeline | pov',
+          severity: 'low | medium | high',
+          title: 'Short (under 12 words) label for the contradiction',
+          description: 'What conflicts with what, and why, citing the specific detail from each side',
+          sceneRefs: [{ id: 'scene id from the SCENE tag', title: 'scene title from the SCENE tag' }],
+          codexRefs: [{ id: 'codex id from the CODEX tag', name: 'codex name from the CODEX tag' }],
+        },
+      ],
+    }),
+  ].join('\n');
+
+  const userPrompt = [
+    codexSection,
+    `--- MANUSCRIPT (${preparedScenes.length} scene${preparedScenes.length !== 1 ? 's' : ''}) ---`,
+    manuscriptText,
+    truncated ? '\n\n[Note: manuscript was truncated due to length — analysis covers the first portion only]' : '',
+    '--- END MANUSCRIPT ---',
+  ].join('\n');
+
+  try {
+    const raw = await callAI(config, systemPrompt, userPrompt, 8192);
+    const parsed = extractJSON(raw) as { findings?: unknown[] };
+    if (!parsed || !Array.isArray(parsed.findings)) {
+      res.status(502).json({ error: 'AI returned an unexpected format. Try again.' });
+      return;
+    }
+    res.json({ findings: parsed.findings, truncated });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(502).json({ error: `AI call failed: ${msg}` });
+  }
+});
