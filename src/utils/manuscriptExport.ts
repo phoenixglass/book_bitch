@@ -185,18 +185,18 @@ export function htmlToDocxParagraphs(
 
 // ─── Binder traversal ─────────────────────────────────────────────────────────
 
-interface SceneItem {
+export interface SceneItem {
   title: string;
   content: string;
 }
 
-interface Chapter {
+export interface Chapter {
   title: string;
   isNamedChapter: boolean; // true when a folder gives the chapter its name
   scenes: SceneItem[];
 }
 
-function gatherChapters(items: BinderItem[]): Chapter[] {
+export function gatherChapters(items: BinderItem[]): Chapter[] {
   const chapters: Chapter[] = [];
 
   for (const item of items) {

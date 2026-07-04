@@ -205,7 +205,7 @@ ${parts.join('\n')}
               Standard Manuscript Format
             </p>
             <p className="text-xs text-gray-500 mt-0.5">
-              Times New Roman 12pt · double-spaced · 1″ margins · exports as .docx
+              Times New Roman 12pt · double-spaced · 1″ margins · exports as .docx or .epub
             </p>
           </div>
           <span className="text-purple-500 group-hover:text-white transition-colors text-lg">→</span>
