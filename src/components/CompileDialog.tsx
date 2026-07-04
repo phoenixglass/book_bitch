@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import { ManuscriptExportDialog } from './ManuscriptExportDialog';
+import { BetaReaderPacketDialog } from './BetaReaderPacketDialog';
 import type { BinderItem } from '../types';
 
 function stripHtml(html: string): string {
@@ -68,6 +69,7 @@ export function CompileDialog({ onClose }: CompileDialogProps) {
   } = useAppStore();
 
   const [showManuscriptExport, setShowManuscriptExport] = useState(false);
+  const [showBetaReaderPacket, setShowBetaReaderPacket] = useState(false);
   const [format, setFormat] = useState<ExportFormat>('txt');
   const [includeTitle, setIncludeTitle] = useState(true);
   const [includeSynopsis, setIncludeSynopsis] = useState(false);
@@ -184,6 +186,10 @@ ${parts.join('\n')}
     return <ManuscriptExportDialog onClose={() => setShowManuscriptExport(false)} />;
   }
 
+  if (showBetaReaderPacket) {
+    return <BetaReaderPacketDialog onClose={() => setShowBetaReaderPacket(false)} />;
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
       <div
@@ -206,6 +212,21 @@ ${parts.join('\n')}
             </p>
             <p className="text-xs text-gray-500 mt-0.5">
               Times New Roman 12pt · double-spaced · 1″ margins · exports as .docx or .epub
+            </p>
+          </div>
+          <span className="text-purple-500 group-hover:text-white transition-colors text-lg">→</span>
+        </button>
+
+        <button
+          onClick={() => setShowBetaReaderPacket(true)}
+          className="flex items-center justify-between w-full bg-[#1e1b4b] border border-purple-700/50 hover:border-purple-500 rounded-lg px-4 py-3 text-left transition-colors group"
+        >
+          <div>
+            <p className="text-sm font-semibold text-purple-300 group-hover:text-white transition-colors">
+              Beta Reader Packet
+            </p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Reading copy with an optional chapter guide and feedback questions · exports as .docx
             </p>
           </div>
           <span className="text-purple-500 group-hover:text-white transition-colors text-lg">→</span>

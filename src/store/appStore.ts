@@ -31,6 +31,7 @@ import type {
   AIObjectType,
   AIResult,
   ManuscriptSettings,
+  BetaReaderSettings,
   EditorSettings,
   StoryBrief,
   ContinuityReport,
@@ -274,6 +275,20 @@ export const useAppStore = create<AppState>()(
         includeQueryLetter: false,
         queryLetterContent: '',
       } as ManuscriptSettings,
+
+      // ── Beta reader packet settings ───────────────────────────────────────
+      betaReaderSettings: {
+        noteToReaders: '',
+        includeChapterGuide: true,
+        includeFeedbackQuestions: true,
+        feedbackQuestions: [
+          'Where did you find yourself most engaged? Where did your attention wander?',
+          'Were there any characters or relationships you had trouble following?',
+          'Did the pacing feel right, or were there sections that dragged or rushed?',
+          'Was the ending satisfying?',
+          'Is there anything you wanted more of? Less of?',
+        ].join('\n'),
+      } as BetaReaderSettings,
 
       localLastModified: null,
       activeProjectId: null,
@@ -1515,6 +1530,10 @@ export const useAppStore = create<AppState>()(
         set((s) => ({ manuscriptSettings: { ...s.manuscriptSettings, ...patch } }));
       },
 
+      updateBetaReaderSettings: (patch) => {
+        set((s) => ({ betaReaderSettings: { ...s.betaReaderSettings, ...patch } }));
+      },
+
       // ── Export / Backup ──────────────────────────────────────────────────
 
       exportProjectBackup: () => {
@@ -1575,6 +1594,7 @@ export const useAppStore = create<AppState>()(
           savedFilters: (data.savedFilters as SavedFilter[]) ?? [],
           editorSettings: (data.editorSettings as EditorSettings) ?? undefined,
           manuscriptSettings: (data.manuscriptSettings as ManuscriptSettings) ?? undefined,
+          betaReaderSettings: (data.betaReaderSettings as BetaReaderSettings) ?? undefined,
           storyBrief: (data.storyBrief as StoryBrief | null) ?? null,
           continuityReport: (data.continuityReport as ContinuityReport | null) ?? null,
           localLastModified: cloudTimestamp ?? null,

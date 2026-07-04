@@ -309,6 +309,7 @@ function getSerializableState(state: ReturnType<typeof useAppStore.getState>) {
     savedFilters: state.savedFilters,
     editorSettings: state.editorSettings,
     manuscriptSettings: state.manuscriptSettings,
+    betaReaderSettings: state.betaReaderSettings,
     storyBrief: state.storyBrief,
     localLastModified: state.localLastModified,
   };

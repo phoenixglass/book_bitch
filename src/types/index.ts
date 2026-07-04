@@ -479,6 +479,15 @@ export interface ManuscriptSettings {
   queryLetterContent: string;
 }
 
+// ─── Beta Reader Packet settings ──────────────────────────────────────────────
+
+export interface BetaReaderSettings {
+  noteToReaders: string;
+  includeChapterGuide: boolean;
+  includeFeedbackQuestions: boolean;
+  feedbackQuestions: string; // one question per line
+}
+
 // ─── Story Brief ─────────────────────────────────────────────────────────────
 
 export interface StoryBrief {
@@ -732,6 +741,9 @@ export interface AppState {
   // Manuscript format settings
   manuscriptSettings: ManuscriptSettings;
 
+  // Beta reader packet export settings
+  betaReaderSettings: BetaReaderSettings;
+
   // Last time local data was modified (ISO string), used for cloud sync conflict resolution
   // null means this device has never made a local change — always defer to cloud in that case
   localLastModified: string | null;
@@ -860,6 +872,7 @@ export interface AppState {
 
   // ─── Manuscript Format ─────────────────────────────────────────────────────
   updateManuscriptSettings: (patch: Partial<ManuscriptSettings>) => void;
+  updateBetaReaderSettings: (patch: Partial<BetaReaderSettings>) => void;
 
   // ─── Export / Backup ───────────────────────────────────────────────────────
   exportProjectBackup: () => void;
