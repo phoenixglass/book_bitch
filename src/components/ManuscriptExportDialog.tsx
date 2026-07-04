@@ -6,6 +6,7 @@ import {
   countManuscriptWords,
   type CleanupIssue,
 } from '../utils/manuscriptExport';
+import { exportManuscriptEpub } from '../utils/epubExport';
 
 interface Props {
   onClose: () => void;
@@ -88,7 +89,7 @@ export function ManuscriptExportDialog({ onClose }: Props) {
   const { binder, projectTitle, manuscriptSettings, updateManuscriptSettings } = useAppStore();
 
   const [activeTab, setActiveTab] = useState<Tab>('author');
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<'docx' | 'epub' | null>(null);
   const [cleanupIssues, setCleanupIssues] = useState<CleanupIssue[] | null>(null);
 
   const wordCount = countManuscriptWords(binder);
@@ -99,15 +100,27 @@ export function ManuscriptExportDialog({ onClose }: Props) {
     [updateManuscriptSettings],
   );
 
-  async function handleExport() {
-    setExporting(true);
+  async function handleExportDocx() {
+    setExporting('docx');
     try {
       await exportManuscriptDocx(binder, projectTitle, manuscriptSettings);
     } catch (err) {
       console.error('Manuscript export failed:', err);
       alert('Export failed. Please check the console for details.');
     } finally {
-      setExporting(false);
+      setExporting(null);
+    }
+  }
+
+  async function handleExportEpub() {
+    setExporting('epub');
+    try {
+      await exportManuscriptEpub(binder, projectTitle, manuscriptSettings);
+    } catch (err) {
+      console.error('EPUB export failed:', err);
+      alert('Export failed. Please check the console for details.');
+    } finally {
+      setExporting(null);
     }
   }
 
@@ -250,6 +263,12 @@ export function ManuscriptExportDialog({ onClose }: Props) {
                 <p>• Page size: 8.5 × 11 inches (U.S. Letter)</p>
                 <p>• Italics preserved as italics (not converted to underline)</p>
               </div>
+
+              <p className="text-xs text-gray-600">
+                These rules apply to the .docx export. The .epub export uses reflowable ebook
+                styling instead (serif body text, no fixed page size) but shares the same title,
+                chapter, and scene-break settings below.
+              </p>
 
               <div className="flex flex-col gap-2">
                 <label className="text-xs text-gray-400">Scene break marker</label>
@@ -425,11 +444,25 @@ export function ManuscriptExportDialog({ onClose }: Props) {
           </button>
           <div className="flex-1" />
           <button
-            onClick={handleExport}
-            disabled={exporting}
+            onClick={handleExportEpub}
+            disabled={exporting !== null}
+            className="py-2 px-5 rounded bg-[#2d3748] text-gray-200 text-sm font-medium hover:bg-[#3d4a5e] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {exporting === 'epub' ? (
+              <>
+                <span className="animate-spin text-xs">⟳</span>
+                Exporting…
+              </>
+            ) : (
+              <>⬇ Export .epub</>
+            )}
+          </button>
+          <button
+            onClick={handleExportDocx}
+            disabled={exporting !== null}
             className="py-2 px-5 rounded bg-[#6b46c1] text-white text-sm font-medium hover:bg-[#553c9a] transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
-            {exporting ? (
+            {exporting === 'docx' ? (
               <>
                 <span className="animate-spin text-xs">⟳</span>
                 Exporting…
