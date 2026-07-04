@@ -16,6 +16,7 @@ import type {
   QuestionCategory,
   SelectedAIContext,
   BinderItem,
+  ContinuityFinding,
 } from '../types';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -47,6 +48,51 @@ function collectManuscriptScenes(items: BinderItem[]): Array<{ id: string; title
       if (text.trim()) result.push({ id: item.id, title: item.title, text });
     }
     if (item.children?.length) result.push(...collectManuscriptScenes(item.children));
+  }
+  return result;
+}
+
+interface ContinuitySceneInput {
+  id: string;
+  title: string;
+  text: string;
+  order: number;
+  povCharacter?: string;
+  charactersPresent?: string[];
+  location?: string;
+  timelineDateStart?: string;
+  timelineSpecificDate?: string;
+  timelineDateEnd?: string;
+  timelineUncertain?: boolean;
+}
+
+// Same manuscript walk as collectManuscriptScenes, but also carries the scene
+// metadata (POV, timeline dates) a continuity check needs — the Timeline view
+// derives from these same fields rather than a separate events collection.
+function collectContinuityScenes(items: BinderItem[], counter = { n: 0 }): ContinuitySceneInput[] {
+  const result: ContinuitySceneInput[] = [];
+  for (const item of items) {
+    if (item.id === 'trash') continue;
+    if (item.type === 'document' && item.content) {
+      const text = stripHTML(item.content);
+      if (text.trim()) {
+        const meta = item.sceneMetadata;
+        result.push({
+          id: item.id,
+          title: item.title,
+          text,
+          order: counter.n++,
+          povCharacter: meta?.povCharacter || undefined,
+          charactersPresent: meta?.charactersPresent?.length ? meta.charactersPresent : undefined,
+          location: meta?.location || undefined,
+          timelineDateStart: meta?.timelineDateStart || undefined,
+          timelineSpecificDate: meta?.timelineSpecificDate || undefined,
+          timelineDateEnd: meta?.timelineDateEnd || undefined,
+          timelineUncertain: meta?.timelineUncertain,
+        });
+      }
+    }
+    if (item.children?.length) result.push(...collectContinuityScenes(item.children, counter));
   }
   return result;
 }
@@ -1338,6 +1384,81 @@ function PlotlineResult({
   );
 }
 
+// ── Continuity Finding Card ───────────────────────────────────────────────────
+
+function ContinuityFindingCard({ finding }: { finding: ContinuityFinding }) {
+  const { addQuestion, selectItem, setArea } = useAppStore();
+  const [saved, setSaved] = useState(false);
+
+  function handleSave() {
+    addQuestion({
+      text: finding.title,
+      category: 'continuity',
+      priority: finding.severity,
+      questionStatus: 'open',
+      relatedSceneIds: finding.sceneRefs.map((r) => r.id),
+      relatedFragmentIds: [],
+      relatedOmittedIds: [],
+      relatedCodexIds: finding.codexRefs.map((r) => r.id),
+      relatedNotebookIds: [],
+      answer: '',
+      notes: finding.description,
+    });
+    setSaved(true);
+  }
+
+  function jumpToScene(id: string) {
+    setArea('manuscript');
+    selectItem(id);
+  }
+
+  return (
+    <div className="border border-[#2d3748] rounded p-2 flex flex-col gap-1 bg-[#1a1a2e]">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs text-gray-200 font-medium leading-snug">{finding.title}</p>
+        <span className={`shrink-0 text-[10px] rounded px-1.5 py-0.5 ${
+          finding.severity === 'high' ? 'text-red-400 bg-red-900/20' :
+          finding.severity === 'medium' ? 'text-amber-400 bg-amber-900/20' :
+          'text-gray-400 bg-gray-800'
+        }`}>
+          {finding.severity}
+        </span>
+      </div>
+      <p className="text-[11px] text-gray-400 leading-relaxed">{finding.description}</p>
+      {(finding.sceneRefs.length > 0 || finding.codexRefs.length > 0) && (
+        <div className="flex flex-wrap gap-1 mt-0.5">
+          {finding.sceneRefs.map((r) => (
+            <button
+              key={r.id}
+              onClick={() => jumpToScene(r.id)}
+              className="text-[10px] bg-[#0f3460]/60 text-blue-300 rounded px-1.5 py-0.5 hover:bg-[#0f3460] hover:text-white transition-colors"
+              title="Jump to scene"
+            >
+              {r.title}
+            </button>
+          ))}
+          {finding.codexRefs.map((r) => (
+            <span key={r.id} className="text-[10px] bg-purple-900/20 text-purple-300 rounded px-1.5 py-0.5">
+              {r.name}
+            </span>
+          ))}
+        </div>
+      )}
+      <button
+        onClick={handleSave}
+        disabled={saved}
+        className={`self-start mt-1 px-2 py-0.5 rounded text-[11px] transition-colors ${
+          saved
+            ? 'bg-green-900/40 text-green-400 cursor-default'
+            : 'bg-purple-900/40 text-purple-300 hover:bg-purple-800/40 hover:text-white'
+        }`}
+      >
+        {saved ? '✓ Saved to Question Bank' : '+ Save to Question Bank'}
+      </button>
+    </div>
+  );
+}
+
 // ── Main AI Panel ─────────────────────────────────────────────────────────────
 
 export function AIPanel() {
@@ -1350,6 +1471,9 @@ export function AIPanel() {
     binder,
     storyBrief,
     setStoryBrief,
+    codexEntries,
+    continuityReport,
+    setContinuityReport,
   } = useAppStore();
 
   const ctx = useAIContext();
@@ -1369,6 +1493,9 @@ export function AIPanel() {
   const [editingBrief, setEditingBrief] = useState(false);
   const [briefDraft, setBriefDraft] = useState('');
   const [enteringBriefManually, setEnteringBriefManually] = useState(false);
+  const [continuityLoading, setContinuityLoading] = useState(false);
+  const [continuityError, setContinuityError] = useState<string | null>(null);
+  const [showContinuityFindings, setShowContinuityFindings] = useState(false);
 
   const actions = ctx ? availableActionsForType(ctx.objectType, aiSettings.mode) : [];
 
@@ -1446,6 +1573,78 @@ export function AIPanel() {
       setBriefError(err instanceof Error ? err.message : String(err));
     } finally {
       setBriefLoading(false);
+    }
+  }
+
+  async function handleRunContinuityCheck() {
+    setContinuityLoading(true);
+    setContinuityError(null);
+    try {
+      const scenes = collectContinuityScenes(binder);
+      if (scenes.length === 0) {
+        setContinuityError('No manuscript content found. Add some scenes first.');
+        return;
+      }
+      // Same body-size guard as Generate Brief — the server truncates anyway.
+      const CLIENT_CONTINUITY_MAX = 550_000;
+      let charCount = 0;
+      const cappedScenes = scenes.filter((s) => {
+        if (charCount >= CLIENT_CONTINUITY_MAX) return false;
+        charCount += s.text.length;
+        return true;
+      });
+      const codexPayload = codexEntries.map((c) => ({
+        id: c.id,
+        name: c.name,
+        codexType: c.codexType,
+        aliases: c.aliases,
+        description: c.description,
+        role: c.role,
+        age: c.age,
+        pronouns: c.pronouns,
+        relationships: c.relationships,
+        physicalDetails: c.physicalDetails,
+        voiceNotes: c.voiceNotes,
+        arcNotes: c.arcNotes,
+        secrets: c.secrets,
+        contradictions: c.contradictions,
+        atmosphere: c.atmosphere,
+        meaning: c.meaning,
+        appearances: c.appearances,
+        evolution: c.evolution,
+      }));
+
+      const res = await fetch('/api/ai/continuity-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scenes: cappedScenes, codexEntries: codexPayload }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        let message = `Server returned ${res.status}`;
+        try {
+          const errData = JSON.parse(text) as { error?: string };
+          if (errData.error) message = errData.error;
+        } catch { /* not JSON */ }
+        throw new Error(message);
+      }
+
+      const data = await res.json() as { findings?: ContinuityFinding[]; error?: string; truncated?: boolean };
+      if (!data.findings) {
+        throw new Error(data.error ?? `Server returned ${res.status}`);
+      }
+      setContinuityReport({
+        findings: data.findings,
+        generatedAt: Date.now(),
+        wordCountAtGeneration: totalWordCount(binder),
+        truncated: data.truncated,
+      });
+      setShowContinuityFindings(true);
+    } catch (err) {
+      setContinuityError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setContinuityLoading(false);
     }
   }
 
@@ -1805,6 +2004,112 @@ export function AIPanel() {
 
                 {briefError && (
                   <p className="px-2.5 pb-2 text-[10px] text-red-400">{briefError}</p>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Continuity Check */}
+          {!statusLoading && aiStatus?.configured && (() => {
+            const currentWc = totalWordCount(binder);
+            const drift = continuityReport ? Math.abs(currentWc - continuityReport.wordCountAtGeneration) : 0;
+            const isStale = !!continuityReport && drift > 500;
+            const grouped = continuityReport
+              ? {
+                  character: continuityReport.findings.filter((f) => f.category === 'character'),
+                  timeline: continuityReport.findings.filter((f) => f.category === 'timeline'),
+                  pov: continuityReport.findings.filter((f) => f.category === 'pov'),
+                }
+              : null;
+            return (
+              <div className="border border-[#0f3460] rounded bg-[#1a1a3e]">
+                <div className="flex items-center justify-between px-2.5 py-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Continuity Check</span>
+                    {continuityReport && (
+                      <span className="text-[10px] text-green-400 bg-green-900/20 rounded px-1 py-0.5">
+                        {continuityReport.findings.length} finding{continuityReport.findings.length !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                    {isStale && (
+                      <span className="text-[10px] text-amber-400 bg-amber-900/20 rounded px-1 py-0.5">stale</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {continuityReport && (
+                      <button
+                        onClick={() => setShowContinuityFindings((v) => !v)}
+                        className="text-[10px] text-gray-500 hover:text-gray-300 px-1"
+                      >
+                        {showContinuityFindings ? 'hide' : 'view'}
+                      </button>
+                    )}
+                    <button
+                      onClick={handleRunContinuityCheck}
+                      disabled={continuityLoading}
+                      className="text-[10px] px-2 py-0.5 rounded bg-purple-900/40 text-purple-300 hover:bg-purple-800/40 hover:text-white disabled:opacity-50 disabled:cursor-default transition-colors"
+                    >
+                      {continuityLoading ? '⟳ Checking…' : continuityReport ? '↺ Re-run' : 'Run Check'}
+                    </button>
+                    {continuityReport && (
+                      <button
+                        onClick={() => { setContinuityReport(null); setShowContinuityFindings(false); }}
+                        className="text-[10px] text-gray-600 hover:text-red-400 px-1"
+                        title="Clear report"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {!continuityReport && !continuityLoading && (
+                  <p className="px-2.5 pb-2 text-[10px] text-gray-600 leading-relaxed">
+                    Cross-references every scene against the Codex and your timeline metadata in one pass — catches contradictions (a character's eye colour changing, an impossible date, a scene whose POV drifts) that single-object analysis can't see. Sends your full manuscript for analysis.
+                  </p>
+                )}
+
+                {continuityReport && !showContinuityFindings && (
+                  <div className="px-2.5 pb-2 flex flex-col gap-0.5">
+                    <p className="text-[10px] text-gray-600">
+                      {new Date(continuityReport.generatedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                      {' · '}{continuityReport.wordCountAtGeneration.toLocaleString()} words at generation
+                    </p>
+                    {isStale && (
+                      <p className="text-[10px] text-amber-500">
+                        ⚠ Manuscript has changed by ~{drift.toLocaleString()} words — consider re-running.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {continuityReport && showContinuityFindings && grouped && (
+                  <div className="px-2.5 pb-2 flex flex-col gap-3">
+                    {continuityReport.truncated && (
+                      <p className="text-[10px] text-amber-500">⚠ Manuscript was truncated before analysis — only the first portion was checked.</p>
+                    )}
+                    {continuityReport.findings.length === 0 && (
+                      <p className="text-[11px] text-gray-500 italic">No continuity issues found.</p>
+                    )}
+                    {(['character', 'timeline', 'pov'] as const).map((cat) => (
+                      grouped[cat].length > 0 && (
+                        <div key={cat}>
+                          <p className="text-[10px] text-gray-500 mb-1 font-semibold uppercase tracking-wider">
+                            {cat === 'pov' ? 'POV' : cat} ({grouped[cat].length})
+                          </p>
+                          <div className="flex flex-col gap-1.5">
+                            {grouped[cat].map((f, i) => (
+                              <ContinuityFindingCard key={`${cat}-${i}`} finding={f} />
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    ))}
+                  </div>
+                )}
+
+                {continuityError && (
+                  <p className="px-2.5 pb-2 text-[10px] text-red-400">{continuityError}</p>
                 )}
               </div>
             );

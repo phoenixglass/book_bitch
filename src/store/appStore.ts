@@ -33,6 +33,7 @@ import type {
   ManuscriptSettings,
   EditorSettings,
   StoryBrief,
+  ContinuityReport,
 } from '../types';
 
 function makeId() {
@@ -238,6 +239,7 @@ export const useAppStore = create<AppState>()(
       pendingAIResult: null as AIResult | null,
       aiContextObject: null as { type: AIObjectType; id: string } | null,
       storyBrief: null as StoryBrief | null,
+      continuityReport: null as ContinuityReport | null,
 
       // ── Editor appearance settings ────────────────────────────────────────
       editorSettings: {
@@ -1495,6 +1497,10 @@ export const useAppStore = create<AppState>()(
         set({ storyBrief: brief });
       },
 
+      setContinuityReport: (report) => {
+        set({ continuityReport: report });
+      },
+
       // ── Editor Appearance ─────────────────────────────────────────────────
 
       updateEditorSettings: (patch) => {
@@ -1529,6 +1535,7 @@ export const useAppStore = create<AppState>()(
           history: state.history,
           savedFilters: state.savedFilters,
           storyBrief: state.storyBrief,
+          continuityReport: state.continuityReport,
         };
         const blob = new Blob([JSON.stringify(backup, null, 2)], {
           type: 'application/json;charset=utf-8',
@@ -1567,6 +1574,7 @@ export const useAppStore = create<AppState>()(
           editorSettings: (data.editorSettings as EditorSettings) ?? undefined,
           manuscriptSettings: (data.manuscriptSettings as ManuscriptSettings) ?? undefined,
           storyBrief: (data.storyBrief as StoryBrief | null) ?? null,
+          continuityReport: (data.continuityReport as ContinuityReport | null) ?? null,
           localLastModified: cloudTimestamp ?? null,
           selectedId: null,
         });
@@ -1595,6 +1603,7 @@ export const useAppStore = create<AppState>()(
             history: data.history ?? [],
             savedFilters: data.savedFilters ?? [],
             storyBrief: data.storyBrief ?? null,
+            continuityReport: data.continuityReport ?? null,
             selectedId: null,
           });
           get().recordEvent({

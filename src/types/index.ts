@@ -487,6 +487,29 @@ export interface StoryBrief {
   wordCountAtGeneration: number;
 }
 
+// ─── Continuity Check ────────────────────────────────────────────────────────
+// A whole-manuscript pass that cross-references Codex + scene metadata (Timeline)
+// + scene prose in a single AI call, looking for contradictions that only show up
+// when the manuscript is read as a whole rather than one object at a time.
+
+export type ContinuityCategory = 'character' | 'timeline' | 'pov';
+
+export interface ContinuityFinding {
+  category: ContinuityCategory;
+  severity: 'low' | 'medium' | 'high';
+  title: string;
+  description: string;
+  sceneRefs: Array<{ id: string; title: string }>;
+  codexRefs: Array<{ id: string; name: string }>;
+}
+
+export interface ContinuityReport {
+  findings: ContinuityFinding[];
+  generatedAt: number;
+  wordCountAtGeneration: number;
+  truncated?: boolean;
+}
+
 // ─── AI Settings ─────────────────────────────────────────────────────────────
 
 export type AIMode =
@@ -701,6 +724,7 @@ export interface AppState {
   pendingAIResult: AIResult | null;
   aiContextObject: { type: AIObjectType; id: string } | null;
   storyBrief: StoryBrief | null;
+  continuityReport: ContinuityReport | null;
 
   // Editor appearance settings
   editorSettings: EditorSettings;
@@ -825,6 +849,7 @@ export interface AppState {
   setPendingAIResult: (result: AIResult | null) => void;
   setAIContextObject: (obj: { type: AIObjectType; id: string } | null) => void;
   setStoryBrief: (brief: StoryBrief | null) => void;
+  setContinuityReport: (report: ContinuityReport | null) => void;
 
   // ─── Editor Appearance ─────────────────────────────────────────────────────
   updateEditorSettings: (patch: Partial<EditorSettings>) => void;
