@@ -37,6 +37,7 @@ import type {
   EditorSettings,
   StoryBrief,
   FindReplaceOptions,
+  ContinuityReport,
 } from '../types';
 
 function makeId() {
