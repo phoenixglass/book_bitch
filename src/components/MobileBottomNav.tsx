@@ -14,6 +14,7 @@ const MORE_NAV: { area: AppArea; icon: string; label: string }[] = [
   { area: 'omitted', icon: '🗂️', label: 'Omitted' },
   { area: 'moodboard', icon: '🖼️', label: 'Moodboard' },
   { area: 'research', icon: '🔬', label: 'Research' },
+  { area: 'revision', icon: '🧵', label: 'Revision' },
   { area: 'history', icon: '🕰️', label: 'History' },
   { area: 'trash', icon: '🗑️', label: 'Trash' },
 ];

@@ -38,6 +38,7 @@ import type {
   StoryBrief,
   FindReplaceOptions,
   ContinuityReport,
+  RevisionPass,
 } from '../types';
 
 function makeId() {
@@ -223,6 +224,7 @@ export const useAppStore = create<AppState>()(
       questions: [] as Question[],
       moodboardItems: [] as MoodboardItem[],
       researchEntries: [] as ResearchEntry[],
+      revisionPasses: [] as RevisionPass[],
       projectTags: [] as Tag[],
       links: [] as Link[],
       history: [] as HistoryEvent[],
@@ -1478,6 +1480,66 @@ export const useAppStore = create<AppState>()(
         set((s) => ({ moodboardItems: s.moodboardItems.filter((m) => m.id !== id) }));
       },
 
+
+      // ── Revision Passes ─────────────────────────────────────────────────
+
+      addRevisionPass: (partial = {}) => {
+        const id = makeId();
+        const timestamp = now();
+        const revisionPass: RevisionPass = { id, title: 'Untitled Revision Pass', description: '', focus: '', color: '#6b46c1', targetSceneIds: [], checklist: [], sceneStates: {}, createdAt: timestamp, updatedAt: timestamp, ...partial };
+        set((state) => ({ revisionPasses: [...(state.revisionPasses ?? []), revisionPass] }));
+        get().recordEvent({ eventType: 'created', objectType: 'revision_pass', objectId: id, objectTitle: revisionPass.title, description: `Revision pass created: "${revisionPass.title}"` });
+        return id;
+      },
+
+      updateRevisionPass: (id, patch) => set((state) => ({ revisionPasses: (state.revisionPasses ?? []).map((pass) => pass.id === id ? { ...pass, ...patch, updatedAt: now() } : pass) })),
+
+      deleteRevisionPass: (id) => {
+        const pass = (get().revisionPasses ?? []).find((p) => p.id === id);
+        get().recordEvent({ eventType: 'deleted', objectType: 'revision_pass', objectId: id, objectTitle: pass?.title ?? id, description: `Revision pass deleted: "${pass?.title ?? id}"` });
+        set((state) => ({ revisionPasses: (state.revisionPasses ?? []).filter((pass) => pass.id !== id) }));
+      },
+
+      archiveRevisionPass: (id) => {
+        const timestamp = now();
+        const pass = (get().revisionPasses ?? []).find((p) => p.id === id);
+        set((state) => ({ revisionPasses: (state.revisionPasses ?? []).map((p) => p.id === id ? { ...p, archivedAt: timestamp, updatedAt: timestamp } : p) }));
+        get().recordEvent({ eventType: 'updated', objectType: 'revision_pass', objectId: id, objectTitle: pass?.title ?? id, description: `Revision pass archived: "${pass?.title ?? id}"` });
+      },
+
+      unarchiveRevisionPass: (id) => {
+        const pass = (get().revisionPasses ?? []).find((p) => p.id === id);
+        set((state) => ({ revisionPasses: (state.revisionPasses ?? []).map((p) => { if (p.id !== id) return p; return { ...p, archivedAt: undefined, updatedAt: now() }; }) }));
+        get().recordEvent({ eventType: 'updated', objectType: 'revision_pass', objectId: id, objectTitle: pass?.title ?? id, description: `Revision pass unarchived: "${pass?.title ?? id}"` });
+      },
+
+      setRevisionPassTargets: (id, sceneIds) => set((state) => ({ revisionPasses: (state.revisionPasses ?? []).map((pass) => { if (pass.id !== id) return pass; const sceneStates = { ...pass.sceneStates }; sceneIds.forEach((sceneId) => { sceneStates[sceneId] = sceneStates[sceneId] ?? { sceneId, status: 'not_started', notes: '', checklist: {}, updatedAt: now() }; }); return { ...pass, targetSceneIds: sceneIds, sceneStates, updatedAt: now() }; }) })),
+
+      addRevisionPassChecklistItem: (passId, text) => {
+        const item = { id: makeId(), text };
+        set((state) => ({ revisionPasses: (state.revisionPasses ?? []).map((pass) => pass.id === passId ? { ...pass, checklist: [...pass.checklist, item], updatedAt: now() } : pass) }));
+      },
+
+      updateRevisionPassChecklistItem: (passId, itemId, text) => set((state) => ({ revisionPasses: (state.revisionPasses ?? []).map((pass) => pass.id === passId ? { ...pass, checklist: pass.checklist.map((item) => item.id === itemId ? { ...item, text } : item), updatedAt: now() } : pass) })),
+
+      deleteRevisionPassChecklistItem: (passId, itemId) => set((state) => ({ revisionPasses: (state.revisionPasses ?? []).map((pass) => pass.id === passId ? { ...pass, checklist: pass.checklist.filter((item) => item.id !== itemId), sceneStates: Object.fromEntries(Object.entries(pass.sceneStates).map(([sceneId, sceneState]) => { const checklist = { ...sceneState.checklist }; delete checklist[itemId]; return [sceneId, { ...sceneState, checklist }]; })), updatedAt: now() } : pass) })),
+
+      updateRevisionSceneState: (passId, sceneId, patch) => {
+        const pass = (get().revisionPasses ?? []).find((p) => p.id === passId);
+        const previousStatus = pass?.sceneStates[sceneId]?.status ?? 'not_started';
+        set((state) => ({ revisionPasses: (state.revisionPasses ?? []).map((p) => { if (p.id !== passId) return p; const current = p.sceneStates[sceneId] ?? { sceneId, status: 'not_started', notes: '', checklist: {}, updatedAt: now() }; return { ...p, sceneStates: { ...p.sceneStates, [sceneId]: { ...current, ...patch, sceneId, updatedAt: now() } }, updatedAt: now() }; }) }));
+        if (patch.status && patch.status !== previousStatus) {
+          const scene = findItem(get().binder, sceneId);
+          get().recordEvent({ eventType: 'status_changed', objectType: 'revision_pass', objectId: passId, objectTitle: pass?.title ?? passId, relatedObjectType: 'scene', relatedObjectId: sceneId, relatedObjectTitle: scene?.title ?? sceneId, description: `Revision status changed for "${scene?.title ?? sceneId}" in "${pass?.title ?? passId}"` });
+        }
+      },
+
+      toggleRevisionSceneChecklistItem: (passId, sceneId, itemId) => {
+        const pass = (get().revisionPasses ?? []).find((p) => p.id === passId);
+        const current = pass?.sceneStates[sceneId] ?? { sceneId, status: 'not_started' as const, notes: '', checklist: {}, updatedAt: now() };
+        get().updateRevisionSceneState(passId, sceneId, { checklist: { ...current.checklist, [itemId]: !current.checklist[itemId] } });
+      },
+
       // ── Links ────────────────────────────────────────────────────────────
 
       addLink: (linkData) => {
@@ -1582,6 +1644,7 @@ export const useAppStore = create<AppState>()(
           questions: state.questions,
           moodboardItems: state.moodboardItems,
           researchEntries: state.researchEntries,
+          revisionPasses: state.revisionPasses ?? [],
           projectTags: state.projectTags,
           links: state.links,
           history: state.history,
@@ -1620,6 +1683,7 @@ export const useAppStore = create<AppState>()(
           questions: (data.questions as Question[]) ?? [],
           moodboardItems: (data.moodboardItems as MoodboardItem[]) ?? [],
           researchEntries: (data.researchEntries as ResearchEntry[]) ?? [],
+          revisionPasses: (data.revisionPasses as RevisionPass[]) ?? [],
           projectTags: (data.projectTags as Tag[]) ?? [],
           links: (data.links as Link[]) ?? [],
           history: (data.history as HistoryEvent[]) ?? [],
@@ -1653,6 +1717,7 @@ export const useAppStore = create<AppState>()(
             questions: data.questions ?? [],
             moodboardItems: data.moodboardItems ?? [],
             researchEntries: data.researchEntries ?? [],
+            revisionPasses: data.revisionPasses ?? [],
             projectTags: data.projectTags ?? [],
             links: data.links ?? [],
             history: data.history ?? [],

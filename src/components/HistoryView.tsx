@@ -10,8 +10,15 @@ const EVENT_ICONS: Record<HistoryEventType, string> = {
 };
 
 const TYPE_ICONS: Record<ObjectType, string> = {
-  scene: '📄', fragment: '🧩', omitted_material: '🗂️', notebook_entry: '📓',
-  codex_entry: '📚', question: '❓', moodboard_item: '🖼️', research_item: '🔬',
+  scene: '📄',
+  fragment: '🧩',
+  omitted_material: '🗂️',
+  notebook_entry: '📓',
+  codex_entry: '📚',
+  question: '❓',
+  moodboard_item: '🖼️',
+  research_item: '🔬',
+  revision_pass: '🧵',
 };
 
 export function HistoryView() {

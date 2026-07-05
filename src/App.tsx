@@ -22,6 +22,7 @@ import { QuestionsView } from './components/QuestionsView';
 import { MoodboardView } from './components/MoodboardView';
 import { ResearchView } from './components/ResearchView';
 import { HistoryView } from './components/HistoryView';
+import { RevisionPassesView } from './components/RevisionPassesView';
 import { TrashView } from './components/TrashView';
 import { GlobalSearch } from './components/GlobalSearch';
 import { ReferencePane } from './components/ReferencePane';
@@ -204,6 +205,7 @@ function App() {
           {area === 'questions' && <QuestionsView />}
           {area === 'moodboard' && <MoodboardView />}
           {area === 'research' && <ResearchView />}
+          {area === 'revision' && <RevisionPassesView />}
           {area === 'history' && <HistoryView />}
           {area === 'trash' && <TrashView />}
 
