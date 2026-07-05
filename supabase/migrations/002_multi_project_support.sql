@@ -18,6 +18,12 @@ DROP POLICY IF EXISTS "Users can view their own project" ON projects;
 DROP POLICY IF EXISTS "Users can insert their own project" ON projects;
 DROP POLICY IF EXISTS "Users can update their own project" ON projects;
 DROP POLICY IF EXISTS "Users can delete their own project" ON projects;
+-- Also drop this migration's own policies before recreating, so the whole
+-- file can be safely re-run against a database that already has them.
+DROP POLICY IF EXISTS "Users can view their own projects" ON projects;
+DROP POLICY IF EXISTS "Users can insert their own projects" ON projects;
+DROP POLICY IF EXISTS "Users can update their own projects" ON projects;
+DROP POLICY IF EXISTS "Users can delete their own projects" ON projects;
 
 CREATE POLICY "Users can view their own projects" ON projects
   FOR SELECT USING (auth.uid() = user_id);
