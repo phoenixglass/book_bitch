@@ -731,6 +731,41 @@ export interface AIResult {
   output: AIOutput;
 }
 
+// ─── Truth Mirror ─────────────────────────────────────────────────────────────
+// A craft-analysis/interrogation tool: it answers structured questions about an
+// existing story object. It never drafts, rewrites, or continues prose.
+// TODO: 'question' and 'revision_pass' are listed as lower-priority Truth Mirror
+// targets in the spec but aren't wired to a UI entry point in this pass — the
+// underlying object types don't have an obvious single "detail view" to expose
+// a Run button from without inventing one, so they were left out to keep this
+// change reviewable.
+
+export type TruthMirrorTargetType =
+  | 'scene'
+  | 'manuscript_assembly'
+  | 'codex_entry'
+  | 'research_item'
+  | 'fragment'
+  | 'omitted_material';
+
+export interface TruthMirrorResult {
+  surfaceReading: string;
+  deeperReading: string;
+  centralWant: string;
+  actualWant: string;
+  refusalOrBlindSpot: string;
+  contradiction: string;
+  powerShift: string;
+  whatChanges: string;
+  explanationVsDramatization: string[];
+  unresolvedQuestions: string[];
+  revisionPressurePoints: string[];
+  suggestedNextActions: string[];
+  relatedObjectsToReview: string[];
+  suggestedRevisionPass: string;
+  metadataOnly?: boolean;
+  truncated?: boolean;
+}
 
 // ─── Manuscript Assembly ─────────────────────────────────────────────────────
 

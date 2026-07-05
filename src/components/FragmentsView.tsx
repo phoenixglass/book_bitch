@@ -4,6 +4,7 @@ import { TagInput } from './TagInput';
 import { WritingEditor } from './WritingEditor';
 import { ImportPreviewModal } from './ImportPreviewModal';
 import { GoogleDriveUpload } from './GoogleDriveUpload';
+import { TruthMirrorPanel } from './TruthMirrorPanel';
 import { parseFile } from '../utils/documentParser';
 import type { ParsedItem, SplitLevel } from '../utils/documentParser';
 import type { Fragment, FragmentType, FragmentStatus, ImportSourceMeta } from '../types';
@@ -284,6 +285,10 @@ function FragmentDetail({
             placeholder="Where might this belong?"
             className="w-full bg-[#16213e] border border-[#2d3748] rounded px-2 py-1 text-gray-300 outline-none focus:border-[#6b46c1] text-xs"
           />
+        </div>
+
+        <div className="px-4 pb-3 shrink-0">
+          <TruthMirrorPanel targetType="fragment" targetId={frag.id} />
         </div>
 
         {/* Attach to scene */}

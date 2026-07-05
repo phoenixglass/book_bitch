@@ -4,6 +4,7 @@ import { TagInput } from './TagInput';
 import { WritingEditor } from './WritingEditor';
 import { ImportPreviewModal } from './ImportPreviewModal';
 import { GoogleDriveUpload } from './GoogleDriveUpload';
+import { TruthMirrorPanel } from './TruthMirrorPanel';
 import { parseFile } from '../utils/documentParser';
 import type { ParsedItem, SplitLevel } from '../utils/documentParser';
 import type { OmittedMaterial, OmissionStatus, ImportSourceMeta } from '../types';
@@ -252,6 +253,10 @@ function OmittedDetail({
             placeholder="Private notes about this material…"
             className="w-full bg-[#16213e] border border-[#2d3748] rounded px-3 py-2 text-gray-300 text-xs outline-none focus:border-[#6b46c1] resize-none placeholder-gray-600"
           />
+        </div>
+
+        <div className="px-4 pb-3 shrink-0">
+          <TruthMirrorPanel targetType="omitted_material" targetId={item.id} />
         </div>
 
         <div className="px-4 pb-4 text-xs text-gray-600 shrink-0">

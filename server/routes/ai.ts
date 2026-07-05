@@ -1097,3 +1097,281 @@ aiRouter.post('/continuity-check', async (req: Request, res: Response) => {
     res.status(502).json({ error: `AI call failed: ${msg}` });
   }
 });
+
+// ── POST /api/ai/truth-mirror ────────────────────────────────────────────────
+// Truth Mirror is a craft-analysis/interrogation tool, not a drafting tool: it
+// answers structured questions about ONE existing story object (or, for an
+// assembly, an ordered compact scene list) and returns structured JSON. It must
+// never draft, rewrite, continue, or imitate prose — analytical output only,
+// regardless of AI mode/allowDrafting (unlike other routes, this one doesn't
+// take those params at all).
+
+interface TruthMirrorConnectionInput { type?: string; title?: string; subtitle?: string }
+interface TruthMirrorAssemblySceneInput {
+  id?: string;
+  title?: string;
+  order?: number;
+  included?: boolean;
+  synopsis?: string;
+  status?: string;
+  wordCount?: number;
+  povCharacter?: string;
+  plotline?: string;
+}
+interface TruthMirrorRevisionPassContextInput { title?: string; focus?: string; description?: string }
+
+const TRUTH_MIRROR_LABELS: Record<string, string> = {
+  scene: 'manuscript scene',
+  manuscript_assembly: 'manuscript assembly (a draft build/ordering of scenes)',
+  codex_entry: 'codex (story-bible) entry',
+  research_item: 'research item',
+  fragment: 'fragment',
+  omitted_material: 'omitted material item',
+};
+
+// Maps each object type onto the generic TruthMirrorResult JSON fields, pairing
+// every field the type uses with the exact analytical question it must answer.
+// Fields not listed for a type should be returned empty (string '' / array []).
+const TRUTH_MIRROR_FIELD_QUESTIONS: Record<string, Array<{ field: string; question: string }>> = {
+  scene: [
+    { field: 'surfaceReading', question: 'What does this scene appear to be about on the surface?' },
+    { field: 'deeperReading', question: 'What is it actually about underneath?' },
+    { field: 'centralWant', question: 'What does the central character think they want?' },
+    { field: 'actualWant', question: 'What do they actually want?' },
+    { field: 'refusalOrBlindSpot', question: 'What are they refusing to know?' },
+    { field: 'whatChanges', question: 'What changes by the end of the scene?' },
+    { field: 'powerShift', question: 'What power shift occurs?' },
+    { field: 'contradiction', question: 'What contradiction is most alive in this scene?' },
+    { field: 'explanationVsDramatization', question: 'Where does the prose explain instead of dramatize? List specific moments.' },
+    { field: 'unresolvedQuestions', question: 'What is emotionally, structurally, or causally unresolved?' },
+    { field: 'suggestedNextActions', question: 'What should the writer examine next in a revision?' },
+  ],
+  manuscript_assembly: [
+    { field: 'surfaceReading', question: 'What pattern emerges across this assembly, read in assembly order (not binder order)?' },
+    { field: 'deeperReading', question: 'What emotional/structural progression is visible across the assembly? Name which threads are strong.' },
+    { field: 'explanationVsDramatization', question: 'Which scenes feel redundant or under-integrated? List them by exact title.' },
+    { field: 'unresolvedQuestions', question: 'Which threads disappear for too long, and which structural gaps are visible?' },
+    { field: 'suggestedNextActions', question: 'Which scenes should the writer review first? List them by exact title.' },
+    { field: 'suggestedRevisionPass', question: 'What revision pass would this assembly most need next?' },
+  ],
+  codex_entry: [
+    { field: 'surfaceReading', question: 'What does this entry claim this thing/person is?' },
+    { field: 'contradiction', question: 'What contradiction defines it?' },
+    { field: 'deeperReading', question: 'What pressure (situation, character, event) would reveal that contradiction?' },
+    { field: 'unresolvedQuestions', question: 'Where does this entry seem underdeveloped?' },
+    { field: 'suggestedNextActions', question: 'What would make this entry more fictionally useful?' },
+    { field: 'revisionPressurePoints', question: 'What revision questions does this entry raise?' },
+    { field: 'relatedObjectsToReview', question: 'Which linked scenes (from the Connections provided) seem most important to this entry?' },
+  ],
+  research_item: [
+    { field: 'surfaceReading', question: 'What concrete/sensory details in this research are worth preserving?' },
+    { field: 'deeperReading', question: 'What fictional uses does this research suggest for this specific story?' },
+    { field: 'explanationVsDramatization', question: 'What are the risks of info-dumping or over-explaining this material in the manuscript?' },
+    { field: 'unresolvedQuestions', question: 'What questions does this research raise?' },
+    { field: 'suggestedNextActions', question: 'Where could this research become action, image, conflict, atmosphere, or dialogue instead of exposition? Give concrete suggestions.' },
+    { field: 'relatedObjectsToReview', question: 'Which linked scenes or codex entries (from the Connections provided) might this research affect?' },
+  ],
+  fragment: [
+    { field: 'surfaceReading', question: 'What is alive in this material?' },
+    { field: 'deeperReading', question: 'What problem might it solve, and what problem might it create? State plainly whether it reads as a line, scene seed, thematic note, memory, dialogue scrap, or dead darling.' },
+    { field: 'suggestedNextActions', question: 'What would need to change for it to re-enter the manuscript? Where might it belong?' },
+    { field: 'unresolvedQuestions', question: 'What open questions does this fragment leave unanswered?' },
+  ],
+  omitted_material: [
+    { field: 'surfaceReading', question: 'What is alive in this material?' },
+    { field: 'deeperReading', question: 'What problem might it solve, and what problem might it create? State plainly whether it reads as a line, scene seed, thematic note, memory, dialogue scrap, or dead darling.' },
+    { field: 'suggestedNextActions', question: 'What would need to change for it to re-enter the manuscript? Where might it belong?' },
+    { field: 'unresolvedQuestions', question: 'What open questions does this material leave unanswered?' },
+  ],
+};
+
+const TRUTH_MIRROR_JSON_SHAPE = {
+  surfaceReading: 'string — always populate',
+  deeperReading: 'string — always populate',
+  centralWant: 'string — empty string "" if not applicable to this object type',
+  actualWant: 'string — empty string "" if not applicable',
+  refusalOrBlindSpot: 'string — empty string "" if not applicable',
+  contradiction: 'string — empty string "" if not applicable',
+  powerShift: 'string — empty string "" if not applicable',
+  whatChanges: 'string — empty string "" if not applicable',
+  explanationVsDramatization: ['string — empty array [] if not applicable'],
+  unresolvedQuestions: ['string'],
+  revisionPressurePoints: ['string — 2 to 6 concrete, specific craft pressure points a revision pass could act on'],
+  suggestedNextActions: ['string'],
+  relatedObjectsToReview: ['string — titles copied EXACTLY from the Connections / Scene List provided below, never invented or paraphrased; empty array [] if none are relevant'],
+  suggestedRevisionPass: 'string — a short suggested focus/name for a revision pass; empty string "" if not applicable',
+};
+
+interface TruthMirrorResultShape {
+  surfaceReading: string;
+  deeperReading: string;
+  centralWant: string;
+  actualWant: string;
+  refusalOrBlindSpot: string;
+  contradiction: string;
+  powerShift: string;
+  whatChanges: string;
+  explanationVsDramatization: string[];
+  unresolvedQuestions: string[];
+  revisionPressurePoints: string[];
+  suggestedNextActions: string[];
+  relatedObjectsToReview: string[];
+  suggestedRevisionPass: string;
+}
+
+function asStr(v: unknown): string { return typeof v === 'string' ? v : ''; }
+function asStrArr(v: unknown): string[] { return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []; }
+
+function normalizeTruthMirrorResult(raw: unknown): TruthMirrorResultShape {
+  const o = (raw && typeof raw === 'object' ? raw as Record<string, unknown> : {});
+  return {
+    surfaceReading: asStr(o.surfaceReading),
+    deeperReading: asStr(o.deeperReading),
+    centralWant: asStr(o.centralWant),
+    actualWant: asStr(o.actualWant),
+    refusalOrBlindSpot: asStr(o.refusalOrBlindSpot),
+    contradiction: asStr(o.contradiction),
+    powerShift: asStr(o.powerShift),
+    whatChanges: asStr(o.whatChanges),
+    explanationVsDramatization: asStrArr(o.explanationVsDramatization),
+    unresolvedQuestions: asStrArr(o.unresolvedQuestions),
+    revisionPressurePoints: asStrArr(o.revisionPressurePoints),
+    suggestedNextActions: asStrArr(o.suggestedNextActions),
+    relatedObjectsToReview: asStrArr(o.relatedObjectsToReview),
+    suggestedRevisionPass: asStr(o.suggestedRevisionPass),
+  };
+}
+
+aiRouter.post('/truth-mirror', async (req: Request, res: Response) => {
+  const config = getAIConfig();
+  if (!config) {
+    res.status(503).json({ error: 'AI is not configured. Add an API key in environment settings.' });
+    return;
+  }
+
+  const {
+    targetType,
+    targetTitle,
+    targetContent,
+    targetMetadata = {},
+    connections = [],
+    assemblyScenes = [],
+    revisionPassContexts = [],
+    storyContext,
+    metadataOnly = false,
+  } = req.body as {
+    targetType?: string;
+    targetTitle?: string;
+    targetContent?: string;
+    targetMetadata?: Record<string, unknown>;
+    connections?: TruthMirrorConnectionInput[];
+    assemblyScenes?: TruthMirrorAssemblySceneInput[];
+    revisionPassContexts?: TruthMirrorRevisionPassContextInput[];
+    storyContext?: string;
+    metadataOnly?: boolean;
+  };
+
+  const label = targetType ? TRUTH_MIRROR_LABELS[targetType] : undefined;
+  if (!label) {
+    res.status(400).json({ error: 'Unsupported or missing target type for Truth Mirror.' });
+    return;
+  }
+
+  const isAssembly = targetType === 'manuscript_assembly';
+  const plainContent = targetContent ? stripHTML(targetContent) : '';
+
+  const validAssemblyScenes = assemblyScenes.filter((s) => typeof s.id === 'string' && typeof s.title === 'string');
+  if (isAssembly && validAssemblyScenes.length === 0) {
+    res.status(400).json({ error: 'This assembly has no scenes yet. Add scenes before running Truth Mirror.' });
+    return;
+  }
+  if (!isAssembly && !plainContent.trim() && Object.keys(targetMetadata).length === 0) {
+    res.status(400).json({ error: 'No content or metadata provided to analyze.' });
+    return;
+  }
+
+  const { text: truncatedText, truncated } = truncate(plainContent, 30000);
+
+  const fieldQuestions = TRUTH_MIRROR_FIELD_QUESTIONS[targetType!] ?? [];
+  const mappingBlock = fieldQuestions.map(({ field, question }) => `- ${field}: ${question}`).join('\n');
+  const unmappedFields = Object.keys(TRUTH_MIRROR_JSON_SHAPE).filter(
+    (f) => !fieldQuestions.some((fq) => fq.field === f) && f !== 'revisionPressurePoints' && f !== 'relatedObjectsToReview',
+  );
+
+  const systemPrompt = [
+    'You are "Truth Mirror," a craft-analysis and interrogation tool built into a novelist\'s writing app.',
+    'You interrogate ONE existing story object and return sharp, structured, unsentimental craft insight about it.',
+    '',
+    'ABSOLUTE RULES:',
+    '- Never draft, rewrite, continue, or imitate prose. Do not produce new scene text, dialogue, or narration — analytical output only.',
+    '- Do not praise vaguely. Do not moralize or therapize the writer. Do not give generic writing-craft platitudes.',
+    '- Ground every claim in the text/metadata actually provided. Do not invent events, characters, scenes, or facts not present in the provided context.',
+    '- When you are uncertain, say so plainly rather than asserting a guess as fact.',
+    '- Give specific, actionable pressure points — not generic advice that could apply to any manuscript.',
+    metadataOnly
+      ? '- NOTE: Full text content was unavailable or too short for this object — base this analysis on the provided metadata only, and say explicitly that this is a metadata-only reading with correspondingly lower confidence.'
+      : '',
+    '',
+    `You are analyzing a ${label} titled "${targetTitle ?? 'Untitled'}". Answer these specific questions, grounded in the material provided, and place each answer in the matching JSON field:`,
+    mappingBlock,
+    unmappedFields.length > 0 ? `Fields not listed above do not apply to a ${label} — return them as an empty string "" or empty array [] exactly as shown in the schema.` : '',
+    'Always also populate revisionPressurePoints (2–6 concrete, specific pressure points a revision pass could act on) if the material supports any, and relatedObjectsToReview using ONLY titles copied verbatim from the Connections / Scene List provided in the user message — never invent a title, and return an empty array if nothing provided is relevant.',
+    '',
+    'Return ONLY valid JSON in this exact structure, no other text:',
+    JSON.stringify(TRUTH_MIRROR_JSON_SHAPE),
+  ].filter(Boolean).join('\n');
+
+  const metaLines = Object.entries(targetMetadata)
+    .filter(([, v]) => v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && v.length === 0))
+    .map(([k, v]) => `- ${k}: ${Array.isArray(v) ? v.join(', ') : String(v)}`);
+
+  const connectionLines = connections
+    .filter((c) => typeof c.title === 'string' && c.title.trim())
+    .map((c) => `- [${c.type ?? 'object'}] ${c.title}${c.subtitle ? ` — ${c.subtitle}` : ''}`);
+
+  const assemblySceneLines = validAssemblyScenes
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    .map((s) => {
+      const parts = [
+        `order ${s.order ?? 0}`,
+        s.included === false ? 'excluded from build' : '',
+        s.status ? `status: ${s.status}` : '',
+        typeof s.wordCount === 'number' ? `${s.wordCount} words` : '',
+        s.povCharacter ? `POV: ${s.povCharacter}` : '',
+        s.plotline ? `plotline: ${s.plotline}` : '',
+      ].filter(Boolean).join(' · ');
+      const synopsis = s.synopsis?.trim() ? `\n  ${s.synopsis.trim()}` : '';
+      return `- "${s.title}" (${parts})${synopsis}`;
+    });
+
+  const revisionPassLines = revisionPassContexts
+    .filter((p) => typeof p.title === 'string' && p.title.trim())
+    .map((p) => `- "${p.title}"${p.focus ? ` — focus: ${p.focus}` : ''}${p.description ? ` — ${p.description}` : ''}`);
+
+  const userPrompt = [
+    storyContext?.trim() ? `--- STORY BRIEF ---\n${truncate(storyContext.trim(), 20000).text}\n--- END STORY BRIEF ---\n` : '',
+    `Target title: ${targetTitle ?? 'Untitled'}`,
+    `Target type: ${label}`,
+    metaLines.length > 0 ? `\nMetadata:\n${metaLines.join('\n')}` : '',
+    connectionLines.length > 0 ? `\nDirectly connected objects (use these — and ONLY these — for relatedObjectsToReview):\n${connectionLines.join('\n')}` : '\nNo directly connected objects were found.',
+    revisionPassLines.length > 0 ? `\nThis object is a target of these active revision pass(es):\n${revisionPassLines.join('\n')}` : '',
+    isAssembly
+      ? `\nAssembly scene list, in assembly order (${assemblySceneLines.length} scenes):\n${assemblySceneLines.join('\n')}`
+      : `\nContent to analyze:\n${truncatedText || '[No prose content provided — analyze from metadata only]'}`,
+    truncated ? '\n[Note: content was truncated before analysis]' : '',
+  ].filter(Boolean).join('\n');
+
+  try {
+    const raw = await callAI(config, systemPrompt, userPrompt, 3072);
+    const parsed = extractJSON(raw);
+    const result = normalizeTruthMirrorResult(parsed);
+    if (!result.surfaceReading && !result.deeperReading) {
+      res.status(502).json({ error: 'AI returned an unexpected format. Try again.' });
+      return;
+    }
+    res.json({ ...result, metadataOnly, truncated });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(502).json({ error: `AI call failed: ${msg}` });
+  }
+});
