@@ -489,12 +489,44 @@ export interface ManuscriptSettings {
   queryLetterContent: string;
 }
 
+// ─── Beta Reader Packet settings ──────────────────────────────────────────────
+
+export interface BetaReaderSettings {
+  noteToReaders: string;
+  includeChapterGuide: boolean;
+  includeFeedbackQuestions: boolean;
+  feedbackQuestions: string; // one question per line
+}
+
 // ─── Story Brief ─────────────────────────────────────────────────────────────
 
 export interface StoryBrief {
   content: string;
   generatedAt: number;
   wordCountAtGeneration: number;
+}
+
+// ─── Continuity Check ────────────────────────────────────────────────────────
+// A whole-manuscript pass that cross-references Codex + scene metadata (Timeline)
+// + scene prose in a single AI call, looking for contradictions that only show up
+// when the manuscript is read as a whole rather than one object at a time.
+
+export type ContinuityCategory = 'character' | 'timeline' | 'pov';
+
+export interface ContinuityFinding {
+  category: ContinuityCategory;
+  severity: 'low' | 'medium' | 'high';
+  title: string;
+  description: string;
+  sceneRefs: Array<{ id: string; title: string }>;
+  codexRefs: Array<{ id: string; name: string }>;
+}
+
+export interface ContinuityReport {
+  findings: ContinuityFinding[];
+  generatedAt: number;
+  wordCountAtGeneration: number;
+  truncated?: boolean;
 }
 
 // ─── AI Settings ─────────────────────────────────────────────────────────────
@@ -717,6 +749,7 @@ export interface AppState {
   pendingAIResult: AIResult | null;
   aiContextObject: { type: AIObjectType; id: string } | null;
   storyBrief: StoryBrief | null;
+  continuityReport: ContinuityReport | null;
 
   // Editor appearance settings
   editorSettings: EditorSettings;
@@ -724,12 +757,19 @@ export interface AppState {
   // Manuscript format settings
   manuscriptSettings: ManuscriptSettings;
 
+  // Beta reader packet export settings
+  betaReaderSettings: BetaReaderSettings;
+
   // Last time local data was modified (ISO string), used for cloud sync conflict resolution
   // null means this device has never made a local change — always defer to cloud in that case
   localLastModified: string | null;
 
+  // Cloud project id this local cache belongs to (multi-project support)
+  activeProjectId: string | null;
+
   // ─── Existing actions ──────────────────────────────────────────────────────
   setProjectTitle: (title: string) => void;
+  setActiveProjectId: (id: string | null) => void;
   addItem: (parentId: string | null, type: 'folder' | 'document') => void;
   removeItem: (id: string) => void;
   updateItem: (id: string, patch: Partial<BinderItem>) => void;
@@ -845,12 +885,14 @@ export interface AppState {
   setPendingAIResult: (result: AIResult | null) => void;
   setAIContextObject: (obj: { type: AIObjectType; id: string } | null) => void;
   setStoryBrief: (brief: StoryBrief | null) => void;
+  setContinuityReport: (report: ContinuityReport | null) => void;
 
   // ─── Editor Appearance ─────────────────────────────────────────────────────
   updateEditorSettings: (patch: Partial<EditorSettings>) => void;
 
   // ─── Manuscript Format ─────────────────────────────────────────────────────
   updateManuscriptSettings: (patch: Partial<ManuscriptSettings>) => void;
+  updateBetaReaderSettings: (patch: Partial<BetaReaderSettings>) => void;
 
   // ─── Export / Backup ───────────────────────────────────────────────────────
   exportProjectBackup: () => void;

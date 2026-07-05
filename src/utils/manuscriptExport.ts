@@ -13,12 +13,12 @@ import {
 } from 'docx';
 import type { BinderItem, ManuscriptSettings } from '../types';
 
-const FONT = 'Times New Roman';
-const FONT_SIZE = 24; // half-points: 24 = 12pt
+export const FONT = 'Times New Roman';
+export const FONT_SIZE = 24; // half-points: 24 = 12pt
 const INCH = convertInchesToTwip(1);
 const HALF_INCH = convertInchesToTwip(0.5);
 
-const PAGE_PROPS = {
+export const PAGE_PROPS = {
   size: {
     width: convertInchesToTwip(8.5),
     height: convertInchesToTwip(11),
@@ -39,7 +39,7 @@ interface RunFmt {
   strike?: boolean;
 }
 
-function makeRun(text: string, fmt?: RunFmt): TextRun {
+export function makeRun(text: string, fmt?: RunFmt): TextRun {
   return new TextRun({
     text,
     font: FONT,
@@ -50,7 +50,7 @@ function makeRun(text: string, fmt?: RunFmt): TextRun {
   });
 }
 
-function makeParagraph(
+export function makeParagraph(
   children: TextRun[],
   opts?: {
     center?: boolean;
@@ -185,18 +185,19 @@ export function htmlToDocxParagraphs(
 
 // ─── Binder traversal ─────────────────────────────────────────────────────────
 
-interface SceneItem {
+export interface SceneItem {
   title: string;
   content: string;
 }
 
-interface Chapter {
+export interface Chapter {
   title: string;
   isNamedChapter: boolean; // true when a folder gives the chapter its name
+  synopsis: string;
   scenes: SceneItem[];
 }
 
-function gatherChapters(items: BinderItem[]): Chapter[] {
+export function gatherChapters(items: BinderItem[]): Chapter[] {
   const chapters: Chapter[] = [];
 
   for (const item of items) {
@@ -208,7 +209,7 @@ function gatherChapters(items: BinderItem[]): Chapter[] {
         .map((c) => ({ title: c.title, content: c.content ?? '' }));
 
       if (scenes.length > 0) {
-        chapters.push({ title: item.title, isNamedChapter: true, scenes });
+        chapters.push({ title: item.title, isNamedChapter: true, synopsis: item.synopsis ?? '', scenes });
       }
       // Recurse into sub-folders
       chapters.push(...gatherChapters(item.children.filter((c) => c.type === 'folder')));
@@ -217,6 +218,7 @@ function gatherChapters(items: BinderItem[]): Chapter[] {
       chapters.push({
         title: item.title,
         isNamedChapter: false,
+        synopsis: item.synopsis ?? '',
         scenes: [{ title: item.title, content: item.content ?? '' }],
       });
     }
@@ -239,7 +241,7 @@ function countAllWords(items: BinderItem[]): number {
   return total;
 }
 
-function formatWordCount(n: number): string {
+export function formatWordCount(n: number): string {
   if (n < 1000) return `${n} words`;
   const rounded = Math.round(n / 100) * 100;
   return `Approximately ${rounded.toLocaleString()} words`;

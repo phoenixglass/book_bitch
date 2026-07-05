@@ -33,6 +33,7 @@ import type {
   AIObjectType,
   AIResult,
   ManuscriptSettings,
+  BetaReaderSettings,
   EditorSettings,
   StoryBrief,
   FindReplaceOptions,
@@ -246,6 +247,7 @@ export const useAppStore = create<AppState>()(
       pendingAIResult: null as AIResult | null,
       aiContextObject: null as { type: AIObjectType; id: string } | null,
       storyBrief: null as StoryBrief | null,
+      continuityReport: null as ContinuityReport | null,
 
       // ── Editor appearance settings ────────────────────────────────────────
       editorSettings: {
@@ -281,11 +283,27 @@ export const useAppStore = create<AppState>()(
         queryLetterContent: '',
       } as ManuscriptSettings,
 
+      // ── Beta reader packet settings ───────────────────────────────────────
+      betaReaderSettings: {
+        noteToReaders: '',
+        includeChapterGuide: true,
+        includeFeedbackQuestions: true,
+        feedbackQuestions: [
+          'Where did you find yourself most engaged? Where did your attention wander?',
+          'Were there any characters or relationships you had trouble following?',
+          'Did the pacing feel right, or were there sections that dragged or rushed?',
+          'Was the ending satisfying?',
+          'Is there anything you wanted more of? Less of?',
+        ].join('\n'),
+      } as BetaReaderSettings,
+
       localLastModified: null,
+      activeProjectId: null,
 
       // ── Existing actions ─────────────────────────────────────────────────
 
       setProjectTitle: (title) => set({ projectTitle: title }),
+      setActiveProjectId: (id) => set({ activeProjectId: id }),
 
       addItem: (parentId, type) => {
         const newItem = makeDocument({ type });
@@ -1526,6 +1544,10 @@ export const useAppStore = create<AppState>()(
         set({ storyBrief: brief });
       },
 
+      setContinuityReport: (report) => {
+        set({ continuityReport: report });
+      },
+
       // ── Editor Appearance ─────────────────────────────────────────────────
 
       updateEditorSettings: (patch) => {
@@ -1536,6 +1558,10 @@ export const useAppStore = create<AppState>()(
 
       updateManuscriptSettings: (patch) => {
         set((s) => ({ manuscriptSettings: { ...s.manuscriptSettings, ...patch } }));
+      },
+
+      updateBetaReaderSettings: (patch) => {
+        set((s) => ({ betaReaderSettings: { ...s.betaReaderSettings, ...patch } }));
       },
 
       // ── Export / Backup ──────────────────────────────────────────────────
@@ -1561,6 +1587,7 @@ export const useAppStore = create<AppState>()(
           savedFilters: state.savedFilters,
           dailyWordCounts: state.dailyWordCounts,
           storyBrief: state.storyBrief,
+          continuityReport: state.continuityReport,
         };
         const blob = new Blob([JSON.stringify(backup, null, 2)], {
           type: 'application/json;charset=utf-8',
@@ -1599,7 +1626,9 @@ export const useAppStore = create<AppState>()(
           dailyWordCounts: (data.dailyWordCounts as Record<string, number>) ?? {},
           editorSettings: (data.editorSettings as EditorSettings) ?? undefined,
           manuscriptSettings: (data.manuscriptSettings as ManuscriptSettings) ?? undefined,
+          betaReaderSettings: (data.betaReaderSettings as BetaReaderSettings) ?? undefined,
           storyBrief: (data.storyBrief as StoryBrief | null) ?? null,
+          continuityReport: (data.continuityReport as ContinuityReport | null) ?? null,
           localLastModified: cloudTimestamp ?? null,
           selectedId: null,
         });
@@ -1629,6 +1658,7 @@ export const useAppStore = create<AppState>()(
             savedFilters: data.savedFilters ?? [],
             dailyWordCounts: data.dailyWordCounts ?? {},
             storyBrief: data.storyBrief ?? null,
+            continuityReport: data.continuityReport ?? null,
             selectedId: null,
           });
           get().recordEvent({
