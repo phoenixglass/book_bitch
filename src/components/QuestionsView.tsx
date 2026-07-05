@@ -271,11 +271,13 @@ export function QuestionsView() {
     setAIContextObject(selectedId ? { type: 'question', id: selectedId } : null);
   }, [selectedId, setAIContextObject]);
 
+  // Adopt a pending selection (e.g. from global search) during render rather
+  // than in an effect, so the newly selected item shows on the same render.
+  if (pendingSelectId && pendingSelectId !== selectedId) {
+    setSelectedId(pendingSelectId);
+  }
   useEffect(() => {
-    if (pendingSelectId) {
-      setSelectedId(pendingSelectId);
-      setPendingSelectId(null);
-    }
+    if (pendingSelectId) setPendingSelectId(null);
   }, [pendingSelectId, setPendingSelectId]);
   const [filterStatus, setFilterStatus] = useState<string>('');
   const [filterCategory, setFilterCategory] = useState<string>('');

@@ -3,6 +3,10 @@ import { useAppStore, totalWordCount } from '../store/appStore';
 import { countWords } from '../utils/textStats';
 import type { BinderItem } from '../types';
 
+// Captured once at module load rather than inside the memoized computation
+// below, since calling Date.now() directly during render/memo is impure.
+const DASHBOARD_LOADED_AT = Date.now();
+
 function collectScenes(items: BinderItem[]): BinderItem[] {
   const scenes: BinderItem[] = [];
   for (const item of items) {
@@ -231,7 +235,7 @@ export function DashboardView() {
     let noStatus = 0;
 
     const staleMs = 7 * 24 * 60 * 60 * 1000;
-    const now = Date.now();
+    const now = DASHBOARD_LOADED_AT;
     let stale = 0;
 
     for (const scene of scenes) {

@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import { useAppStore } from '../store/appStore';
-import type { ImportSourceMeta } from '../types';
+import type { BinderItem, ImportSourceMeta } from '../types';
+import type {
+  GDocDocument, GDocElement, GDocParagraph, GDocParagraphElement, GDocTab, GDocTable,
+  GooglePickerData, GooglePickerDocument,
+} from '../types/googleApi';
 import { delimitedToHtml, parseDocx, parseXlsx } from '../utils/documentParser';
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
@@ -18,7 +22,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   function findBinderItemByDriveId(driveFileId: string): { id: string; type: string } | null {
-    function search(items: any[]): { id: string; type: string } | null {
+    function search(items: BinderItem[]): { id: string; type: string } | null {
       for (const item of items) {
         if (item.driveFileId === driveFileId) return { id: item.id, type: item.type };
         const found = search(item.children || []);
@@ -40,7 +44,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
       const client = window.google.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID,
         scope: SCOPES,
-        callback: (response: any) => {
+        callback: (response) => {
           if (response.access_token) {
             cachedAccessToken = response.access_token;
             resolve(response.access_token);
@@ -48,7 +52,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
             reject(new Error('No access token received'));
           }
         },
-        error_callback: (error: any) => reject(error),
+        error_callback: (error) => reject(error),
       });
       client.requestAccessToken();
     });
@@ -99,7 +103,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
         const picker = new window.google.picker.PickerBuilder()
           .addView(window.google.picker.ViewId.DOCS)
           .setOAuthToken(accessToken)
-          .setCallback(async (data: any) => {
+          .setCallback(async (data: GooglePickerData) => {
             if (data.action === window.google.picker.Action.PICKED) {
               await handlePickerResult(data);
             }
@@ -118,8 +122,8 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
   const XLSX_EXTENSIONS = /\.(xlsx|xls)$/i;
   const PDF_EXTENSIONS = /\.pdf$/i;
 
-  async function handlePickerResult(data: any) {
-    const files: any[] = data.docs || [];
+  async function handlePickerResult(data: GooglePickerData) {
+    const files: GooglePickerDocument[] = data.docs || [];
     for (const file of files) {
       try {
         if (file.mimeType === 'application/vnd.google-apps.document') {
@@ -148,7 +152,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
   }
 
   // Downloads a binary Drive file and parses it server-side (for PDF) or client-side (for DOCX/XLSX).
-  async function importBinaryFile(file: any, fileType: 'docx' | 'doc' | 'xlsx' | 'xls' | 'pdf') {
+  async function importBinaryFile(file: GooglePickerDocument, fileType: 'docx' | 'doc' | 'xlsx' | 'xls' | 'pdf') {
     const res = await fetchWithAuth(
       `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`
     );
@@ -214,7 +218,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
 
   // ── Google Doc import ─────────────────────────────────────────────────────
 
-  async function fetchDocData(docId: string): Promise<any> {
+  async function fetchDocData(docId: string): Promise<GDocDocument> {
     const res = await fetchWithAuth(
       `https://docs.googleapis.com/v1/documents/${docId}?includeTabsContent=true`
     );
@@ -222,9 +226,9 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     return res.json();
   }
 
-  async function importGoogleDoc(file: any) {
+  async function importGoogleDoc(file: GooglePickerDocument) {
     const docData = await fetchDocData(file.id);
-    const tabs: any[] = docData.tabs || [];
+    const tabs: GDocTab[] = docData.tabs || [];
 
     if (targetSection !== 'manuscript') {
       await importGoogleDocToSection(file.id, file.name, docData, tabs, targetSection);
@@ -255,8 +259,8 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
   async function importGoogleDocToSection(
     driveFileId: string,
     docName: string,
-    docData: any,
-    tabs: any[],
+    docData: GDocDocument,
+    tabs: GDocTab[],
     section: 'fragments' | 'omitted' | 'research',
   ) {
     const { importToFragments, importToOmitted, importToResearch, setArea } = useAppStore.getState();
@@ -330,7 +334,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
   }
 
   // Creates a folder + one document per tab, named by tab title
-  async function importByTabs(driveFileId: string, docName: string, tabs: any[]) {
+  async function importByTabs(driveFileId: string, docName: string, tabs: GDocTab[]) {
     addItem(null, 'folder');
     const folderId = useAppStore.getState().selectedId;
     if (!folderId) return;
@@ -340,7 +344,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     for (const tab of tabs) {
       const tabTitle =
         tab.tabProperties?.title || `Tab ${(tab.tabProperties?.index ?? 0) + 1}`;
-      const elements: any[] = tab.documentTab?.body?.content || [];
+      const elements: GDocElement[] = tab.documentTab?.body?.content || [];
       const html = docElementsToHtml(elements);
 
       addItem(folderId, 'document');
@@ -354,7 +358,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
   }
 
   // Splits doc body by HEADING_1; uses full HTML export to preserve all formatting
-  async function importByHeadings(driveFileId: string, docName: string, docData: any) {
+  async function importByHeadings(driveFileId: string, docName: string, docData: GDocDocument) {
     const bodyContent =
       docData.tabs?.[0]?.documentTab?.body?.content ||
       docData.body?.content ||
@@ -402,7 +406,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     try {
       setIsLoading(true);
       const docData = await fetchDocData(driveFileId);
-      const tabs: any[] = docData.tabs || [];
+      const tabs: GDocTab[] = docData.tabs || [];
 
       // Update folder title but preserve all children (don't wipe them)
       updateItem(folderId, { title: docData.title || 'Untitled' });
@@ -410,9 +414,9 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
       // Helper: find existing child by title, update its content; create new if not found
       const mergeChapter = (title: string, html: string) => {
         const folder = useAppStore.getState().binder
-          .flatMap(function flatten(item: any): any[] { return [item, ...(item.children || []).flatMap(flatten)]; })
-          .find((item: any) => item.id === folderId);
-        const existing = folder?.children?.find((c: any) => c.title === title);
+          .flatMap(function flatten(item: BinderItem): BinderItem[] { return [item, ...(item.children || []).flatMap(flatten)]; })
+          .find((item) => item.id === folderId);
+        const existing = folder?.children?.find((c) => c.title === title);
         if (existing) {
           updateItem(existing.id, { content: html });
         } else {
@@ -455,7 +459,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
 
   // ── Google Sheet import ───────────────────────────────────────────────────
 
-  async function importGoogleSheet(file: any) {
+  async function importGoogleSheet(file: GooglePickerDocument) {
     const res = await fetchWithAuth(
       `https://docs.google.com/spreadsheets/d/${file.id}/export?format=csv`
     );
@@ -493,7 +497,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
 
   // ── Delimited (CSV/TSV) file import ────────────────────────────────────────
 
-  async function importDelimitedFile(file: any) {
+  async function importDelimitedFile(file: GooglePickerDocument) {
     const res = await fetchWithAuth(
       `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`
     );
@@ -530,7 +534,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
 
   // ── Generic file import ───────────────────────────────────────────────────
 
-  async function importGenericFile(file: any) {
+  async function importGenericFile(file: GooglePickerDocument) {
     const res = await fetchWithAuth(
       `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`
     );
@@ -640,8 +644,8 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
 
   // ── DOM helpers ───────────────────────────────────────────────────────────
 
-  function flattenTabs(tabs: any[]): any[] {
-    const out: any[] = [];
+  function flattenTabs(tabs: GDocTab[]): GDocTab[] {
+    const out: GDocTab[] = [];
     for (const tab of tabs) {
       out.push(tab);
       if (tab.childTabs?.length) out.push(...flattenTabs(tab.childTabs));
@@ -650,10 +654,10 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
   }
 
   function splitByHeading(
-    elements: any[]
-  ): Array<{ title: string; elements: any[] }> {
-    const chapters: Array<{ title: string; elements: any[] }> = [];
-    let current: { title: string; elements: any[] } | null = null;
+    elements: GDocElement[]
+  ): Array<{ title: string; elements: GDocElement[] }> {
+    const chapters: Array<{ title: string; elements: GDocElement[] }> = [];
+    let current: { title: string; elements: GDocElement[] } | null = null;
 
     for (const el of elements) {
       if (el.paragraph?.paragraphStyle?.namedStyleType === 'HEADING_1') {
@@ -668,17 +672,17 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     return chapters;
   }
 
-  function extractText(element: any): string {
+  function extractText(element: GDocElement): string {
     return (element.paragraph?.elements || [])
-      .map((e: any) => e.textRun?.content || '')
+      .map((e) => e.textRun?.content || '')
       .join('')
       .trim();
   }
 
   // Convert Google Docs API elements to HTML with full formatting preserved
-  function docElementsToHtml(elements: any[]): string {
+  function docElementsToHtml(elements: GDocElement[]): string {
     const out: string[] = [];
-    let listStack: Array<{ type: 'ul' | 'ol'; nestingLevel: number }> = [];
+    const listStack: Array<{ type: 'ul' | 'ol'; nestingLevel: number }> = [];
 
     for (const el of elements) {
       if (el.paragraph) {
@@ -717,7 +721,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     return out.join('');
   }
 
-  function paragraphToHtml(paragraph: any): string {
+  function paragraphToHtml(paragraph: GDocParagraph): string {
     const style = paragraph.paragraphStyle?.namedStyleType || 'NORMAL_TEXT';
     const pStyle = paragraph.paragraphStyle || {};
 
@@ -768,7 +772,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     return `<p${styleAttr}>${inner}</p>`;
   }
 
-  function renderInlines(elements: any[]): string {
+  function renderInlines(elements: GDocParagraphElement[]): string {
     let html = '';
     for (const elem of elements) {
       if (elem.textRun) {
@@ -816,7 +820,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
   }
 
-  function tableToHtml(table: any): string {
+  function tableToHtml(table: GDocTable): string {
     let html = '<table style="border-collapse:collapse;width:100%"><tbody>';
     for (const row of table.tableRows || []) {
       html += '<tr>';

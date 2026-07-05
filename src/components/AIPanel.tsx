@@ -1499,17 +1499,27 @@ export function AIPanel() {
 
   const actions = ctx ? availableActionsForType(ctx.objectType, aiSettings.mode) : [];
 
-  useEffect(() => {
+  // Reset the selected action when it's no longer valid for the current
+  // object type/mode, and reset the result/error/run state when the action
+  // or selected object changes. Done during render (comparing against the
+  // previous key) rather than in an effect, so it applies on the same render.
+  const actionValidityKey = `${ctx?.objectType}:${aiSettings.mode}`;
+  const [prevActionValidityKey, setPrevActionValidityKey] = useState(actionValidityKey);
+  if (actionValidityKey !== prevActionValidityKey) {
+    setPrevActionValidityKey(actionValidityKey);
     if (actions.length > 0 && !actions.find((a) => a.value === action)) {
       setAction(actions[0].value);
     }
-  }, [ctx?.objectType, aiSettings.mode, action, actions]);
+  }
 
-  useEffect(() => {
+  const resultResetKey = `${action}:${ctx?.objectId}`;
+  const [prevResultResetKey, setPrevResultResetKey] = useState(resultResetKey);
+  if (resultResetKey !== prevResultResetKey) {
+    setPrevResultResetKey(resultResetKey);
     setResult(null);
     setError(null);
     setRunState('idle');
-  }, [action, ctx?.objectId]);
+  }
 
   const checkAIStatus = useCallback(() => {
     setStatusLoading(true);
@@ -1526,7 +1536,10 @@ export function AIPanel() {
   }, []);
 
   useEffect(() => {
-    if (aiPanelOpen) checkAIStatus();
+    if (!aiPanelOpen) return;
+    // Deferred a tick so the status fetch's setState isn't called
+    // synchronously from within the effect body.
+    queueMicrotask(checkAIStatus);
   }, [aiPanelOpen, checkAIStatus]);
 
   async function handleGenerateBrief() {

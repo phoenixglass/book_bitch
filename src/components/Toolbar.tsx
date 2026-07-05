@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { useAppStore, totalWordCount } from '../store/appStore';
 import { EditorSettingsDialog } from './EditorSettingsDialog';
 import { FindReplaceDialog } from './FindReplaceDialog';
-import { useSyncContext } from './SyncProvider';
+import { useSyncContext } from '../hooks/useSyncContext';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import { VersionHistoryDialog } from './VersionHistoryDialog';
 import { useIsMobile } from '../hooks/useIsMobile';

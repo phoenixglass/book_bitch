@@ -145,18 +145,14 @@ ${parts.join('\n')}
   }
 
   function download() {
-    let content: string;
-    let ext: string;
-    let mime: string;
-
     if (format === 'json-backup') {
       exportProjectBackup();
       return;
     }
 
-    content = buildManuscriptContent();
-    ext = format;
-    mime = format === 'html' ? 'text/html' : format === 'md' ? 'text/markdown' : 'text/plain';
+    const content = buildManuscriptContent();
+    const ext = format;
+    const mime = format === 'html' ? 'text/html' : format === 'md' ? 'text/markdown' : 'text/plain';
 
     const blob = new Blob([content], { type: `${mime};charset=utf-8` });
     const url = URL.createObjectURL(blob);

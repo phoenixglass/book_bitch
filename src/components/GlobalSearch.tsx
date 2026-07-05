@@ -59,7 +59,17 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
-  useEffect(() => { setSelectedIdx(0); }, [query, filterType]);
+
+  // Reset the highlighted result whenever the query or filter changes.
+  // Done during render (React's documented pattern for this) rather than in
+  // an effect, so it takes effect on the same render instead of one tick later.
+  const [prevQuery, setPrevQuery] = useState(query);
+  const [prevFilterType, setPrevFilterType] = useState(filterType);
+  if (query !== prevQuery || filterType !== prevFilterType) {
+    setPrevQuery(query);
+    setPrevFilterType(filterType);
+    setSelectedIdx(0);
+  }
 
   const results = useMemo((): SearchResult[] => {
     if (!query.trim()) return [];
