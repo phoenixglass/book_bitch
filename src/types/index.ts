@@ -93,6 +93,7 @@ export type AppArea =
   | 'moodboard'
   | 'research'
   | 'history'
+  | 'revision'
   | 'search'
   | 'trash';
 
@@ -357,6 +358,38 @@ export interface MoodboardItem {
   updatedAt: number;
 }
 
+
+// ─── Revision Passes ────────────────────────────────────────────────────────
+
+export type RevisionPassSceneStatus = 'not_started' | 'in_progress' | 'done' | 'skipped';
+
+export interface RevisionPassChecklistItem {
+  id: string;
+  text: string;
+}
+
+export interface RevisionPassSceneState {
+  sceneId: string;
+  status: RevisionPassSceneStatus;
+  notes: string;
+  checklist: Record<string, boolean>;
+  updatedAt: number;
+}
+
+export interface RevisionPass {
+  id: string;
+  title: string;
+  description: string;
+  focus: string;
+  color: string;
+  targetSceneIds: string[];
+  checklist: RevisionPassChecklistItem[];
+  sceneStates: Record<string, RevisionPassSceneState>;
+  createdAt: number;
+  updatedAt: number;
+  archivedAt?: number;
+}
+
 // ─── Generic Relationship / Link ─────────────────────────────────────────────
 
 export type ObjectType =
@@ -367,7 +400,8 @@ export type ObjectType =
   | 'codex_entry'
   | 'question'
   | 'moodboard_item'
-  | 'research_item';
+  | 'research_item'
+  | 'revision_pass';
 
 export type RelationshipType =
   | 'mentions'
@@ -672,7 +706,8 @@ export type AIObjectType =
   | 'codex_entry'
   | 'question'
   | 'moodboard_item'
-  | 'research_item';
+  | 'research_item'
+  | 'revision_pass';
 
 export interface SelectedAIContext {
   objectType: AIObjectType;
@@ -723,6 +758,7 @@ export interface AppState {
   questions: Question[];
   moodboardItems: MoodboardItem[];
   researchEntries: ResearchEntry[];
+  revisionPasses: RevisionPass[];
   projectTags: Tag[];
   links: Link[];
   history: HistoryEvent[];
@@ -867,6 +903,19 @@ export interface AppState {
   addMoodboardItem: (partial?: Partial<MoodboardItem>) => string;
   updateMoodboardItem: (id: string, patch: Partial<MoodboardItem>) => void;
   deleteMoodboardItem: (id: string) => void;
+
+  // ─── Revision Passes ───────────────────────────────────────────────────────
+  addRevisionPass: (partial?: Partial<RevisionPass>) => string;
+  updateRevisionPass: (id: string, patch: Partial<RevisionPass>) => void;
+  deleteRevisionPass: (id: string) => void;
+  archiveRevisionPass: (id: string) => void;
+  unarchiveRevisionPass: (id: string) => void;
+  setRevisionPassTargets: (id: string, sceneIds: string[]) => void;
+  addRevisionPassChecklistItem: (passId: string, text: string) => void;
+  updateRevisionPassChecklistItem: (passId: string, itemId: string, text: string) => void;
+  deleteRevisionPassChecklistItem: (passId: string, itemId: string) => void;
+  updateRevisionSceneState: (passId: string, sceneId: string, patch: Partial<RevisionPassSceneState>) => void;
+  toggleRevisionSceneChecklistItem: (passId: string, sceneId: string, itemId: string) => void;
 
   // ─── Links ─────────────────────────────────────────────────────────────────
   addLink: (link: Omit<Link, 'id' | 'createdAt'>) => void;

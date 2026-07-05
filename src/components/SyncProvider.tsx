@@ -358,6 +358,7 @@ function getSerializableState(state: ReturnType<typeof useAppStore.getState>) {
     questions: state.questions,
     moodboardItems: state.moodboardItems,
     researchEntries: state.researchEntries,
+    revisionPasses: state.revisionPasses ?? [],
     projectTags: state.projectTags,
     links: state.links,
     history: state.history,
