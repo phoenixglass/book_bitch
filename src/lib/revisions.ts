@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { withRetry } from './dbRetry';
 
 const MAX_REVISIONS_PER_PROJECT = 50;
 
@@ -16,13 +17,13 @@ export async function snapshotProjectRevision(
   wordCount: number,
   data: Record<string, unknown>,
 ) {
-  const { error } = await supabase.from('project_revisions').insert({
+  const { error } = await withRetry(() => supabase.from('project_revisions').insert({
     project_id: projectId,
     user_id: userId,
     name,
     word_count: wordCount,
     data,
-  });
+  }));
   if (error) {
     console.error('Failed to snapshot project revision:', error.message);
     throw new Error(error.message);
@@ -31,24 +32,24 @@ export async function snapshotProjectRevision(
 }
 
 async function pruneOldRevisions(projectId: string) {
-  const { data, error } = await supabase
+  const { data, error } = await withRetry(() => supabase
     .from('project_revisions')
     .select('id')
     .eq('project_id', projectId)
     .order('created_at', { ascending: false })
-    .range(MAX_REVISIONS_PER_PROJECT, MAX_REVISIONS_PER_PROJECT + 200);
+    .range(MAX_REVISIONS_PER_PROJECT, MAX_REVISIONS_PER_PROJECT + 200));
   if (error || !data || data.length === 0) return;
   const staleIds = data.map((row) => row.id as string);
-  await supabase.from('project_revisions').delete().in('id', staleIds);
+  await withRetry(() => supabase.from('project_revisions').delete().in('id', staleIds));
 }
 
 export async function listProjectRevisions(projectId: string): Promise<RevisionMeta[]> {
-  const { data, error } = await supabase
+  const { data, error } = await withRetry(() => supabase
     .from('project_revisions')
     .select('id, name, word_count, created_at')
     .eq('project_id', projectId)
     .order('created_at', { ascending: false })
-    .limit(MAX_REVISIONS_PER_PROJECT);
+    .limit(MAX_REVISIONS_PER_PROJECT));
   if (error) {
     console.error('Failed to list project revisions:', error.message);
     throw new Error(error.message);
@@ -62,11 +63,11 @@ export async function listProjectRevisions(projectId: string): Promise<RevisionM
 }
 
 export async function getProjectRevisionData(revisionId: string): Promise<Record<string, unknown>> {
-  const { data, error } = await supabase
+  const { data, error } = await withRetry(() => supabase
     .from('project_revisions')
     .select('data')
     .eq('id', revisionId)
-    .single();
+    .single());
   if (error) {
     console.error('Failed to load project revision:', error.message);
     throw new Error(error.message);
