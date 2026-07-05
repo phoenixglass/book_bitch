@@ -3,6 +3,7 @@ import { useAppStore, findItem } from '../store/appStore';
 import { TagInput } from './TagInput';
 import { SnapshotDiffModal, type DiffSide } from './SnapshotDiffModal';
 import { ConnectionsPanel } from './ConnectionsPanel';
+import { TruthMirrorPanel } from './TruthMirrorPanel';
 import type { BinderItem, Status, SceneMetadata } from '../types';
 
 const STATUSES: Status[] = [
@@ -325,6 +326,7 @@ export function Inspector() {
               <>
                 <SceneTab item={item} updateMeta={updateMeta} />
                 <ConnectionsPanel objectType="scene" objectId={item.id} compact />
+                <TruthMirrorPanel targetType="scene" targetId={item.id} />
               </>
             )}
             {tab === 'scene' && item.type !== 'document' && (

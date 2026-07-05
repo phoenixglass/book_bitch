@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import { countWords } from '../utils/textStats';
+import { TruthMirrorPanel } from './TruthMirrorPanel';
 import type { AssemblyScene, BinderItem, ManuscriptAssembly } from '../types';
 
 function flattenDocuments(items: BinderItem[], path: string[] = []): Array<{ item: BinderItem; path: string }> {
@@ -193,6 +194,8 @@ export function ManuscriptAssemblyView() {
               {exportWarning && <div className="text-sm text-amber-300">{exportWarning}</div>}
               <div className="flex gap-2">{selectedAssembly.archivedAt ? <button onClick={() => unarchiveManuscriptAssembly(selectedAssembly.id)} className="px-3 py-1.5 rounded bg-emerald-700 text-white text-sm">Unarchive</button> : <button onClick={() => archiveManuscriptAssembly(selectedAssembly.id)} className="px-3 py-1.5 rounded bg-[#2d3748] text-gray-200 text-sm">Archive</button>}<button onClick={() => { if (confirm('Delete this assembly?')) { deleteManuscriptAssembly(selectedAssembly.id); setSelectedId(null); } }} className="px-3 py-1.5 rounded bg-red-900/70 text-red-100 text-sm">Delete</button></div>
             </section>
+
+            <TruthMirrorPanel targetType="manuscript_assembly" targetId={selectedAssembly.id} />
 
             <section className="bg-[#16213e] border border-[#0f3460] rounded-2xl p-5">
               <div className="flex flex-wrap gap-2 items-center mb-3"><h2 className="font-bold mr-auto">Build controls</h2><button onClick={() => setAssemblyScenes(selectedAssembly.id, sceneRecords.map(({ item }, index) => ({ sceneId: item.id, included: true, order: index })))} className="px-3 py-1.5 rounded bg-[#6b46c1] text-white text-sm">Add all manuscript scenes</button><button onClick={() => setAssemblyScenes(selectedAssembly.id, [])} className="px-3 py-1.5 rounded bg-[#2d3748] text-gray-200 text-sm">Clear scenes</button></div>

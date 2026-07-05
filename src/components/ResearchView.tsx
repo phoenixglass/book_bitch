@@ -6,6 +6,7 @@ import { ImportPreviewModal } from './ImportPreviewModal';
 import { GoogleDriveUpload } from './GoogleDriveUpload';
 import { ConnectionsPanel } from './ConnectionsPanel';
 import { RelationshipPicker } from './RelationshipPicker';
+import { TruthMirrorPanel } from './TruthMirrorPanel';
 import { parseFile } from '../utils/documentParser';
 import type { ParsedItem, SplitLevel } from '../utils/documentParser';
 import type { ResearchEntry, ResearchType, ImportSourceMeta } from '../types';
@@ -129,6 +130,7 @@ function ResearchDetail({ entry, onClose }: { entry: ResearchEntry; onClose: () 
             <RelationshipPicker label="Related Fragments" selectedIds={entry.relatedFragmentIds} onChange={(v) => updateResearchEntry(entry.id, { relatedFragmentIds: v })} targetTypes={["fragment"]} />
           </div>
           <ConnectionsPanel objectType="research_item" objectId={entry.id} />
+          <TruthMirrorPanel targetType="research_item" targetId={entry.id} />
         </div>
 
         <div className="border-t border-[#0f3460] pt-3">

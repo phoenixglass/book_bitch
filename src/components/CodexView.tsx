@@ -3,6 +3,7 @@ import { useAppStore } from '../store/appStore';
 import { TagInput } from './TagInput';
 import { ConnectionsPanel } from './ConnectionsPanel';
 import { RelationshipPicker } from './RelationshipPicker';
+import { TruthMirrorPanel } from './TruthMirrorPanel';
 import type { BinderItem, CodexEntry, CodexType } from '../types';
 
 interface ExtractedEntry {
@@ -229,6 +230,8 @@ function CodexDetail({ entry, onClose }: { entry: CodexEntry; onClose: () => voi
         </div>
 
         <ConnectionsPanel objectType="codex_entry" objectId={entry.id} />
+
+        <TruthMirrorPanel targetType="codex_entry" targetId={entry.id} />
 
         {/* Custom Fields */}
         <div className="border border-[#0f3460] rounded p-3">
