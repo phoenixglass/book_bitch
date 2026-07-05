@@ -864,6 +864,11 @@ export interface AppState {
   storyBrief: StoryBrief | null;
   continuityReport: ContinuityReport | null;
 
+  // Truth Mirror results, keyed by `${targetType}:${targetId}`, so navigating
+  // away (e.g. clicking a related-object link) and back doesn't lose the
+  // analysis that was already run.
+  truthMirrorResults: Record<string, TruthMirrorResult>;
+
   // Editor appearance settings
   editorSettings: EditorSettings;
 
@@ -1027,6 +1032,7 @@ export interface AppState {
   setAIContextObject: (obj: { type: AIObjectType; id: string } | null) => void;
   setStoryBrief: (brief: StoryBrief | null) => void;
   setContinuityReport: (report: ContinuityReport | null) => void;
+  setTruthMirrorResult: (key: string, result: TruthMirrorResult | null) => void;
 
   // ─── Editor Appearance ─────────────────────────────────────────────────────
   updateEditorSettings: (patch: Partial<EditorSettings>) => void;
