@@ -111,12 +111,12 @@ function ResearchDetail({ entry, onClose }: { entry: ResearchEntry; onClose: () 
         </div>
 
         <div>
-          <label className="text-xs text-gray-500 block mb-1">Notes</label>
+          <label className="text-xs text-gray-500 block mb-1">Your Thoughts</label>
           <textarea
             value={entry.notes}
             onChange={(e) => updateResearchEntry(entry.id, { notes: e.target.value })}
             rows={4}
-            placeholder="Additional notes about this research…"
+            placeholder="What does this mean for your story? Your own reactions, connections, and analysis — the AI will read this alongside the source material when it summarizes this entry or generates questions about it."
             className="w-full bg-[#16213e] border border-[#2d3748] rounded px-3 py-2 text-gray-200 text-sm outline-none focus:border-[#6b46c1] resize-y leading-relaxed placeholder-gray-600"
           />
         </div>

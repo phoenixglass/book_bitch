@@ -66,6 +66,7 @@ aiRouter.post('/questions', async (req: Request, res: Response) => {
     mode = 'questions_only',
     allowDrafting = false,
     storyContext,
+    notes,
   } = req.body as {
     title?: string;
     content?: string;
@@ -76,6 +77,7 @@ aiRouter.post('/questions', async (req: Request, res: Response) => {
     mode?: string;
     allowDrafting?: boolean;
     storyContext?: string;
+    notes?: string;
   };
 
   if (!content && !synopsis) {
@@ -103,11 +105,20 @@ aiRouter.post('/questions', async (req: Request, res: Response) => {
   } as Record<string, string>)[objectType] ?? objectType;
 
   const isResearch = objectType === 'research_item';
+  const hasNotes = !!notes?.trim();
+  const { text: truncatedNotes } = truncate(notes ?? '', 4000);
   const taskDesc = extractFromNote
     ? `Your task: extract 4–8 open questions that are explicitly or implicitly present in the provided ${objectLabel}. These are questions the author raises, implies, or leaves unresolved.`
     : isResearch && storyContext
       ? `Your task: generate 5–8 questions that explore how this ${objectLabel} connects to the novelist's specific work-in-progress (described in the Story Brief below in the user message). Focus on how the facts, themes, or details in this research bear on the characters, plot, timeline, setting, or themes of THAT story — not research questions in general. Always reference specific character names, plot threads, or events from the Brief. If the research is about a real person who also appears by name in the Brief, treat them directly as a character in the story — do not use hypothetical framing like "if you have a character who…".`
       : `Your task: generate 5–8 insightful craft questions about the ${objectLabel} provided.`;
+
+  // The novelist's own thoughts about the research (see the "Your Thoughts" field
+  // in the Research view) are handed to the model alongside the task description
+  // so questions build on the author's thinking instead of ignoring it.
+  const notesInstruction = hasNotes
+    ? `The novelist has also written their own thoughts about this ${objectLabel} (included in the user message below). Read them and use them as a starting point: build on what they've already noticed, push into what they haven't yet considered, or ask questions that test or extend their thinking. Do not simply restate their thoughts back as questions.`
+    : '';
 
   // For research items, pull the CHARACTERS and ACTIVE THREADS sections out of
   // the Brief and hand them to the model as a short, concrete cast/thread list.
@@ -121,6 +132,7 @@ aiRouter.post('/questions', async (req: Request, res: Response) => {
     `You are a writing coach helping a novelist think more deeply about their work.`,
     preamble,
     taskDesc,
+    notesInstruction,
     storyContext
       ? isResearch
         ? 'CRITICAL: A Story Brief is included at the top of the user message. Your questions MUST connect this research to that specific novel — always name characters, plot threads, and settings from the Brief by name. Never use hedged or hypothetical framing like "if you have a character who…" — the Brief tells you exactly who the characters are. Every question should help the author see how this research material is relevant to THEIR story.'
@@ -160,6 +172,7 @@ aiRouter.post('/questions', async (req: Request, res: Response) => {
     storyContextBlock(storyContext),
     `${objectLabel.charAt(0).toUpperCase() + objectLabel.slice(1)} title: ${title ?? 'Untitled'}`,
     synopsis ? `Synopsis: ${synopsis}` : '',
+    hasNotes ? `\nNovelist's own thoughts on this ${objectLabel}:\n${truncatedNotes}\n` : '',
     '',
     `${objectLabel.charAt(0).toUpperCase() + objectLabel.slice(1)} text:`,
     truncatedText,
@@ -191,13 +204,14 @@ aiRouter.post('/summarize', async (req: Request, res: Response) => {
     return;
   }
 
-  const { title, content, objectType = 'scene', mode = 'analysis_only', allowDrafting = false, storyContext } = req.body as {
+  const { title, content, objectType = 'scene', mode = 'analysis_only', allowDrafting = false, storyContext, notes } = req.body as {
     title?: string;
     content?: string;
     objectType?: string;
     mode?: string;
     allowDrafting?: boolean;
     storyContext?: string;
+    notes?: string;
   };
 
   if (!content) {
@@ -208,12 +222,15 @@ aiRouter.post('/summarize', async (req: Request, res: Response) => {
   const plainText = stripHTML(content);
   const { text: truncatedText, truncated } = truncate(plainText, 48000);
   const preamble = modePreamble(mode, allowDrafting);
+  const hasNotes = !!notes?.trim();
+  const { text: truncatedNotes } = truncate(notes ?? '', 4000);
 
   const systemPrompt = [
     `You are a writing assistant helping a novelist organize their manuscript (${objectType}).`,
     preamble,
     'Your task: produce a concise, analytical summary of the provided text.',
     storyContext ? 'CRITICAL: A Story Brief is included at the top of the user message. Read it first. Use the character names, locations, and plot context from the Brief when describing what happens in this text — never refer to characters as "an unidentified woman", "a man", or vague descriptors when the Brief tells you who they are.' : '',
+    hasNotes ? `The novelist has also written their own thoughts about this ${objectType} (included in the user message below). Read them and let them shape the summary — reflect what the novelist finds significant, and use their thoughts (not just the raw text) to inform the bullet points and any open questions you surface.` : '',
     'Rules:',
     '- Summarize only. Do not draft new prose or suggest rewrites.',
     '- Be specific to the provided text.',
@@ -237,6 +254,7 @@ aiRouter.post('/summarize', async (req: Request, res: Response) => {
     storyContextBlock(storyContext),
     `Title: ${title ?? 'Untitled'}`,
     `Type: ${objectType}`,
+    hasNotes ? `\nNovelist's own thoughts on this ${objectType}:\n${truncatedNotes}\n` : '',
     '',
     'Content:',
     truncatedText,

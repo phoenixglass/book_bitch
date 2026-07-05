@@ -484,9 +484,14 @@ function SummarizeResult({
       case 'moodboard_item':
         updateMoodboardItem(ctx.objectId, { notes: summary });
         break;
-      case 'research_item':
-        updateResearchEntry(ctx.objectId, { notes: summary });
+      case 'research_item': {
+        // "Your Thoughts" is the author's own input to the AI — append the
+        // AI summary below it rather than overwriting what they wrote.
+        const existingThoughts = ctx.notes?.trim();
+        const merged = existingThoughts ? `${existingThoughts}\n\n— AI Summary —\n${summary}` : summary;
+        updateResearchEntry(ctx.objectId, { notes: merged });
         break;
+      }
     }
     setSummarySaved(true);
   }
@@ -1699,6 +1704,13 @@ export function AIPanel() {
       if (action === 'questions' || action === 'extract-questions') {
         if (category !== 'any') body.category = category;
         body.extractFromNote = action === 'extract-questions';
+      }
+
+      // Research entries carry a "Your Thoughts" field the author writes themselves —
+      // fold it in so summaries and questions build on the author's own thinking
+      // rather than just the raw source material.
+      if (ctx.objectType === 'research_item' && (action === 'questions' || action === 'summarize')) {
+        body.notes = ctx.notes ?? '';
       }
 
       if (action === 'tags') {
