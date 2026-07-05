@@ -8,6 +8,7 @@ import { RichEditor } from './components/RichEditor';
 import { Corkboard } from './components/Corkboard';
 import { Outline } from './components/Outline';
 import { Inspector } from './components/Inspector';
+import { StyleCheckPanel } from './components/StyleCheckPanel';
 import { CompileDialog } from './components/CompileDialog';
 import { SceneCards } from './components/SceneCards';
 import { TimelineView } from './components/TimelineView';
@@ -40,6 +41,7 @@ function App() {
     searchOpen,
     setSearchOpen,
     aiPanelOpen,
+    styleCheckOpen,
   } = useAppStore();
 
   const [compileOpen, setCompileOpen] = useState(false);
@@ -188,6 +190,9 @@ function App() {
 
               {/* Inspector — desktop only */}
               {!compositionMode && !isMobile && inspectorOpen && <Inspector />}
+
+              {/* Style Check panel — desktop only, editor view */}
+              {!compositionMode && !isMobile && styleCheckOpen && viewMode === 'editor' && <StyleCheckPanel />}
             </>
           )}
 

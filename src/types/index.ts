@@ -423,6 +423,16 @@ export interface HistoryEvent {
   description: string;
 }
 
+// ─── Find & Replace ──────────────────────────────────────────────────────────
+
+export type FindReplaceField = 'content' | 'title' | 'synopsis' | 'notes';
+
+export interface FindReplaceOptions {
+  caseSensitive?: boolean;
+  wholeWord?: boolean;
+  fields?: Partial<Record<FindReplaceField, boolean>>;
+}
+
 // ─── Saved Filters ───────────────────────────────────────────────────────────
 
 export interface FilterCondition {
@@ -686,6 +696,11 @@ export interface AppState {
   history: HistoryEvent[];
   savedFilters: SavedFilter[];
 
+  // Daily word-count tracking, keyed by local date ("YYYY-MM-DD"). Value is the
+  // net words written (can be negative on heavy-cut days) — powers the writing
+  // streak / calendar heatmap on the Dashboard.
+  dailyWordCounts: Record<string, number>;
+
   // Navigation
   area: AppArea;
   splitScreenOpen: boolean;
@@ -694,6 +709,7 @@ export interface AppState {
   searchOpen: boolean;
   searchQuery: string;
   pendingSelectId: string | null;
+  styleCheckOpen: boolean;
 
   // AI
   aiSettings: AISettings;
@@ -738,6 +754,10 @@ export interface AppState {
   setSearchOpen: (open: boolean, query?: string) => void;
   setSearchQuery: (query: string) => void;
   setPendingSelectId: (id: string | null) => void;
+  setStyleCheckOpen: (open: boolean) => void;
+
+  // ─── Find & Replace ────────────────────────────────────────────────────────
+  findAndReplaceInBinder: (searchTerm: string, replaceTerm: string, options?: FindReplaceOptions) => number;
 
   // ─── Tags ──────────────────────────────────────────────────────────────────
   addTag: (name: string, color?: string) => Tag;
