@@ -22,6 +22,12 @@ CREATE INDEX IF NOT EXISTS project_revisions_project_id_idx
 
 ALTER TABLE project_revisions ENABLE ROW LEVEL SECURITY;
 
+-- Postgres has no `CREATE POLICY IF NOT EXISTS`, so drop first to keep this
+-- file safely re-runnable against a database that already has it applied.
+DROP POLICY IF EXISTS "Users can view their own revisions" ON project_revisions;
+DROP POLICY IF EXISTS "Users can insert their own revisions" ON project_revisions;
+DROP POLICY IF EXISTS "Users can delete their own revisions" ON project_revisions;
+
 CREATE POLICY "Users can view their own revisions" ON project_revisions
   FOR SELECT USING (auth.uid() = user_id);
 
