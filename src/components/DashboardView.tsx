@@ -1,10 +1,7 @@
 import { useMemo } from 'react';
 import { useAppStore, totalWordCount } from '../store/appStore';
+import { countWords } from '../utils/textStats';
 import type { BinderItem } from '../types';
-
-function countWords(html: string) {
-  return html.replace(/<[^>]+>/g, ' ').trim().split(/\s+/).filter(Boolean).length;
-}
 
 function collectScenes(items: BinderItem[]): BinderItem[] {
   const scenes: BinderItem[] = [];
@@ -36,6 +33,153 @@ function StatCard({ label, value, sub, onClick, warn }: {
   );
 }
 
+function dateKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+const HEATMAP_WEEKS = 20;
+const LEVEL_COLORS = ['#0d1117', '#3b2465', '#553c9a', '#6b46c1', '#9f7aea'];
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function heatLevel(words: number, max: number): number {
+  if (words <= 0) return 0;
+  const pct = max > 0 ? words / max : 0;
+  if (pct > 0.75) return 4;
+  if (pct > 0.5) return 3;
+  if (pct > 0.25) return 2;
+  return 1;
+}
+
+function computeStreaks(dailyWordCounts: Record<string, number>) {
+  const writtenDays = Object.keys(dailyWordCounts)
+    .filter((k) => (dailyWordCounts[k] ?? 0) > 0)
+    .sort();
+
+  let longest = 0;
+  let run = 0;
+  let prevDate: Date | null = null;
+  for (const k of writtenDays) {
+    const d = new Date(`${k}T00:00:00`);
+    if (prevDate) {
+      const diffDays = Math.round((d.getTime() - prevDate.getTime()) / 86400000);
+      run = diffDays === 1 ? run + 1 : 1;
+    } else {
+      run = 1;
+    }
+    longest = Math.max(longest, run);
+    prevDate = d;
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const cursor = new Date(today);
+  if ((dailyWordCounts[dateKey(cursor)] ?? 0) <= 0) {
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  let current = 0;
+  while ((dailyWordCounts[dateKey(cursor)] ?? 0) > 0) {
+    current++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+
+  return { current, longest, daysWritten: writtenDays.length };
+}
+
+function WritingHeatmap({ dailyWordCounts }: { dailyWordCounts: Record<string, number> }) {
+  const { weeks, monthLabels, max, last7, last30 } = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const totalCells = HEATMAP_WEEKS * 7;
+    const endDow = today.getDay();
+    const end = new Date(today);
+    end.setDate(end.getDate() + (6 - endDow));
+    const start = new Date(end);
+    start.setDate(start.getDate() - (totalCells - 1));
+
+    const days: { key: string; date: Date; words: number; isFuture: boolean }[] = [];
+    const cursor = new Date(start);
+    for (let i = 0; i < totalCells; i++) {
+      const isFuture = cursor > today;
+      const words = isFuture ? 0 : Math.max(0, dailyWordCounts[dateKey(cursor)] ?? 0);
+      days.push({ key: dateKey(cursor), date: new Date(cursor), words, isFuture });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    const max = Math.max(1, ...days.filter((d) => !d.isFuture).map((d) => d.words));
+    const weeks: typeof days[] = [];
+    for (let i = 0; i < days.length; i += 7) weeks.push(days.slice(i, i + 7));
+
+    let prevMonth = -1;
+    const monthLabels = weeks.map((week) => {
+      const month = week[0].date.getMonth();
+      const label = month !== prevMonth ? MONTH_LABELS[month] : '';
+      prevMonth = month;
+      return label;
+    });
+
+    const sum = (fromDaysAgo: number) => {
+      let total = 0;
+      const d = new Date(today);
+      for (let i = 0; i < fromDaysAgo; i++) {
+        total += dailyWordCounts[dateKey(d)] ?? 0;
+        d.setDate(d.getDate() - 1);
+      }
+      return total;
+    };
+
+    return { weeks, monthLabels, max, last7: sum(7), last30: sum(30) };
+  }, [dailyWordCounts]);
+
+  const streaks = useMemo(() => computeStreaks(dailyWordCounts), [dailyWordCounts]);
+
+  return (
+    <div className="bg-[#16213e] border border-[#0f3460] rounded-lg p-4">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <p className="text-xs text-gray-400 font-semibold">Writing Activity</p>
+        <div className="flex gap-4 text-xs text-gray-500">
+          <span>🔥 {streaks.current} day streak</span>
+          <span>Best: {streaks.longest} days</span>
+          <span>Last 7 days: {last7.toLocaleString()}w</span>
+          <span>Last 30 days: {last30.toLocaleString()}w</span>
+        </div>
+      </div>
+
+      <div className="flex gap-[3px] overflow-x-auto pb-1">
+        {weeks.map((week, wi) => {
+          return (
+            <div key={wi} className="flex flex-col gap-[3px]">
+              <div className="h-3 text-[9px] text-gray-600 leading-3 whitespace-nowrap">
+                {monthLabels[wi]}
+              </div>
+              {week.map((day) => (
+                <div
+                  key={day.key}
+                  title={day.isFuture ? '' : `${day.date.toLocaleDateString()}: ${day.words} words`}
+                  className="w-3 h-3 rounded-sm"
+                  style={{
+                    background: day.isFuture ? 'transparent' : LEVEL_COLORS[heatLevel(day.words, max)],
+                  }}
+                />
+              ))}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center justify-end gap-1 mt-2 text-[10px] text-gray-600">
+        <span>Less</span>
+        {LEVEL_COLORS.map((c) => (
+          <div key={c} className="w-3 h-3 rounded-sm" style={{ background: c }} />
+        ))}
+        <span>More</span>
+      </div>
+    </div>
+  );
+}
+
 function BarChart({ data, label }: { data: Record<string, number>; label: string }) {
   const max = Math.max(...Object.values(data), 1);
   return (
@@ -63,6 +207,7 @@ export function DashboardView() {
   const {
     binder, fragments, omittedMaterial, notebookEntries,
     codexEntries, questions, projectTarget, setArea, setViewMode,
+    dailyWordCounts,
   } = useAppStore();
 
   const stats = useMemo(() => {
@@ -148,6 +293,9 @@ export function DashboardView() {
             </div>
           </div>
         )}
+
+        {/* Writing activity heatmap */}
+        <WritingHeatmap dailyWordCounts={dailyWordCounts} />
 
         {/* Key stats grid */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">

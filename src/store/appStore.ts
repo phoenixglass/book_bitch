@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { idbStorage } from '../utils/idbStorage';
+import { countWords as countWordsInHtml } from '../utils/textStats';
+import { replaceInBinder } from '../utils/findReplace';
 import type {
   AppState,
   AppArea,
@@ -34,6 +36,7 @@ import type {
   BetaReaderSettings,
   EditorSettings,
   StoryBrief,
+  FindReplaceOptions,
   ContinuityReport,
 } from '../types';
 
@@ -43,6 +46,14 @@ function makeId() {
 
 function now() {
   return Date.now();
+}
+
+function todayKey(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function makeDocument(overrides: Partial<BinderItem> = {}): BinderItem {
@@ -175,16 +186,11 @@ function patchItemInTree(
   });
 }
 
-function countWords(html: string): number {
-  const text = html.replace(/<[^>]+>/g, ' ').replace(/&[a-z]+;/gi, ' ');
-  return text.trim().split(/\s+/).filter(Boolean).length;
-}
-
 export function totalWordCount(items: BinderItem[]): number {
   let total = 0;
   for (const item of items) {
     if (item.type === 'document') {
-      total += countWords(item.content);
+      total += countWordsInHtml(item.content);
     }
     total += totalWordCount(item.children);
   }
@@ -221,6 +227,7 @@ export const useAppStore = create<AppState>()(
       links: [] as Link[],
       history: [] as HistoryEvent[],
       savedFilters: [] as SavedFilter[],
+      dailyWordCounts: {} as Record<string, number>,
 
       // ── UI state ─────────────────────────────────────────────────────────
       area: 'manuscript' as AppArea,
@@ -230,6 +237,7 @@ export const useAppStore = create<AppState>()(
       searchOpen: false,
       searchQuery: '',
       pendingSelectId: null as string | null,
+      styleCheckOpen: false,
 
       // ── AI settings ──────────────────────────────────────────────────────
       aiSettings: {
@@ -338,7 +346,20 @@ export const useAppStore = create<AppState>()(
       },
 
       updateItem: (id, patch) => {
-        set((s) => ({ binder: patchItemInTree(s.binder, id, patch) }));
+        set((s) => {
+          let dailyWordCounts = s.dailyWordCounts;
+          if (patch.content !== undefined) {
+            const current = findItem(s.binder, id);
+            if (current) {
+              const delta = countWordsInHtml(patch.content) - countWordsInHtml(current.content);
+              if (delta !== 0) {
+                const key = todayKey();
+                dailyWordCounts = { ...dailyWordCounts, [key]: (dailyWordCounts[key] ?? 0) + delta };
+              }
+            }
+          }
+          return { binder: patchItemInTree(s.binder, id, patch), dailyWordCounts };
+        });
       },
 
       moveItem: (id, targetParentId, index) => {
@@ -464,6 +485,16 @@ export const useAppStore = create<AppState>()(
       setSearchQuery: (query) => set({ searchQuery: query }),
 
       setPendingSelectId: (id) => set({ pendingSelectId: id }),
+
+      setStyleCheckOpen: (open) => set({ styleCheckOpen: open }),
+
+      // ── Find & Replace ──────────────────────────────────────────────────
+
+      findAndReplaceInBinder: (searchTerm: string, replaceTerm: string, options?: FindReplaceOptions) => {
+        const { items, totalReplacements } = replaceInBinder(get().binder, searchTerm, replaceTerm, options);
+        if (totalReplacements > 0) set({ binder: items });
+        return totalReplacements;
+      },
 
       // ── Tags ─────────────────────────────────────────────────────────────
 
@@ -1555,6 +1586,7 @@ export const useAppStore = create<AppState>()(
           links: state.links,
           history: state.history,
           savedFilters: state.savedFilters,
+          dailyWordCounts: state.dailyWordCounts,
           storyBrief: state.storyBrief,
           continuityReport: state.continuityReport,
         };
@@ -1592,6 +1624,7 @@ export const useAppStore = create<AppState>()(
           links: (data.links as Link[]) ?? [],
           history: (data.history as HistoryEvent[]) ?? [],
           savedFilters: (data.savedFilters as SavedFilter[]) ?? [],
+          dailyWordCounts: (data.dailyWordCounts as Record<string, number>) ?? {},
           editorSettings: (data.editorSettings as EditorSettings) ?? undefined,
           manuscriptSettings: (data.manuscriptSettings as ManuscriptSettings) ?? undefined,
           betaReaderSettings: (data.betaReaderSettings as BetaReaderSettings) ?? undefined,
@@ -1624,6 +1657,7 @@ export const useAppStore = create<AppState>()(
             links: data.links ?? [],
             history: data.history ?? [],
             savedFilters: data.savedFilters ?? [],
+            dailyWordCounts: data.dailyWordCounts ?? {},
             storyBrief: data.storyBrief ?? null,
             continuityReport: data.continuityReport ?? null,
             selectedId: null,

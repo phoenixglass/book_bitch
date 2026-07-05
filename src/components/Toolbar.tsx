@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { useAppStore, totalWordCount } from '../store/appStore';
 import { EditorSettingsDialog } from './EditorSettingsDialog';
+import { FindReplaceDialog } from './FindReplaceDialog';
 import { useSyncContext } from './SyncProvider';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -35,10 +36,12 @@ export function Toolbar({ onOpenBinder }: ToolbarProps) {
     aiPanelOpen, setAIPanelOpen,
     exportProjectBackup,
     importProjectBackup,
+    styleCheckOpen, setStyleCheckOpen,
   } = useAppStore();
 
   const { user, syncStatus, cloudError, signOut, forceReloadFromCloud } = useSyncContext();
   const [formatOpen, setFormatOpen] = useState(false);
+  const [replaceOpen, setReplaceOpen] = useState(false);
   const backupInputRef = useRef<HTMLInputElement>(null);
   const isMobile = useIsMobile();
 
@@ -63,6 +66,7 @@ export function Toolbar({ onOpenBinder }: ToolbarProps) {
   return (
     <>
     {formatOpen && <EditorSettingsDialog onClose={() => setFormatOpen(false)} />}
+    {replaceOpen && <FindReplaceDialog onClose={() => setReplaceOpen(false)} />}
     <div className="flex items-center gap-2 px-3 h-11 bg-[#16213e] border-b border-[#0f3460] shrink-0 select-none overflow-x-auto">
       {/* Mobile: binder toggle */}
       {isMobile && area === 'manuscript' && onOpenBinder && (
@@ -132,6 +136,30 @@ export function Toolbar({ onOpenBinder }: ToolbarProps) {
       >
         🔍
       </button>
+
+      {/* Find & Replace — desktop only */}
+      {!isMobile && (
+        <button
+          onClick={() => setReplaceOpen(true)}
+          title="Find & Replace across the whole binder"
+          className="px-2 py-1 rounded text-xs text-gray-400 hover:text-white hover:bg-[#2d3748] transition-colors"
+        >
+          🔁
+        </button>
+      )}
+
+      {/* Style check toggle — desktop only, manuscript editor */}
+      {!isMobile && area === 'manuscript' && viewMode === 'editor' && (
+        <button
+          onClick={() => setStyleCheckOpen(!styleCheckOpen)}
+          title={styleCheckOpen ? 'Close Style Check' : 'Style Check (filter words & repeats)'}
+          className={`px-2 py-1 rounded text-xs transition-colors ${
+            styleCheckOpen ? 'bg-[#6b46c1] text-white' : 'text-gray-400 hover:text-white hover:bg-[#2d3748]'
+          }`}
+        >
+          🩺
+        </button>
+      )}
 
       {/* Split screen — desktop only */}
       {!isMobile && area === 'manuscript' && viewMode === 'editor' && (
