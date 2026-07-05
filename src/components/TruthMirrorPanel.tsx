@@ -268,7 +268,7 @@ interface TruthMirrorPanelProps {
 
 export function TruthMirrorPanel({ targetType, targetId }: TruthMirrorPanelProps) {
   const store = useAppStore();
-  const { aiSettings, storyBrief, revisionPasses, addNotebookEntry, addQuestion, addRevisionPass, addRevisionPassChecklistItem, updateRevisionPass, updateRevisionSceneState } = store;
+  const { aiSettings, storyBrief, revisionPasses, truthMirrorResults, setTruthMirrorResult, addNotebookEntry, addQuestion, addRevisionPass, addRevisionPassChecklistItem, updateRevisionPass, updateRevisionSceneState } = store;
 
   const subject = useTruthMirrorSubject(targetType, targetId);
   const assemblyScenes = useAssemblySceneSummaries(targetType, targetId);
@@ -286,8 +286,7 @@ export function TruthMirrorPanel({ targetType, targetId }: TruthMirrorPanelProps
     return () => { cancelled = true; };
   }, []);
 
-  const [runState, setRunState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
-  const [result, setResult] = useState<TruthMirrorResult | null>(null);
+  const [runState, setRunState] = useState<'idle' | 'loading' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [notebookSaved, setNotebookSaved] = useState(false);
@@ -297,14 +296,18 @@ export function TruthMirrorPanel({ targetType, targetId }: TruthMirrorPanelProps
   const [selectedSceneId, setSelectedSceneId] = useState('');
   const [createdPassTitle, setCreatedPassTitle] = useState<string | null>(null);
 
-  // Reset all transient state when the target object changes (same render-time
-  // key-comparison pattern AIPanel uses, avoiding an extra effect).
+  // The analysis result itself lives in the store (keyed by target object), so
+  // navigating away — e.g. clicking a related-object link — and back doesn't
+  // lose the Truth Mirror output that was already produced for this object.
   const resetKey = `${targetType}:${targetId}`;
+  const result = truthMirrorResults[resetKey] ?? null;
+
+  // Reset transient (per-visit) UI state when the target object changes (same
+  // render-time key-comparison pattern AIPanel uses, avoiding an extra effect).
   const [prevResetKey, setPrevResetKey] = useState(resetKey);
   if (resetKey !== prevResetKey) {
     setPrevResetKey(resetKey);
     setRunState('idle');
-    setResult(null);
     setError(null);
     setCopied(false);
     setNotebookSaved(false);
@@ -323,7 +326,7 @@ export function TruthMirrorPanel({ targetType, targetId }: TruthMirrorPanelProps
   async function handleRun() {
     setRunState('loading');
     setError(null);
-    setResult(null);
+    setTruthMirrorResult(resetKey, null);
     try {
       const metadataOnly = isAssembly ? false : !hasSubstantialContent;
       const body: Record<string, unknown> = {
@@ -361,8 +364,8 @@ export function TruthMirrorPanel({ targetType, targetId }: TruthMirrorPanelProps
         throw new Error(message);
       }
       const data = (await res.json()) as TruthMirrorResult;
-      setResult(data);
-      setRunState('done');
+      setTruthMirrorResult(resetKey, data);
+      setRunState('idle');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setRunState('error');
@@ -504,7 +507,7 @@ export function TruthMirrorPanel({ targetType, targetId }: TruthMirrorPanelProps
         </div>
       )}
 
-      {runState === 'done' && result && (
+      {result && (
         <div className="flex flex-col gap-3 border-t border-[#0f3460] pt-3">
           <div className="flex items-center gap-2 flex-wrap">
             {result.metadataOnly && (

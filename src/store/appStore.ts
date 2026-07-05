@@ -38,6 +38,7 @@ import type {
   StoryBrief,
   FindReplaceOptions,
   ContinuityReport,
+  TruthMirrorResult,
   RevisionPass,
   RevisionPassSceneState,
   ManuscriptAssembly,
@@ -275,6 +276,7 @@ export const useAppStore = create<AppState>()(
       aiContextObject: null as { type: AIObjectType; id: string } | null,
       storyBrief: null as StoryBrief | null,
       continuityReport: null as ContinuityReport | null,
+      truthMirrorResults: {} as Record<string, TruthMirrorResult>,
 
       // ── Editor appearance settings ────────────────────────────────────────
       editorSettings: {
@@ -1735,6 +1737,15 @@ export const useAppStore = create<AppState>()(
 
       setContinuityReport: (report) => {
         set({ continuityReport: report });
+      },
+
+      setTruthMirrorResult: (key, result) => {
+        set((s) => {
+          const next = { ...s.truthMirrorResults };
+          if (result) next[key] = result;
+          else delete next[key];
+          return { truthMirrorResults: next };
+        });
       },
 
       // ── Editor Appearance ─────────────────────────────────────────────────
