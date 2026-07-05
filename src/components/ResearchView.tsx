@@ -205,11 +205,13 @@ export function ResearchView() {
     setAIContextObject(selectedId ? { type: 'research_item', id: selectedId } : null);
   }, [selectedId, setAIContextObject]);
 
+  // Adopt a pending selection (e.g. from global search) during render rather
+  // than in an effect, so the newly selected item shows on the same render.
+  if (pendingSelectId && pendingSelectId !== selectedId) {
+    setSelectedId(pendingSelectId);
+  }
   useEffect(() => {
-    if (pendingSelectId) {
-      setSelectedId(pendingSelectId);
-      setPendingSelectId(null);
-    }
+    if (pendingSelectId) setPendingSelectId(null);
   }, [pendingSelectId, setPendingSelectId]);
 
   const filtered = useMemo(() => {
@@ -229,15 +231,17 @@ export function ResearchView() {
 
   const selected = researchEntries.find((e) => e.id === selectedId && !e.trashedAt) ?? null;
 
-  // Clear selection for entries no longer visible
-  useEffect(() => {
-    if (checkedIds.size === 0) return;
-    const visibleIds = new Set(filtered.map((e) => e.id));
-    setCheckedIds((prev) => {
-      const next = new Set([...prev].filter((id) => visibleIds.has(id)));
-      return next.size === prev.size ? prev : next;
-    });
-  }, [filtered, checkedIds.size]);
+  // Clear selection for entries no longer visible. Done during render (`filtered`
+  // is a stable useMemo reference) rather than in an effect.
+  const [prevFiltered, setPrevFiltered] = useState(filtered);
+  if (filtered !== prevFiltered) {
+    setPrevFiltered(filtered);
+    if (checkedIds.size > 0) {
+      const visibleIds = new Set(filtered.map((e) => e.id));
+      const next = new Set([...checkedIds].filter((id) => visibleIds.has(id)));
+      if (next.size !== checkedIds.size) setCheckedIds(next);
+    }
+  }
 
   function toggleCheck(id: string, e: React.MouseEvent) {
     e.stopPropagation();

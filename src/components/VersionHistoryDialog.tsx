@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAppStore } from '../store/appStore';
-import { useSyncContext } from './SyncProvider';
+import { useSyncContext } from '../hooks/useSyncContext';
 import { listProjectRevisions, type RevisionMeta } from '../lib/revisions';
 
 function formatWhen(iso: string): string {

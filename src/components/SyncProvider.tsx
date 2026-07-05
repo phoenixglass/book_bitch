@@ -1,47 +1,18 @@
-import { useEffect, useRef, useState, createContext, useContext, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import {
   listProjects, createProject, saveProjectToCloud, loadProjectFromCloud, deleteProjectFromCloud,
-  type ProjectMeta,
 } from '../lib/sync';
 import { snapshotProjectRevision, getProjectRevisionData } from '../lib/revisions';
 import { useAppStore, totalWordCount } from '../store/appStore';
+import { SyncContext } from '../hooks/useSyncContext';
 import type { User } from '@supabase/supabase-js';
+import type { ProjectMeta } from '../lib/sync';
 
 // How often we take an automatic version snapshot while a project is being
 // actively edited. Snapshots are also pruned server-side to the most recent
 // 50 per project, so this only controls density, not unbounded growth.
 const SNAPSHOT_INTERVAL_MS = 15 * 60 * 1000;
-
-interface SyncContextValue {
-  user: User | null;
-  syncStatus: 'idle' | 'saving' | 'saved' | 'error';
-  cloudError: string | null;
-  projects: ProjectMeta[];
-  signOut: () => void;
-  forceReloadFromCloud: () => Promise<void>;
-  switchProject: (projectId: string) => Promise<void>;
-  createNewProject: (name: string) => Promise<void>;
-  removeProject: (projectId: string) => Promise<void>;
-  restoreRevision: (revisionId: string) => Promise<void>;
-}
-
-const SyncContext = createContext<SyncContextValue>({
-  user: null,
-  syncStatus: 'idle',
-  cloudError: null,
-  projects: [],
-  signOut: () => {},
-  forceReloadFromCloud: async () => {},
-  switchProject: async () => {},
-  createNewProject: async () => {},
-  removeProject: async () => {},
-  restoreRevision: async () => {},
-});
-
-export function useSyncContext() {
-  return useContext(SyncContext);
-}
 
 function waitForHydration(): Promise<void> {
   return new Promise((resolve) => {
@@ -331,7 +302,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   // Debounced auto-save on any store change
   useEffect(() => {
     if (!user) return;
-    const unsub = useAppStore.subscribe((_state) => {
+    const unsub = useAppStore.subscribe(() => {
       if (isSyncing.current || !cloudLoaded.current) return;
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(async () => {

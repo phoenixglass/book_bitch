@@ -1,4 +1,5 @@
 import { useDriveImport } from '../hooks/useDriveImport';
+import '../types/googleApi';
 
 interface Props {
   targetSection?: 'manuscript' | 'fragments' | 'omitted' | 'research';
@@ -17,18 +18,4 @@ export function GoogleDriveUpload({ targetSection = 'manuscript' }: Props) {
       {isLoading ? '⌛' : '☁️'}
     </button>
   );
-}
-
-// Extend window types for Google API
-declare global {
-  interface Window {
-    gapi: any;
-    google: any & {
-      accounts: {
-        oauth2: {
-          initCodeClient: (config: any) => any;
-        };
-      };
-    };
-  }
 }

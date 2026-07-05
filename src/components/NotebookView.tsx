@@ -123,11 +123,13 @@ export function NotebookView() {
     setAIContextObject(selectedId ? { type: 'notebook_entry', id: selectedId } : null);
   }, [selectedId, setAIContextObject]);
 
+  // Adopt a pending selection (e.g. from global search) during render rather
+  // than in an effect, so the newly selected item shows on the same render.
+  if (pendingSelectId && pendingSelectId !== selectedId) {
+    setSelectedId(pendingSelectId);
+  }
   useEffect(() => {
-    if (pendingSelectId) {
-      setSelectedId(pendingSelectId);
-      setPendingSelectId(null);
-    }
+    if (pendingSelectId) setPendingSelectId(null);
   }, [pendingSelectId, setPendingSelectId]);
   const [filterText, setFilterText] = useState('');
   const [showArchived, setShowArchived] = useState(false);
