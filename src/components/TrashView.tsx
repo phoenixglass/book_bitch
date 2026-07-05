@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAppStore } from '../store/appStore';
+import { BackupNagDialog } from './BackupNagDialog';
 import type { BinderItem } from '../types';
 
 type TrashTab = 'all' | 'manuscript' | 'fragments' | 'omitted' | 'research';
@@ -28,6 +29,7 @@ export function TrashView() {
   } = useAppStore();
 
   const [tab, setTab] = useState<TrashTab>('all');
+  const [confirmEmptyOpen, setConfirmEmptyOpen] = useState(false);
 
   // Binder trash children
   const trashFolder = binder.find((b) => b.id === 'trash');
@@ -56,8 +58,8 @@ export function TrashView() {
     }
   }
 
-  function handleEmptyAll() {
-    if (!confirm('Permanently delete ALL trashed items? This cannot be undone.')) return;
+  function confirmEmptyAll() {
+    setConfirmEmptyOpen(false);
     emptyTrash();
     for (const f of fragTrash) permanentlyDeleteFragment(f.id);
     for (const o of omittedTrash) permanentlyDeleteOmitted(o.id);
@@ -91,11 +93,20 @@ export function TrashView() {
         <div className="flex-1" />
         {totalCount > 0 && (
           <button
-            onClick={handleEmptyAll}
+            onClick={() => setConfirmEmptyOpen(true)}
             className="text-xs text-red-400 hover:text-red-300 border border-red-900/50 hover:border-red-700 px-3 py-1 rounded transition-colors"
           >
             Empty Trash
           </button>
+        )}
+        {confirmEmptyOpen && (
+          <BackupNagDialog
+            title="Empty Trash?"
+            message={`Permanently delete all ${totalCount} trashed item${totalCount !== 1 ? 's' : ''}? This cannot be undone.`}
+            confirmLabel="Empty Trash"
+            onCancel={() => setConfirmEmptyOpen(false)}
+            onConfirm={confirmEmptyAll}
+          />
         )}
       </div>
 
