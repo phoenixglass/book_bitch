@@ -8,6 +8,7 @@ export function ProjectSwitcher() {
   const [open, setOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -44,9 +45,15 @@ export function ProjectSwitcher() {
     }
   }
 
-  async function handleDelete(id: string, name: string) {
+  function handleDelete(id: string, name: string) {
     if (busy) return;
-    if (!window.confirm(`Delete project "${name}"? This removes it from the cloud permanently.`)) return;
+    setDeleteTarget({ id, name });
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    const { id } = deleteTarget;
+    setDeleteTarget(null);
     setBusy(true);
     try {
       await removeProject(id);
@@ -104,6 +111,20 @@ export function ProjectSwitcher() {
               + New
             </button>
           </div>
+          {deleteTarget && (
+            <BackupNagDialog
+              title={`Delete "${deleteTarget.name}"?`}
+              message={
+                deleteTarget.id === activeProjectId
+                  ? 'This removes it from the cloud permanently. A cloud version snapshot is taken automatically first, but a local copy is safest.'
+                  : `This removes "${deleteTarget.name}" from the cloud permanently. A cloud version snapshot is taken automatically first. (This isn't the project currently open, so a local download here would export the wrong project — check Version History after deleting if you need it back.)`
+              }
+              confirmLabel="Delete"
+              canDownload={deleteTarget.id === activeProjectId}
+              onCancel={() => setDeleteTarget(null)}
+              onConfirm={confirmDelete}
+            />
+          )}
         </div>
       )}
     </div>

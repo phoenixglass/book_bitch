@@ -403,6 +403,11 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
   // ── Re-sync ───────────────────────────────────────────────────────────────
 
   async function resyncDriveFolder(folderId: string, driveFileId: string) {
+    if (!window.confirm(
+      'Re-sync this folder from Google Drive? Content that differs from the Drive version will be overwritten. ' +
+      'A backup of your current project will download first.'
+    )) return;
+    useAppStore.getState().exportProjectBackup();
     try {
       setIsLoading(true);
       const docData = await fetchDocData(driveFileId);
@@ -866,6 +871,11 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
   // ── Re-sync single document ───────────────────────────────────────────────
 
   async function resyncDriveDoc(docId: string, driveFileId: string) {
+    if (!window.confirm(
+      'Re-sync this document from Google Drive? Its content will be overwritten with the latest version from Drive. ' +
+      'A backup of your current project will download first.'
+    )) return;
+    useAppStore.getState().exportProjectBackup();
     try {
       setIsLoading(true);
       const html = await exportDocAsHtml(driveFileId);
