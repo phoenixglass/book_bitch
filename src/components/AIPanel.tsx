@@ -108,6 +108,7 @@ const OBJECT_TYPE_LABELS: Record<AIObjectType, string> = {
   question: 'Project Question',
   moodboard_item: 'Moodboard Item',
   research_item: 'Research Entry',
+  revision_pass: 'Revision Pass',
 };
 
 // ── Action definitions per object type ───────────────────────────────────────
@@ -159,6 +160,7 @@ const ACTIONS_BY_TYPE: Record<AIObjectType, ActionDef[]> = {
     { value: 'tags', label: 'Suggest Tags', desc: 'Recommend tags for organisation' },
     { value: 'questions', label: 'Generate Research Questions', desc: 'Generate questions connecting this research to your specific story' },
   ],
+  revision_pass: [],
 };
 
 function availableActionsForType(objectType: AIObjectType, mode: string): ActionDef[] {
