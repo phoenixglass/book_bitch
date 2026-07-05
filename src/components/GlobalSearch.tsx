@@ -12,7 +12,7 @@ interface SearchResult {
 
 const TYPE_ICONS: Record<ObjectType, string> = {
   scene: '📄', fragment: '🧩', omitted_material: '🗂️', notebook_entry: '📓',
-  codex_entry: '📚', question: '❓', moodboard_item: '🖼️', research_item: '🔬', revision_pass: '🧵', manuscript_assembly: '📚',
+  codex_entry: '📚', question: '❓', moodboard_item: '🖼️', research_item: '🔬', revision_pass: '🧵', manuscript_assembly: '🧱',
 };
 
 const TYPE_LABELS: Record<ObjectType, string> = {
