@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useAppStore } from '../store/appStore';
 import { TagInput } from './TagInput';
+import { ConnectionsPanel } from './ConnectionsPanel';
+import { RelationshipPicker } from './RelationshipPicker';
 import type { BinderItem, CodexEntry, CodexType } from '../types';
 
 interface ExtractedEntry {
@@ -218,15 +220,15 @@ function CodexDetail({ entry, onClose }: { entry: CodexEntry; onClose: () => voi
               placeholder="Add tag…"
             />
           </div>
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">Related Scene IDs</label>
-            <TagInput
-              tags={entry.relatedSceneIds}
-              onChange={(v) => updateCodexEntry(entry.id, { relatedSceneIds: v })}
-              placeholder="Add scene ID…"
-            />
-          </div>
+          <RelationshipPicker
+            label="Related Scenes"
+            selectedIds={entry.relatedSceneIds}
+            onChange={(v) => updateCodexEntry(entry.id, { relatedSceneIds: v })}
+            targetTypes={["scene"]}
+          />
         </div>
+
+        <ConnectionsPanel objectType="codex_entry" objectId={entry.id} />
 
         {/* Custom Fields */}
         <div className="border border-[#0f3460] rounded p-3">

@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useAppStore } from '../store/appStore';
-import { TagInput } from './TagInput';
+import { ConnectionsPanel } from './ConnectionsPanel';
+import { RelationshipPicker } from './RelationshipPicker';
 import type { Question, QuestionCategory, QuestionStatus } from '../types';
 
 const CATEGORY_LABELS: Record<QuestionCategory, string> = {
@@ -178,23 +179,11 @@ function QuestionDetail({ question, onClose }: { question: Question; onClose: ()
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">Related Scenes</label>
-            <TagInput
-              tags={question.relatedSceneIds}
-              onChange={(v) => updateQuestion(question.id, { relatedSceneIds: v })}
-              placeholder="Add scene…"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">Related Codex Entries</label>
-            <TagInput
-              tags={question.relatedCodexIds}
-              onChange={(v) => updateQuestion(question.id, { relatedCodexIds: v })}
-              placeholder="Add entry…"
-            />
-          </div>
+          <RelationshipPicker label="Related Scenes" selectedIds={question.relatedSceneIds} onChange={(v) => updateQuestion(question.id, { relatedSceneIds: v })} targetTypes={["scene"]} />
+          <RelationshipPicker label="Related Codex Entries" selectedIds={question.relatedCodexIds} onChange={(v) => updateQuestion(question.id, { relatedCodexIds: v })} targetTypes={["codex_entry"]} />
         </div>
+
+        <ConnectionsPanel objectType="question" objectId={question.id} />
 
         <div className="flex gap-2">
           <button
