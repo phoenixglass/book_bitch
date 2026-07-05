@@ -4,8 +4,14 @@ import {
   listProjects, createProject, saveProjectToCloud, loadProjectFromCloud, deleteProjectFromCloud,
   type ProjectMeta,
 } from '../lib/sync';
-import { useAppStore } from '../store/appStore';
+import { snapshotProjectRevision, getProjectRevisionData } from '../lib/revisions';
+import { useAppStore, totalWordCount } from '../store/appStore';
 import type { User } from '@supabase/supabase-js';
+
+// How often we take an automatic version snapshot while a project is being
+// actively edited. Snapshots are also pruned server-side to the most recent
+// 50 per project, so this only controls density, not unbounded growth.
+const SNAPSHOT_INTERVAL_MS = 15 * 60 * 1000;
 
 interface SyncContextValue {
   user: User | null;
@@ -17,6 +23,7 @@ interface SyncContextValue {
   switchProject: (projectId: string) => Promise<void>;
   createNewProject: (name: string) => Promise<void>;
   removeProject: (projectId: string) => Promise<void>;
+  restoreRevision: (revisionId: string) => Promise<void>;
 }
 
 const SyncContext = createContext<SyncContextValue>({
@@ -29,6 +36,7 @@ const SyncContext = createContext<SyncContextValue>({
   switchProject: async () => {},
   createNewProject: async () => {},
   removeProject: async () => {},
+  restoreRevision: async () => {},
 });
 
 export function useSyncContext() {
@@ -57,6 +65,25 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isSyncing = useRef(false);
   const cloudLoaded = useRef(false);
+  const lastSnapshotAt = useRef<Record<string, number>>({});
+
+  const projectWordCount = () => {
+    const state = useAppStore.getState();
+    return totalWordCount(state.binder.filter((b) => b.id !== 'research' && b.id !== 'trash'));
+  };
+
+  // Best-effort periodic snapshot; never throws into the caller since it must
+  // not block or fail the regular autosave path.
+  const maybeSnapshot = useCallback(async (u: User, projectId: string, name: string, force = false) => {
+    const last = lastSnapshotAt.current[projectId] ?? 0;
+    if (!force && Date.now() - last < SNAPSHOT_INTERVAL_MS) return;
+    try {
+      await snapshotProjectRevision(u.id, projectId, name, projectWordCount(), getSerializableState(useAppStore.getState()));
+      lastSnapshotAt.current[projectId] = Date.now();
+    } catch (err) {
+      console.error('Version snapshot failed:', err);
+    }
+  }, []);
 
   useEffect(() => {
     projectsRef.current = projects;
@@ -187,6 +214,22 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     isSyncing.current = true;
     setSyncStatus('saving');
     try {
+      // Force a fresh snapshot right before deleting so the project can still
+      // be recovered afterward — revisions aren't cascade-deleted with it.
+      const deletedMeta = projectsRef.current.find((p) => p.id === projectId);
+      if (deletedMeta) {
+        try {
+          const isActive = useAppStore.getState().activeProjectId === projectId;
+          const dataToSnapshot = isActive
+            ? getSerializableState(useAppStore.getState())
+            : (await loadProjectFromCloud(projectId)).data ?? {};
+          const wordCount = isActive ? projectWordCount() : 0;
+          await snapshotProjectRevision(user.id, projectId, deletedMeta.name, wordCount, dataToSnapshot);
+          lastSnapshotAt.current[projectId] = Date.now();
+        } catch (err) {
+          console.error('Pre-delete snapshot failed:', err);
+        }
+      }
       await deleteProjectFromCloud(projectId);
       const remaining = projectsRef.current.filter((p) => p.id !== projectId);
       setProjects(remaining);
@@ -209,6 +252,46 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
           setProjects([created]);
         }
       }
+      setCloudError(null);
+      setSyncStatus('saved');
+      setTimeout(() => setSyncStatus('idle'), 2000);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setCloudError(msg);
+      setSyncStatus('error');
+    } finally {
+      isSyncing.current = false;
+    }
+  }, [user]);
+
+  const restoreRevision = useCallback(async (revisionId: string) => {
+    const projectId = useAppStore.getState().activeProjectId;
+    if (!user || !projectId || isSyncing.current) return;
+    isSyncing.current = true;
+    setSyncStatus('saving');
+    try {
+      if (saveTimer.current) {
+        clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
+      const current = useAppStore.getState();
+      // Snapshot the current state first so restoring isn't itself a lossy
+      // operation — the writer can always undo a bad restore too.
+      try {
+        await snapshotProjectRevision(user.id, projectId, current.projectTitle, projectWordCount(), getSerializableState(current));
+      } catch (err) {
+        console.error('Pre-restore snapshot failed:', err);
+      }
+      const data = await getProjectRevisionData(revisionId);
+      useAppStore.getState().importProjectFromCloud(data);
+      const restored = useAppStore.getState();
+      await saveProjectToCloud(projectId, getSerializableState(restored), restored.projectTitle);
+      const ts = new Date().toISOString();
+      useAppStore.setState({ localLastModified: ts });
+      lastSnapshotAt.current[projectId] = Date.now();
+      setProjects((prev) => prev.map((p) => (
+        p.id === projectId ? { ...p, name: restored.projectTitle, updatedAt: ts } : p
+      )));
       setCloudError(null);
       setSyncStatus('saved');
       setTimeout(() => setSyncStatus('idle'), 2000);
@@ -267,6 +350,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
           setCloudError(null);
           setSyncStatus('saved');
           setTimeout(() => setSyncStatus('idle'), 2000);
+          void maybeSnapshot(user, projectId, state.projectTitle);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           setCloudError(msg);
@@ -277,14 +361,14 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       }, 2000);
     });
     return () => unsub();
-  }, [user]);
+  }, [user, maybeSnapshot]);
 
   const signOut = () => supabase.auth.signOut();
 
   return (
     <SyncContext.Provider value={{
       user, syncStatus, cloudError, projects, signOut, forceReloadFromCloud,
-      switchProject, createNewProject, removeProject,
+      switchProject, createNewProject, removeProject, restoreRevision,
     }}>
       {children}
     </SyncContext.Provider>

@@ -4,6 +4,7 @@ import { EditorSettingsDialog } from './EditorSettingsDialog';
 import { FindReplaceDialog } from './FindReplaceDialog';
 import { useSyncContext } from './SyncProvider';
 import { ProjectSwitcher } from './ProjectSwitcher';
+import { VersionHistoryDialog } from './VersionHistoryDialog';
 import { useIsMobile } from '../hooks/useIsMobile';
 import type { ViewMode } from '../types';
 import type { MouseEvent } from 'react';
@@ -42,6 +43,7 @@ export function Toolbar({ onOpenBinder }: ToolbarProps) {
   const { user, syncStatus, cloudError, signOut, forceReloadFromCloud } = useSyncContext();
   const [formatOpen, setFormatOpen] = useState(false);
   const [replaceOpen, setReplaceOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const backupInputRef = useRef<HTMLInputElement>(null);
   const isMobile = useIsMobile();
 
@@ -67,6 +69,7 @@ export function Toolbar({ onOpenBinder }: ToolbarProps) {
     <>
     {formatOpen && <EditorSettingsDialog onClose={() => setFormatOpen(false)} />}
     {replaceOpen && <FindReplaceDialog onClose={() => setReplaceOpen(false)} />}
+    {historyOpen && <VersionHistoryDialog onClose={() => setHistoryOpen(false)} />}
     <div className="flex items-center gap-2 px-3 h-11 bg-[#16213e] border-b border-[#0f3460] shrink-0 select-none overflow-x-auto">
       {/* Mobile: binder toggle */}
       {isMobile && area === 'manuscript' && onOpenBinder && (
@@ -279,6 +282,15 @@ export function Toolbar({ onOpenBinder }: ToolbarProps) {
           >
             ↓ Export
           </button>
+          {user && (
+            <button
+              onClick={() => setHistoryOpen(true)}
+              title="Restore a previous version of this project"
+              className="px-2 py-1 rounded text-xs text-gray-400 hover:text-white hover:bg-[#2d3748] transition-colors"
+            >
+              🕓 History
+            </button>
+          )}
         </>
       )}
 
