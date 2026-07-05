@@ -94,6 +94,7 @@ export type AppArea =
   | 'research'
   | 'history'
   | 'revision'
+  | 'assembly'
   | 'search'
   | 'trash';
 
@@ -401,7 +402,8 @@ export type ObjectType =
   | 'question'
   | 'moodboard_item'
   | 'research_item'
-  | 'revision_pass';
+  | 'revision_pass'
+  | 'manuscript_assembly';
 
 export type RelationshipType =
   | 'mentions'
@@ -707,9 +709,8 @@ export type AIObjectType =
   | 'question'
   | 'moodboard_item'
   | 'research_item'
-  | 'revision_pass';
-
-export interface SelectedAIContext {
+  | 'revision_pass'
+  export interface SelectedAIContext {
   objectType: AIObjectType;
   objectId: string;
   title: string;
@@ -728,6 +729,46 @@ export interface AIResult {
   sourceId?: string;
   createdAt: number;
   output: AIOutput;
+}
+
+
+// ─── Manuscript Assembly ─────────────────────────────────────────────────────
+
+export interface AssemblyScene {
+  sceneId: string;
+  included: boolean;
+  order: number;
+  chapterBreakBefore?: boolean;
+  sceneBreakBefore?: boolean;
+  titleOverride?: string;
+  notes?: string;
+}
+
+export type ManuscriptAssemblySourceMode =
+  | 'manual'
+  | 'binder'
+  | 'chronological'
+  | 'revision_pass'
+  | 'tag'
+  | 'status'
+  | 'plotline'
+  | 'pov'
+  | 'custom';
+
+export interface ManuscriptAssembly {
+  id: string;
+  title: string;
+  description?: string;
+  scenes: AssemblyScene[];
+  sourceMode: ManuscriptAssemblySourceMode;
+  sourceConfig?: Record<string, unknown>;
+  includeTitlePage?: boolean;
+  includeSynopsis?: boolean;
+  includeQueryLetter?: boolean;
+  includePrivateNotes?: boolean;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt?: string;
 }
 
 // ─── Split Screen ─────────────────────────────────────────────────────────────
@@ -759,6 +800,7 @@ export interface AppState {
   moodboardItems: MoodboardItem[];
   researchEntries: ResearchEntry[];
   revisionPasses: RevisionPass[];
+  manuscriptAssemblies: ManuscriptAssembly[];
   projectTags: Tag[];
   links: Link[];
   history: HistoryEvent[];
@@ -916,6 +958,21 @@ export interface AppState {
   deleteRevisionPassChecklistItem: (passId: string, itemId: string) => void;
   updateRevisionSceneState: (passId: string, sceneId: string, patch: Partial<RevisionPassSceneState>) => void;
   toggleRevisionSceneChecklistItem: (passId: string, sceneId: string, itemId: string) => void;
+
+  // ─── Manuscript Assemblies ────────────────────────────────────────────────
+  addManuscriptAssembly: (partial?: Partial<ManuscriptAssembly>) => string;
+  updateManuscriptAssembly: (id: string, patch: Partial<ManuscriptAssembly>) => void;
+  deleteManuscriptAssembly: (id: string) => void;
+  archiveManuscriptAssembly: (id: string) => void;
+  unarchiveManuscriptAssembly: (id: string) => void;
+  setAssemblyScenes: (id: string, scenes: AssemblyScene[]) => void;
+  addSceneToAssembly: (assemblyId: string, sceneId: string) => void;
+  removeSceneFromAssembly: (assemblyId: string, sceneId: string) => void;
+  updateAssemblyScene: (assemblyId: string, sceneId: string, patch: Partial<AssemblyScene>) => void;
+  reorderAssemblyScenes: (assemblyId: string, sceneIdsInOrder: string[]) => void;
+  createAssemblyFromBinder: (title?: string) => string;
+  createAssemblyFromChronologicalOrder: (title?: string) => string;
+  createAssemblyFromRevisionPass: (revisionPassId: string, title?: string) => string;
 
   // ─── Links ─────────────────────────────────────────────────────────────────
   addLink: (link: Omit<Link, 'id' | 'createdAt'>) => void;
