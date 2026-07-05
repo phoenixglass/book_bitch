@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAppStore } from '../store/appStore';
 import { useSyncContext } from '../hooks/useSyncContext';
+import { BackupNagDialog } from './BackupNagDialog';
 
 export function ProjectSwitcher() {
   const { user, projects, switchProject, createNewProject, removeProject } = useSyncContext();
