@@ -116,13 +116,6 @@ function getManuscriptScenes(binder: BinderItem[]): BinderItem[] {
   );
 }
 
-function getNextRunnableSceneId(pass: RevisionPass): string | null {
-  return pass.targetSceneIds.find((sceneId) => {
-    const status = pass.sceneStates[sceneId]?.status ?? 'not_started';
-    return status !== 'done' && status !== 'skipped';
-  }) ?? pass.targetSceneIds[0] ?? null;
-}
-
 function passProgress(pass: RevisionPass) {
   const total = pass.targetSceneIds.length;
   const states = pass.targetSceneIds.map(
@@ -164,7 +157,6 @@ export function RevisionPassesView() {
   const [selectedPassId, setSelectedPassId] = useState<string | null>(null);
   const [sceneQuery, setSceneQuery] = useState('');
   const [newChecklistText, setNewChecklistText] = useState('');
-  const [activeSceneId, setActiveSceneId] = useState<string | null>(null);
 
   const scenes = useMemo(() => getManuscriptScenes(binder), [binder]);
   const selectedPass = revisionPasses.find((pass) => pass.id === selectedPassId)
@@ -177,24 +169,6 @@ export function RevisionPassesView() {
     scene.title.toLowerCase().includes(sceneQuery.trim().toLowerCase()),
   );
   const progress = selectedPass ? passProgress(selectedPass) : null;
-  const runnableSceneId = selectedPass
-    ? activeSceneId && selectedPass.targetSceneIds.includes(activeSceneId)
-      ? activeSceneId
-      : getNextRunnableSceneId(selectedPass)
-    : null;
-  const activeScene = runnableSceneId ? findItem(binder, runnableSceneId) : null;
-  const activeSceneState = selectedPass && runnableSceneId
-    ? selectedPass.sceneStates[runnableSceneId] ?? {
-      sceneId: runnableSceneId,
-      status: 'not_started' as RevisionPassSceneStatus,
-      notes: '',
-      checklist: {},
-      updatedAt: 0,
-    }
-    : null;
-  const activeSceneChecklistCount = selectedPass && activeSceneState
-    ? selectedPass.checklist.filter((item) => activeSceneState.checklist[item.id]).length
-    : 0;
 
   function createBlankPass() {
     const id = addRevisionPass();
@@ -221,35 +195,7 @@ export function RevisionPassesView() {
 
   function setAllTargets() {
     if (!selectedPass) return;
-    const sceneIds = scenes.map((scene) => scene.id);
-    setRevisionPassTargets(selectedPass.id, sceneIds);
-    setActiveSceneId(sceneIds[0] ?? null);
-  }
-
-  function startOrContinuePass() {
-    if (!selectedPass) return;
-    setActiveSceneId(getNextRunnableSceneId(selectedPass));
-  }
-
-  function moveActiveScene(direction: 'previous' | 'next') {
-    if (!selectedPass || !runnableSceneId) return;
-
-    const currentIndex = selectedPass.targetSceneIds.indexOf(runnableSceneId);
-    const offset = direction === 'next' ? 1 : -1;
-    const nextSceneId = selectedPass.targetSceneIds[currentIndex + offset] ?? null;
-    setActiveSceneId(nextSceneId);
-  }
-
-  function markActiveSceneDoneAndAdvance() {
-    if (!selectedPass || !runnableSceneId) return;
-
-    updateRevisionSceneState(selectedPass.id, runnableSceneId, { status: 'done' });
-    const currentIndex = selectedPass.targetSceneIds.indexOf(runnableSceneId);
-    const nextSceneId = selectedPass.targetSceneIds.slice(currentIndex + 1).find((sceneId) => {
-      const status = selectedPass.sceneStates[sceneId]?.status ?? 'not_started';
-      return status !== 'done' && status !== 'skipped';
-    }) ?? null;
-    setActiveSceneId(nextSceneId);
+    setRevisionPassTargets(selectedPass.id, scenes.map((scene) => scene.id));
   }
 
   function toggleTarget(sceneId: string) {
@@ -434,113 +380,6 @@ export function RevisionPassesView() {
               </section>
             )}
 
-            <section className="bg-[#16213e] border border-[#0f3460] rounded-2xl p-5 space-y-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="mr-auto">
-                  <h2 className="font-bold">Run this revision pass</h2>
-                  <p className="text-sm text-gray-400">
-                    Work through target scenes one at a time, updating status, checklist, and notes as you go.
-                  </p>
-                </div>
-                <button
-                  onClick={startOrContinuePass}
-                  disabled={selectedPass.targetSceneIds.length === 0}
-                  className="px-3 py-1.5 rounded bg-[#6b46c1] text-white text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {runnableSceneId ? 'Continue pass' : 'Start pass'}
-                </button>
-              </div>
-
-              {selectedPass.targetSceneIds.length === 0 ? (
-                <div className="rounded border border-dashed border-[#0f3460] p-4 text-sm text-gray-400">
-                  Add target scenes below before running this revision pass.
-                </div>
-              ) : activeScene && runnableSceneId && activeSceneState ? (
-                <div className="rounded-xl bg-[#0d1117] border border-[#0f3460] p-4 space-y-3">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex-1 min-w-56">
-                      <div className="text-xs uppercase tracking-wide text-gray-500">Current scene</div>
-                      <div className="font-semibold text-lg">{activeScene.title}</div>
-                      <div className="text-xs text-gray-500">{countWords(activeScene.content)} words</div>
-                    </div>
-                    <select
-                      value={activeSceneState.status}
-                      onChange={(event) =>
-                        updateRevisionSceneState(selectedPass.id, runnableSceneId, {
-                          status: event.target.value as RevisionPassSceneStatus,
-                        })
-                      }
-                      className="bg-[#16213e] border border-[#0f3460] rounded px-2 py-1 text-sm"
-                    >
-                      {Object.entries(STATUS_LABELS).map(([value, label]) => (
-                        <option key={value} value={value}>{label}</option>
-                      ))}
-                    </select>
-                    <span className="text-sm text-gray-400">
-                      Checklist {activeSceneChecklistCount}/{selectedPass.checklist.length}
-                    </span>
-                    <button
-                      onClick={() => openScene(runnableSceneId)}
-                      className="px-3 py-1.5 rounded bg-[#6b46c1] text-white text-sm"
-                    >
-                      Open scene
-                    </button>
-                  </div>
-
-                  {selectedPass.checklist.length > 0 && (
-                    <div className="grid md:grid-cols-2 gap-2">
-                      {selectedPass.checklist.map((item) => (
-                        <label key={item.id} className="flex items-center gap-2 text-sm text-gray-300">
-                          <input
-                            type="checkbox"
-                            checked={!!activeSceneState.checklist[item.id]}
-                            onChange={() => toggleRevisionSceneChecklistItem(selectedPass.id, runnableSceneId, item.id)}
-                          />
-                          {item.text}
-                        </label>
-                      ))}
-                    </div>
-                  )}
-
-                  <textarea
-                    value={activeSceneState.notes}
-                    onChange={(event) =>
-                      updateRevisionSceneState(selectedPass.id, runnableSceneId, { notes: event.target.value })
-                    }
-                    placeholder="Notes for this scene in this pass…"
-                    className="w-full bg-[#16213e] border border-[#0f3460] rounded px-3 py-2 text-sm min-h-24"
-                  />
-
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={() => moveActiveScene('previous')}
-                      disabled={selectedPass.targetSceneIds.indexOf(runnableSceneId) <= 0}
-                      className="px-3 py-1.5 rounded bg-[#2d3748] text-gray-200 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Previous scene
-                    </button>
-                    <button
-                      onClick={() => moveActiveScene('next')}
-                      disabled={selectedPass.targetSceneIds.indexOf(runnableSceneId) >= selectedPass.targetSceneIds.length - 1}
-                      className="px-3 py-1.5 rounded bg-[#2d3748] text-gray-200 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Next scene
-                    </button>
-                    <button
-                      onClick={markActiveSceneDoneAndAdvance}
-                      className="px-3 py-1.5 rounded bg-emerald-700 text-white text-sm"
-                    >
-                      Mark done & advance
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded border border-dashed border-[#0f3460] p-4 text-sm text-gray-400">
-                  All target scenes are done or skipped. Use the target list below to revisit a scene.
-                </div>
-              )}
-            </section>
-
             <section className="bg-[#16213e] border border-[#0f3460] rounded-2xl p-5">
               <h2 className="font-bold mb-3">Checklist</h2>
               <div className="space-y-2">
@@ -590,7 +429,7 @@ export function RevisionPassesView() {
                   Add all manuscript scenes
                 </button>
                 <button
-                  onClick={() => { setRevisionPassTargets(selectedPass.id, []); setActiveSceneId(null); }}
+                  onClick={() => setRevisionPassTargets(selectedPass.id, [])}
                   className="px-3 py-1.5 rounded bg-[#2d3748] text-gray-200 text-sm"
                 >
                   Clear targets

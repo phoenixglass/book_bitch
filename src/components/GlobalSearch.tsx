@@ -13,12 +13,14 @@ interface SearchResult {
 const TYPE_ICONS: Record<ObjectType, string> = {
   scene: '📄', fragment: '🧩', omitted_material: '🗂️', notebook_entry: '📓',
   codex_entry: '📚', question: '❓', moodboard_item: '🖼️', research_item: '🔬', revision_pass: '🧵',
+  codex_entry: '📚', question: '❓', moodboard_item: '🖼️', research_item: '🔬', revision_pass: '🧵', manuscript_assembly: '📚',
 };
 
 const TYPE_LABELS: Record<ObjectType, string> = {
   scene: 'Scene', fragment: 'Fragment', omitted_material: 'Omitted',
   notebook_entry: 'Notebook', codex_entry: 'Codex', question: 'Question',
   moodboard_item: 'Moodboard', research_item: 'Research', revision_pass: 'Revision Pass',
+  moodboard_item: 'Moodboard', research_item: 'Research', revision_pass: 'Revision Pass', manuscript_assembly: 'Assembly',
 };
 
 function stripHtml(html: string) {
@@ -50,6 +52,7 @@ function collectScenes(items: BinderItem[]): { id: string; title: string; conten
 export function GlobalSearch({ onClose }: { onClose: () => void }) {
   const {
     binder, fragments, omittedMaterial, notebookEntries, codexEntries, questions, moodboardItems, researchEntries,
+    manuscriptAssemblies,
     selectItem, setArea, setViewMode, searchQuery, setSearchQuery, setPendingSelectId,
   } = useAppStore();
 
@@ -137,8 +140,16 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
       }
     }
 
+    // Manuscript assemblies
+    for (const assembly of manuscriptAssemblies ?? []) {
+      const text = `${assembly.title} ${assembly.description ?? ''} ${assembly.sourceMode}`;
+      if (text.toLowerCase().includes(lc)) {
+        results.push({ id: assembly.id, type: 'manuscript_assembly', title: assembly.title, snippet: snippet(assembly.description ?? assembly.sourceMode, query), tags: [] });
+      }
+    }
+
     return filterType ? results.filter(r => r.type === filterType) : results;
-  }, [query, filterType, binder, fragments, omittedMaterial, notebookEntries, codexEntries, questions, moodboardItems, researchEntries]);
+  }, [query, filterType, binder, fragments, omittedMaterial, notebookEntries, codexEntries, questions, moodboardItems, researchEntries, manuscriptAssemblies]);
 
   function navigate(result: SearchResult) {
     setSearchQuery(query);
@@ -175,6 +186,10 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
       case 'research_item':
         setPendingSelectId(result.id);
         setArea('research');
+        break;
+      case 'manuscript_assembly':
+        setPendingSelectId(result.id);
+        setArea('assembly');
         break;
     }
     onClose();
@@ -233,7 +248,7 @@ export function GlobalSearch({ onClose }: { onClose: () => void }) {
           >
             All {results.length > 0 && `(${results.length})`}
           </button>
-          {(['scene','fragment','omitted_material','notebook_entry','codex_entry','question'] as ObjectType[]).map(t => {
+          {(['scene','fragment','omitted_material','notebook_entry','codex_entry','question','manuscript_assembly'] as ObjectType[]).map(t => {
             const count = results.filter(r => r.type === t).length;
             if (count === 0 && !filterType) return null;
             return (

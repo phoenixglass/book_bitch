@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAppStore, findItem } from '../store/appStore';
 import { TagInput } from './TagInput';
 import { SnapshotDiffModal, type DiffSide } from './SnapshotDiffModal';
+import { ConnectionsPanel } from './ConnectionsPanel';
 import type { BinderItem, Status, SceneMetadata } from '../types';
 
 const STATUSES: Status[] = [
@@ -321,7 +322,10 @@ export function Inspector() {
             )}
 
             {tab === 'scene' && item.type === 'document' && (
-              <SceneTab item={item} updateMeta={updateMeta} />
+              <>
+                <SceneTab item={item} updateMeta={updateMeta} />
+                <ConnectionsPanel objectType="scene" objectId={item.id} compact />
+              </>
             )}
             {tab === 'scene' && item.type !== 'document' && (
               <p className="text-xs text-gray-600 italic">Scene metadata is only available for documents.</p>
