@@ -39,6 +39,7 @@ import type {
   FindReplaceOptions,
   ContinuityReport,
   RevisionPass,
+  RevisionPassSceneState,
   ManuscriptAssembly,
   AssemblyScene,
 } from '../types';
@@ -1560,7 +1561,16 @@ export const useAppStore = create<AppState>()(
       toggleRevisionSceneChecklistItem: (passId, sceneId, itemId) => {
         const pass = (get().revisionPasses ?? []).find((p) => p.id === passId);
         const current = pass?.sceneStates[sceneId] ?? { sceneId, status: 'not_started' as const, notes: '', checklist: {}, updatedAt: now() };
-        get().updateRevisionSceneState(passId, sceneId, { checklist: { ...current.checklist, [itemId]: !current.checklist[itemId] } });
+        const checklist = { ...current.checklist, [itemId]: !current.checklist[itemId] };
+        const totalItems = pass?.checklist.length ?? 0;
+        const checkedCount = pass?.checklist.filter((item) => checklist[item.id]).length ?? 0;
+        const patch: Partial<RevisionPassSceneState> = { checklist };
+        if (totalItems > 0 && checkedCount === totalItems) {
+          patch.status = 'done';
+        } else if (current.status === 'done') {
+          patch.status = 'in_progress';
+        }
+        get().updateRevisionSceneState(passId, sceneId, patch);
       },
 
 
