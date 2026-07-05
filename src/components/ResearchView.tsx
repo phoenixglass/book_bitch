@@ -4,6 +4,8 @@ import { TagInput } from './TagInput';
 import { WritingEditor } from './WritingEditor';
 import { ImportPreviewModal } from './ImportPreviewModal';
 import { GoogleDriveUpload } from './GoogleDriveUpload';
+import { ConnectionsPanel } from './ConnectionsPanel';
+import { RelationshipPicker } from './RelationshipPicker';
 import { parseFile } from '../utils/documentParser';
 import type { ParsedItem, SplitLevel } from '../utils/documentParser';
 import type { ResearchEntry, ResearchType, ImportSourceMeta } from '../types';
@@ -119,41 +121,14 @@ function ResearchDetail({ entry, onClose }: { entry: ResearchEntry; onClose: () 
           />
         </div>
 
-        <div className="border-t border-[#0f3460] pt-3">
+        <div className="border-t border-[#0f3460] pt-3 space-y-3">
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Related Scenes</label>
-              <TagInput
-                tags={entry.relatedSceneIds}
-                onChange={(v) => updateResearchEntry(entry.id, { relatedSceneIds: v })}
-                placeholder="Add scene…"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Related Codex Entries</label>
-              <TagInput
-                tags={entry.relatedCodexIds}
-                onChange={(v) => updateResearchEntry(entry.id, { relatedCodexIds: v })}
-                placeholder="Add codex entry…"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Related Questions</label>
-              <TagInput
-                tags={entry.relatedQuestionIds}
-                onChange={(v) => updateResearchEntry(entry.id, { relatedQuestionIds: v })}
-                placeholder="Add question…"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Related Fragments</label>
-              <TagInput
-                tags={entry.relatedFragmentIds}
-                onChange={(v) => updateResearchEntry(entry.id, { relatedFragmentIds: v })}
-                placeholder="Add fragment…"
-              />
-            </div>
+            <RelationshipPicker label="Related Scenes" selectedIds={entry.relatedSceneIds} onChange={(v) => updateResearchEntry(entry.id, { relatedSceneIds: v })} targetTypes={["scene"]} />
+            <RelationshipPicker label="Related Codex Entries" selectedIds={entry.relatedCodexIds} onChange={(v) => updateResearchEntry(entry.id, { relatedCodexIds: v })} targetTypes={["codex_entry"]} />
+            <RelationshipPicker label="Related Questions" selectedIds={entry.relatedQuestionIds} onChange={(v) => updateResearchEntry(entry.id, { relatedQuestionIds: v })} targetTypes={["question"]} />
+            <RelationshipPicker label="Related Fragments" selectedIds={entry.relatedFragmentIds} onChange={(v) => updateResearchEntry(entry.id, { relatedFragmentIds: v })} targetTypes={["fragment"]} />
           </div>
+          <ConnectionsPanel objectType="research_item" objectId={entry.id} />
         </div>
 
         <div className="border-t border-[#0f3460] pt-3">
