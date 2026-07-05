@@ -17,7 +17,7 @@ function collectScenes(items: BinderItem[]): Option[] {
 
 const TYPE_LABEL: Record<ObjectType, string> = {
   scene: 'Scene', fragment: 'Fragment', omitted_material: 'Omitted', notebook_entry: 'Notebook',
-  codex_entry: 'Codex', question: 'Question', moodboard_item: 'Moodboard', research_item: 'Research', revision_pass: 'Revision',
+  codex_entry: 'Codex', question: 'Question', moodboard_item: 'Moodboard', research_item: 'Research', revision_pass: 'Revision', manuscript_assembly: 'Assembly',
 };
 
 export function RelationshipPicker({

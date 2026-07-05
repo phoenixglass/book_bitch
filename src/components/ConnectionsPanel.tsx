@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { findItem, useAppStore } from '../store/appStore';
 import type { AppArea, BinderItem, ObjectType } from '../types';
 
-type ConnectionType = Exclude<ObjectType, 'revision_pass'>;
+type ConnectionType = Exclude<ObjectType, 'revision_pass' | 'manuscript_assembly'>;
 interface Connection { id: string; type: ConnectionType; title: string; subtitle?: string }
 
 const GROUPS: Record<ConnectionType, { label: string; area: AppArea }> = {

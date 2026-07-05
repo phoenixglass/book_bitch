@@ -39,6 +39,8 @@ import type {
   FindReplaceOptions,
   ContinuityReport,
   RevisionPass,
+  ManuscriptAssembly,
+  AssemblyScene,
 } from '../types';
 
 function makeId() {
@@ -47,6 +49,10 @@ function makeId() {
 
 function now() {
   return Date.now();
+}
+
+function nowIso() {
+  return new Date().toISOString();
 }
 
 function todayKey(): string {
@@ -187,6 +193,22 @@ function patchItemInTree(
   });
 }
 
+function flattenDocuments(items: BinderItem[]): BinderItem[] {
+  return items.flatMap((item) => [
+    ...(item.type === 'document' ? [item] : []),
+    ...flattenDocuments(item.children),
+  ]);
+}
+
+function manuscriptDocuments(items: BinderItem[]): BinderItem[] {
+  const manuscriptRoot = items.find((item) => item.id === 'manuscript');
+  return flattenDocuments(manuscriptRoot ? [manuscriptRoot] : items);
+}
+
+function scenesFromIds(sceneIds: string[]): AssemblyScene[] {
+  return sceneIds.map((sceneId, index) => ({ sceneId, included: true, order: index }));
+}
+
 export function totalWordCount(items: BinderItem[]): number {
   let total = 0;
   for (const item of items) {
@@ -225,6 +247,7 @@ export const useAppStore = create<AppState>()(
       moodboardItems: [] as MoodboardItem[],
       researchEntries: [] as ResearchEntry[],
       revisionPasses: [] as RevisionPass[],
+      manuscriptAssemblies: [] as ManuscriptAssembly[],
       projectTags: [] as Tag[],
       links: [] as Link[],
       history: [] as HistoryEvent[],
@@ -1540,6 +1563,99 @@ export const useAppStore = create<AppState>()(
         get().updateRevisionSceneState(passId, sceneId, { checklist: { ...current.checklist, [itemId]: !current.checklist[itemId] } });
       },
 
+
+      // ── Manuscript Assemblies ───────────────────────────────────────────
+
+      addManuscriptAssembly: (partial = {}) => {
+        const id = makeId();
+        const timestamp = nowIso();
+        const assembly: ManuscriptAssembly = {
+          id,
+          title: 'Untitled Assembly',
+          description: '',
+          scenes: [],
+          sourceMode: 'manual',
+          includeTitlePage: false,
+          includeSynopsis: false,
+          includeQueryLetter: false,
+          includePrivateNotes: false,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          ...partial,
+        };
+        set((state) => ({ manuscriptAssemblies: [...(state.manuscriptAssemblies ?? []), assembly] }));
+        get().recordEvent({ eventType: 'created', objectType: 'manuscript_assembly', objectId: id, objectTitle: assembly.title, description: `Assembly created: "${assembly.title}"` });
+        return id;
+      },
+
+      updateManuscriptAssembly: (id, patch) => set((state) => ({
+        manuscriptAssemblies: (state.manuscriptAssemblies ?? []).map((assembly) => assembly.id === id ? { ...assembly, ...patch, updatedAt: nowIso() } : assembly),
+      })),
+
+      deleteManuscriptAssembly: (id) => {
+        const assembly = (get().manuscriptAssemblies ?? []).find((item) => item.id === id);
+        set((state) => ({ manuscriptAssemblies: (state.manuscriptAssemblies ?? []).filter((item) => item.id !== id) }));
+        get().recordEvent({ eventType: 'deleted', objectType: 'manuscript_assembly', objectId: id, objectTitle: assembly?.title ?? id, description: `Assembly deleted: "${assembly?.title ?? id}"` });
+      },
+
+      archiveManuscriptAssembly: (id) => {
+        const timestamp = nowIso();
+        const assembly = (get().manuscriptAssemblies ?? []).find((item) => item.id === id);
+        set((state) => ({ manuscriptAssemblies: (state.manuscriptAssemblies ?? []).map((item) => item.id === id ? { ...item, archivedAt: timestamp, updatedAt: timestamp } : item) }));
+        get().recordEvent({ eventType: 'updated', objectType: 'manuscript_assembly', objectId: id, objectTitle: assembly?.title ?? id, description: `Assembly archived: "${assembly?.title ?? id}"` });
+      },
+
+      unarchiveManuscriptAssembly: (id) => {
+        const assembly = (get().manuscriptAssemblies ?? []).find((item) => item.id === id);
+        set((state) => ({ manuscriptAssemblies: (state.manuscriptAssemblies ?? []).map((item) => item.id === id ? { ...item, archivedAt: undefined, updatedAt: nowIso() } : item) }));
+        get().recordEvent({ eventType: 'updated', objectType: 'manuscript_assembly', objectId: id, objectTitle: assembly?.title ?? id, description: `Assembly unarchived: "${assembly?.title ?? id}"` });
+      },
+
+      setAssemblyScenes: (id, scenes) => set((state) => ({
+        manuscriptAssemblies: (state.manuscriptAssemblies ?? []).map((assembly) => assembly.id === id ? { ...assembly, scenes: scenes.map((scene, index) => ({ ...scene, order: index })), updatedAt: nowIso() } : assembly),
+      })),
+
+      addSceneToAssembly: (assemblyId, sceneId) => set((state) => ({
+        manuscriptAssemblies: (state.manuscriptAssemblies ?? []).map((assembly) => {
+          if (assembly.id !== assemblyId || assembly.scenes.some((scene) => scene.sceneId === sceneId)) return assembly;
+          return { ...assembly, scenes: [...assembly.scenes, { sceneId, included: true, order: assembly.scenes.length }], updatedAt: nowIso() };
+        }),
+      })),
+
+      removeSceneFromAssembly: (assemblyId, sceneId) => set((state) => ({
+        manuscriptAssemblies: (state.manuscriptAssemblies ?? []).map((assembly) => assembly.id === assemblyId ? { ...assembly, scenes: assembly.scenes.filter((scene) => scene.sceneId !== sceneId).map((scene, index) => ({ ...scene, order: index })), updatedAt: nowIso() } : assembly),
+      })),
+
+      updateAssemblyScene: (assemblyId, sceneId, patch) => set((state) => ({
+        manuscriptAssemblies: (state.manuscriptAssemblies ?? []).map((assembly) => assembly.id === assemblyId ? { ...assembly, scenes: assembly.scenes.map((scene) => scene.sceneId === sceneId ? { ...scene, ...patch } : scene), updatedAt: nowIso() } : assembly),
+      })),
+
+      reorderAssemblyScenes: (assemblyId, sceneIdsInOrder) => set((state) => ({
+        manuscriptAssemblies: (state.manuscriptAssemblies ?? []).map((assembly) => {
+          if (assembly.id !== assemblyId) return assembly;
+          const byId = new Map(assembly.scenes.map((scene) => [scene.sceneId, scene]));
+          const ordered = sceneIdsInOrder.map((sceneId) => byId.get(sceneId)).filter((scene): scene is AssemblyScene => !!scene);
+          const omitted = assembly.scenes.filter((scene) => !sceneIdsInOrder.includes(scene.sceneId));
+          return { ...assembly, scenes: [...ordered, ...omitted].map((scene, index) => ({ ...scene, order: index })), updatedAt: nowIso() };
+        }),
+      })),
+
+      createAssemblyFromBinder: (title = 'Full manuscript') => get().addManuscriptAssembly({ title, sourceMode: 'binder', scenes: scenesFromIds(manuscriptDocuments(get().binder).map((scene) => scene.id)) }),
+
+      createAssemblyFromChronologicalOrder: (title = 'Chronological draft') => {
+        const docs = manuscriptDocuments(get().binder).sort((a, b) => (a.sceneMetadata?.chronologicalOrder ?? Number.MAX_SAFE_INTEGER) - (b.sceneMetadata?.chronologicalOrder ?? Number.MAX_SAFE_INTEGER));
+        return get().addManuscriptAssembly({ title, sourceMode: 'chronological', scenes: scenesFromIds(docs.map((scene) => scene.id)) });
+      },
+
+      createAssemblyFromRevisionPass: (revisionPassId, title) => {
+        const pass = (get().revisionPasses ?? []).find((item) => item.id === revisionPassId);
+        const binderOrder = manuscriptDocuments(get().binder).map((scene) => scene.id);
+        const passIds = pass?.targetSceneIds ?? [];
+        const ordered = binderOrder.filter((id) => passIds.includes(id));
+        const extras = passIds.filter((id) => !ordered.includes(id));
+        return get().addManuscriptAssembly({ title: title ?? `${pass?.title ?? 'Revision pass'} assembly`, sourceMode: 'revision_pass', sourceConfig: { revisionPassId }, scenes: scenesFromIds([...ordered, ...extras]) });
+      },
+
       // ── Links ────────────────────────────────────────────────────────────
 
       addLink: (linkData) => {
@@ -1645,6 +1761,7 @@ export const useAppStore = create<AppState>()(
           moodboardItems: state.moodboardItems,
           researchEntries: state.researchEntries,
           revisionPasses: state.revisionPasses ?? [],
+          manuscriptAssemblies: state.manuscriptAssemblies ?? [],
           projectTags: state.projectTags,
           links: state.links,
           history: state.history,
@@ -1684,6 +1801,7 @@ export const useAppStore = create<AppState>()(
           moodboardItems: (data.moodboardItems as MoodboardItem[]) ?? [],
           researchEntries: (data.researchEntries as ResearchEntry[]) ?? [],
           revisionPasses: (data.revisionPasses as RevisionPass[]) ?? [],
+          manuscriptAssemblies: (data.manuscriptAssemblies as ManuscriptAssembly[]) ?? [],
           projectTags: (data.projectTags as Tag[]) ?? [],
           links: (data.links as Link[]) ?? [],
           history: (data.history as HistoryEvent[]) ?? [],
@@ -1718,6 +1836,7 @@ export const useAppStore = create<AppState>()(
             moodboardItems: data.moodboardItems ?? [],
             researchEntries: data.researchEntries ?? [],
             revisionPasses: data.revisionPasses ?? [],
+            manuscriptAssemblies: data.manuscriptAssemblies ?? [],
             projectTags: data.projectTags ?? [],
             links: data.links ?? [],
             history: data.history ?? [],
