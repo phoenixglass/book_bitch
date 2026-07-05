@@ -12,14 +12,12 @@ interface SearchResult {
 
 const TYPE_ICONS: Record<ObjectType, string> = {
   scene: '📄', fragment: '🧩', omitted_material: '🗂️', notebook_entry: '📓',
-  codex_entry: '📚', question: '❓', moodboard_item: '🖼️', research_item: '🔬', revision_pass: '🧵',
   codex_entry: '📚', question: '❓', moodboard_item: '🖼️', research_item: '🔬', revision_pass: '🧵', manuscript_assembly: '📚',
 };
 
 const TYPE_LABELS: Record<ObjectType, string> = {
   scene: 'Scene', fragment: 'Fragment', omitted_material: 'Omitted',
   notebook_entry: 'Notebook', codex_entry: 'Codex', question: 'Question',
-  moodboard_item: 'Moodboard', research_item: 'Research', revision_pass: 'Revision Pass',
   moodboard_item: 'Moodboard', research_item: 'Research', revision_pass: 'Revision Pass', manuscript_assembly: 'Assembly',
 };
 
