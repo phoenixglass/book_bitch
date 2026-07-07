@@ -18,6 +18,11 @@ let cachedAccessToken: string | null = null;
 export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omitted' | 'research' = 'manuscript') {
   const { addItem, updateItem, selectItem } = useAppStore();
   const [isLoading, setIsLoading] = useState(false);
+  const [pendingResync, setPendingResync] = useState<
+    | { type: 'folder'; folderId: string; driveFileId: string }
+    | { type: 'doc'; docId: string; driveFileId: string }
+    | null
+  >(null);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -405,12 +410,11 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
 
   // ── Re-sync ───────────────────────────────────────────────────────────────
 
-  async function resyncDriveFolder(folderId: string, driveFileId: string) {
-    if (!window.confirm(
-      'Re-sync this folder from Google Drive? Content that differs from the Drive version will be overwritten. ' +
-      'A backup of your current project will download first.'
-    )) return;
-    useAppStore.getState().exportProjectBackup();
+  function resyncDriveFolder(folderId: string, driveFileId: string) {
+    setPendingResync({ type: 'folder', folderId, driveFileId });
+  }
+
+  async function performResyncDriveFolder(folderId: string, driveFileId: string) {
     try {
       setIsLoading(true);
       const docData = await fetchDocData(driveFileId);
@@ -634,23 +638,19 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     return doc.body.innerHTML;
   }
 
-  // Split exported HTML at each <h1> tag, returning one chunk per chapter
+  // Split exported HTML at each <h1> tag, returning one chunk per chapter.
+  // Chapters and HTML <h1>s are both derived from the same ordered walk of
+  // the same document, so pair them up positionally (parts[0] is whatever
+  // precedes the first <h1>). Matching by title text instead would collapse
+  // every chapter that shares a heading (e.g. multiple blank "Untitled
+  // Chapter" headings) onto the same part, duplicating that chunk of HTML
+  // into every one of those chapters.
   function splitHtmlByH1(html: string, titles: string[]): string[] {
-    // Split on <h1 ...> tags
     const parts = html.split(/(?=<h1[\s>])/i);
     const results: string[] = [];
 
     for (let i = 0; i < titles.length; i++) {
-      // Match part that starts with this title's h1
-      const title = titles[i];
-      const matchIdx = parts.findIndex((p) =>
-        p.toLowerCase().includes(title.toLowerCase().slice(0, 20))
-      );
-      if (matchIdx !== -1) {
-        results.push(parts[matchIdx]);
-      } else if (parts[i + 1]) {
-        results.push(parts[i + 1]);
-      }
+      if (parts[i + 1]) results.push(parts[i + 1]);
     }
 
     return results;
@@ -888,12 +888,11 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
 
   // ── Re-sync single document ───────────────────────────────────────────────
 
-  async function resyncDriveDoc(docId: string, driveFileId: string) {
-    if (!window.confirm(
-      'Re-sync this document from Google Drive? Its content will be overwritten with the latest version from Drive. ' +
-      'A backup of your current project will download first.'
-    )) return;
-    useAppStore.getState().exportProjectBackup();
+  function resyncDriveDoc(docId: string, driveFileId: string) {
+    setPendingResync({ type: 'doc', docId, driveFileId });
+  }
+
+  async function performResyncDriveDoc(docId: string, driveFileId: string) {
     try {
       setIsLoading(true);
       const html = await exportDocAsHtml(driveFileId);
@@ -907,5 +906,28 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     }
   }
 
-  return { isLoading, importFromDrive, resyncDriveFolder, resyncDriveDoc };
+  // Confirmed via BackupNagDialog rather than window.confirm, so the user is
+  // actually offered a choice instead of always being forced through a backup
+  // download before the re-sync can proceed.
+  function confirmPendingResync() {
+    if (!pendingResync) return;
+    const resync = pendingResync;
+    setPendingResync(null);
+    if (resync.type === 'folder') performResyncDriveFolder(resync.folderId, resync.driveFileId);
+    if (resync.type === 'doc') performResyncDriveDoc(resync.docId, resync.driveFileId);
+  }
+
+  function cancelPendingResync() {
+    setPendingResync(null);
+  }
+
+  return {
+    isLoading,
+    importFromDrive,
+    resyncDriveFolder,
+    resyncDriveDoc,
+    pendingResync,
+    confirmPendingResync,
+    cancelPendingResync,
+  };
 }

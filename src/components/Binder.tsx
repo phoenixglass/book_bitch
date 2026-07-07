@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { useAppStore } from '../store/appStore';
 import { GoogleDriveUpload } from './GoogleDriveUpload';
 import { ImportPreviewModal } from './ImportPreviewModal';
+import { BackupNagDialog } from './BackupNagDialog';
 import { useDriveImport } from '../hooks/useDriveImport';
 import { parseFile } from '../utils/documentParser';
 import type { ParsedItem, SplitLevel } from '../utils/documentParser';
@@ -421,7 +422,7 @@ interface BinderPendingImport {
 
 export function Binder() {
   const { binder, importToManuscript } = useAppStore();
-  const { resyncDriveFolder, resyncDriveDoc } = useDriveImport();
+  const { resyncDriveFolder, resyncDriveDoc, pendingResync, confirmPendingResync, cancelPendingResync } = useDriveImport();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingImport, setPendingImport] = useState<BinderPendingImport | null>(null);
 
@@ -562,6 +563,20 @@ export function Binder() {
           onChangeSplitLevel={handleChangeSplitLevel}
           onConfirm={handleImportConfirm}
           onCancel={() => setPendingImport(null)}
+        />
+      )}
+
+      {pendingResync && (
+        <BackupNagDialog
+          title={pendingResync.type === 'folder' ? 'Re-sync Folder from Google Drive?' : 'Re-sync Document from Google Drive?'}
+          message={
+            pendingResync.type === 'folder'
+              ? 'Content that differs from the Drive version will be overwritten.'
+              : "This document's content will be overwritten with the latest version from Drive."
+          }
+          confirmLabel="Re-sync"
+          onCancel={cancelPendingResync}
+          onConfirm={confirmPendingResync}
         />
       )}
     </>
