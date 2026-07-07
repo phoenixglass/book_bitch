@@ -6,6 +6,7 @@ import { useSyncContext } from '../hooks/useSyncContext';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import { VersionHistoryDialog } from './VersionHistoryDialog';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { isLikelyOutageMessage } from '../lib/dbRetry';
 import type { ViewMode } from '../types';
 import type { MouseEvent } from 'react';
 
@@ -225,10 +226,16 @@ export function Toolbar({ onOpenBinder }: ToolbarProps) {
                 e.preventDefault();
                 forceReloadFromCloud();
               }}
-              title={`Sync error: ${cloudError ?? 'unknown'}. Click to retry.`}
+              title={
+                isLikelyOutageMessage(cloudError)
+                  ? `Cloud provider outage: ${cloudError}. Your work is saved locally and will sync once it recovers. Click to retry.`
+                  : `Sync error: ${cloudError ?? 'unknown'}. Click to retry.`
+              }
               className="text-red-400 hover:text-red-300 underline cursor-pointer"
             >
-              ⚠ Sync error — retry
+              {isLikelyOutageMessage(cloudError)
+                ? '⚠ Cloud outage — saved locally, retry'
+                : '⚠ Sync error — retry'}
             </button>
           )}
           <button
@@ -249,7 +256,11 @@ export function Toolbar({ onOpenBinder }: ToolbarProps) {
           {syncStatus === 'error' && (
             <button
               onClick={(e: MouseEvent) => { e.preventDefault(); forceReloadFromCloud(); }}
-              title="Sync error — tap to retry"
+              title={
+                isLikelyOutageMessage(cloudError)
+                  ? `Cloud provider outage: ${cloudError}. Your work is saved locally — tap to retry.`
+                  : 'Sync error — tap to retry'
+              }
               className="text-red-400"
             >
               ⚠

@@ -8,6 +8,10 @@ import type {
 import { delimitedToHtml, parseDocx, parseXlsx } from '../utils/documentParser';
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+// Browser API key from Google Cloud Console (APIs & Services > Credentials).
+// The Picker API requires this alongside the OAuth token — without it, the
+// picker UI opens but fails to list/select Drive files ("API key not valid").
+const API_KEY = import.meta.env.VITE_GOOGLE_API_KEY || '';
 const SCOPES =
   'https://www.googleapis.com/auth/drive.readonly ' +
   'https://www.googleapis.com/auth/spreadsheets.readonly ' +
@@ -105,9 +109,11 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
   async function showPicker(accessToken: string) {
     return new Promise<void>((resolve) => {
       window.gapi.load('picker', () => {
-        const picker = new window.google.picker.PickerBuilder()
+        let builder = new window.google.picker.PickerBuilder()
           .addView(window.google.picker.ViewId.DOCS)
-          .setOAuthToken(accessToken)
+          .setOAuthToken(accessToken);
+        if (API_KEY) builder = builder.setDeveloperKey(API_KEY);
+        const picker = builder
           .setCallback(async (data: GooglePickerData) => {
             if (data.action === window.google.picker.Action.PICKED) {
               await handlePickerResult(data);
