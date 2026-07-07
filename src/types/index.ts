@@ -69,6 +69,11 @@ export interface BinderItem {
   snapshots: Snapshot[];
   wordCountTarget: number;
   driveFileId?: string;
+  // Stable key identifying which Drive tab/heading this item was created from
+  // (e.g. "<driveFileId>#tab:<tabId>" or "<driveFileId>#heading:<headingId>").
+  // Used to re-match this item on re-sync even after it's been renamed,
+  // instead of falling back to title matching (which breaks on rename).
+  driveImportKey?: string;
   sceneMetadata?: Partial<SceneMetadata>;
   createdAt?: number;
   updatedAt?: number;
@@ -109,6 +114,7 @@ export interface ImportSourceMeta {
   googleFileId?: string;
   googleTabId?: string;
   googleTabTitle?: string;
+  googleHeadingId?: string;
   originalSection?: 'manuscript' | 'fragments' | 'omitted' | 'research';
 }
 

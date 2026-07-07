@@ -43,10 +43,22 @@ import type {
   RevisionPassSceneState,
   ManuscriptAssembly,
   AssemblyScene,
+  ImportSourceMeta,
 } from '../types';
 
 function makeId() {
   return crypto.randomUUID();
+}
+
+// Stable key identifying the Drive file/tab/heading an item was imported
+// from, so re-importing after a rename in Drive updates the existing item
+// instead of creating a duplicate. Mirrors the key format used for binder
+// items in useDriveImport.ts.
+function driveImportKey(meta?: ImportSourceMeta): string | undefined {
+  if (!meta?.googleFileId) return undefined;
+  if (meta.googleTabId) return `${meta.googleFileId}#tab:${meta.googleTabId}`;
+  if (meta.googleHeadingId) return `${meta.googleFileId}#heading:${meta.googleHeadingId}`;
+  return meta.googleFileId;
 }
 
 function now() {
@@ -831,6 +843,30 @@ export const useAppStore = create<AppState>()(
       importToFragments: (items) => {
         const ids: string[] = [];
         for (const item of items) {
+          const key = driveImportKey(item.importSource);
+          const existing = key
+            ? get().fragments.find((f) => driveImportKey(f.importSource) === key)
+            : undefined;
+
+          if (existing) {
+            set((s) => ({
+              fragments: s.fragments.map((f) =>
+                f.id === existing.id
+                  ? { ...f, title: item.title || f.title, content: item.content, importSource: item.importSource, updatedAt: now() }
+                  : f
+              ),
+            }));
+            get().recordEvent({
+              eventType: 'updated',
+              objectType: 'fragment',
+              objectId: existing.id,
+              objectTitle: item.title || existing.title,
+              description: `Fragment "${item.title || existing.title}" re-synced from "${item.importSource?.fileName ?? 'file'}"`,
+            });
+            ids.push(existing.id);
+            continue;
+          }
+
           const id = makeId();
           const frag: Fragment = {
             id,
@@ -1076,6 +1112,30 @@ export const useAppStore = create<AppState>()(
       importToOmitted: (items) => {
         const ids: string[] = [];
         for (const item of items) {
+          const key = driveImportKey(item.importSource);
+          const existing = key
+            ? get().omittedMaterial.find((o) => driveImportKey(o.importSource) === key)
+            : undefined;
+
+          if (existing) {
+            set((s) => ({
+              omittedMaterial: s.omittedMaterial.map((o) =>
+                o.id === existing.id
+                  ? { ...o, title: item.title || o.title, content: item.content, importSource: item.importSource, updatedAt: now() }
+                  : o
+              ),
+            }));
+            get().recordEvent({
+              eventType: 'updated',
+              objectType: 'omitted_material',
+              objectId: existing.id,
+              objectTitle: item.title || existing.title,
+              description: `Omitted material "${item.title || existing.title}" re-synced from "${item.importSource?.fileName ?? 'file'}"`,
+            });
+            ids.push(existing.id);
+            continue;
+          }
+
           const id = makeId();
           const omitted: OmittedMaterial = {
             id,
@@ -1374,6 +1434,30 @@ export const useAppStore = create<AppState>()(
       importToResearch: (items) => {
         const ids: string[] = [];
         for (const item of items) {
+          const key = driveImportKey(item.importSource);
+          const existing = key
+            ? get().researchEntries.find((e) => driveImportKey(e.importSource) === key)
+            : undefined;
+
+          if (existing) {
+            set((s) => ({
+              researchEntries: s.researchEntries.map((e) =>
+                e.id === existing.id
+                  ? { ...e, title: item.title || e.title, content: item.content, importSource: item.importSource, updatedAt: now() }
+                  : e
+              ),
+            }));
+            get().recordEvent({
+              eventType: 'updated',
+              objectType: 'research_item',
+              objectId: existing.id,
+              objectTitle: item.title || existing.title,
+              description: `Research entry "${item.title || existing.title}" re-synced from "${item.importSource?.fileName ?? 'file'}"`,
+            });
+            ids.push(existing.id);
+            continue;
+          }
+
           const id = makeId();
           const entry: ResearchEntry = {
             id,
