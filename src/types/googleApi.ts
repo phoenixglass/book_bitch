@@ -73,6 +73,9 @@ export interface GDocParagraphStyle {
   lineSpacing?: number;
   spaceAbove?: GDocMagnitude;
   spaceBelow?: GDocMagnitude;
+  // Stable per-heading ID assigned by Google Docs; survives edits to the
+  // heading text, so it can be used to match a heading across renames.
+  headingId?: string;
 }
 
 export interface GDocColor {

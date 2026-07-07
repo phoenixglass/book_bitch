@@ -316,6 +316,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
             sourceHeading: chapter.title,
             importedAt: Date.now(),
             googleFileId: driveFileId,
+            googleHeadingId: chapter.headingId,
           },
         }));
       }
@@ -350,7 +351,8 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
       addItem(folderId, 'document');
       const docId = useAppStore.getState().selectedId;
       if (docId) {
-        updateItem(docId, { title: tabTitle, content: html });
+        const driveImportKey = driveChildKey(driveFileId, tab.tabProperties?.tabId);
+        updateItem(docId, { title: tabTitle, content: html, driveImportKey });
       }
     }
 
@@ -393,7 +395,8 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
       addItem(folderId, 'document');
       const docId = useAppStore.getState().selectedId;
       if (docId) {
-        updateItem(docId, { title: chapters[i].title, content: html });
+        const driveImportKey = driveChildKey(driveFileId, undefined, chapters[i].headingId);
+        updateItem(docId, { title: chapters[i].title, content: html, driveImportKey });
       }
     }
 
@@ -416,18 +419,22 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
       // Update folder title but preserve all children (don't wipe them)
       updateItem(folderId, { title: docData.title || 'Untitled' });
 
-      // Helper: find existing child by title, update its content; create new if not found
-      const mergeChapter = (title: string, html: string) => {
+      // Helper: find existing child by its stable Drive tab/heading key (survives
+      // renames); fall back to matching by title for legacy children that predate
+      // driveImportKey. Update its content in place; create new only if neither matches.
+      const mergeChapter = (key: string | undefined, title: string, html: string) => {
         const folder = useAppStore.getState().binder
           .flatMap(function flatten(item: BinderItem): BinderItem[] { return [item, ...(item.children || []).flatMap(flatten)]; })
           .find((item) => item.id === folderId);
-        const existing = folder?.children?.find((c) => c.title === title);
+        const existing =
+          (key && folder?.children?.find((c) => c.driveImportKey === key)) ||
+          folder?.children?.find((c) => c.title === title);
         if (existing) {
-          updateItem(existing.id, { content: html });
+          updateItem(existing.id, { title, content: html, driveImportKey: key ?? existing.driveImportKey });
         } else {
           addItem(folderId, 'document');
           const newId = useAppStore.getState().selectedId;
-          if (newId) updateItem(newId, { title, content: html });
+          if (newId) updateItem(newId, { title, content: html, driveImportKey: key });
         }
       };
 
@@ -436,7 +443,8 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
           const tabTitle =
             tab.tabProperties?.title || `Tab ${(tab.tabProperties?.index ?? 0) + 1}`;
           const html = docElementsToHtml(tab.documentTab?.body?.content || []);
-          mergeChapter(tabTitle, html);
+          const key = driveChildKey(driveFileId, tab.tabProperties?.tabId);
+          mergeChapter(key, tabTitle, html);
         }
       } else {
         const bodyContent =
@@ -449,7 +457,8 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
 
         for (let i = 0; i < chapters.length; i++) {
           const html = chapterHtmls[i] ?? docElementsToHtml(chapters[i].elements);
-          mergeChapter(chapters[i].title, html);
+          const key = driveChildKey(driveFileId, undefined, chapters[i].headingId);
+          mergeChapter(key, chapters[i].title, html);
         }
       }
 
@@ -660,21 +669,30 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
 
   function splitByHeading(
     elements: GDocElement[]
-  ): Array<{ title: string; elements: GDocElement[] }> {
-    const chapters: Array<{ title: string; elements: GDocElement[] }> = [];
-    let current: { title: string; elements: GDocElement[] } | null = null;
+  ): Array<{ title: string; headingId?: string; elements: GDocElement[] }> {
+    const chapters: Array<{ title: string; headingId?: string; elements: GDocElement[] }> = [];
+    let current: { title: string; headingId?: string; elements: GDocElement[] } | null = null;
 
     for (const el of elements) {
       if (el.paragraph?.paragraphStyle?.namedStyleType === 'HEADING_1') {
         if (current) chapters.push(current);
         const title = extractText(el) || 'Untitled Chapter';
-        current = { title, elements: [el] };
+        const headingId = el.paragraph.paragraphStyle?.headingId;
+        current = { title, headingId, elements: [el] };
       } else if (current) {
         current.elements.push(el);
       }
     }
     if (current) chapters.push(current);
     return chapters;
+  }
+
+  // Stable key for a chapter/tab within a Drive doc, used to re-match it
+  // across renames instead of relying on title equality.
+  function driveChildKey(driveFileId: string, tabId?: string, headingId?: string): string | undefined {
+    if (tabId) return `${driveFileId}#tab:${tabId}`;
+    if (headingId) return `${driveFileId}#heading:${headingId}`;
+    return undefined;
   }
 
   function extractText(element: GDocElement): string {
