@@ -14,16 +14,34 @@ interface RetryableError {
   message?: string;
 }
 
+// Substrings seen in Postgres/Supabase infra-side failures (statement
+// timeouts, connection refusals, standby/recovery states) as opposed to
+// errors caused by something in this app or the user's data.
+const OUTAGE_MESSAGE_SUBSTRINGS = [
+  'timeout',
+  'canceling statement',
+  'fetch failed',
+  'network',
+  'not accepting connections',
+  'hot standby',
+  'connection refused',
+  'connection terminated',
+];
+
 function isTransientError(error: RetryableError | null | undefined): boolean {
   if (!error) return false;
   if (error.code && TRANSIENT_PG_CODES.has(error.code)) return true;
   const msg = error.message?.toLowerCase() ?? '';
-  return (
-    msg.includes('timeout') ||
-    msg.includes('canceling statement') ||
-    msg.includes('fetch failed') ||
-    msg.includes('network')
-  );
+  return OUTAGE_MESSAGE_SUBSTRINGS.some((s) => msg.includes(s));
+}
+
+// Same classification, usable downstream of a plain `Error` whose Postgres
+// error code was already lost (e.g. re-thrown as `new Error(error.message)`),
+// so the UI can tell "Supabase is having an outage" apart from a real bug.
+export function isLikelyOutageMessage(message: string | null | undefined): boolean {
+  if (!message) return false;
+  const msg = message.toLowerCase();
+  return OUTAGE_MESSAGE_SUBSTRINGS.some((s) => msg.includes(s));
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
