@@ -152,6 +152,8 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
         }
       } catch (err) {
         console.error('Failed to import file:', err);
+        const msg = err instanceof Error ? err.message : String(err);
+        alert(`Failed to import "${file.name}" from Google Drive: ${msg}`);
       }
     }
   }
@@ -592,7 +594,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
 
   async function exportDocAsHtml(docId: string): Promise<string> {
     const res = await fetchWithAuth(
-      `https://docs.google.com/feeds/download/documents/export/Export?id=${docId}&exportFormat=html`
+      `https://www.googleapis.com/drive/v3/files/${docId}/export?mimeType=text/html`
     );
     if (!res.ok) throw new Error(`Failed to export doc: ${res.statusText}`);
     const raw = await res.text();
