@@ -231,17 +231,6 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
 
   // ── Google Doc import ─────────────────────────────────────────────────────
 
-  // Top-level-only fields mask: drops document-wide tables this code never
-  // reads (namedStyles, lists, inlineObjects, positionedObjects, headers,
-  // footers, footnotes, revisionId, suggestion metadata) without touching
-  // body/tabs, which are needed in full. Deliberately unnested — Google's
-  // partial-response syntax supports nested selectors like
-  // `tabs(tabProperties,documentTab.body.content)`, but tabs can recurse
-  // into childTabs, and a malformed nested mask would make Google reject
-  // the request outright (worse than not trimming at all). This flat mask
-  // is unambiguous and still cuts real bloat for image/list-heavy docs.
-  const DOC_FIELDS = 'documentId,title,tabs,body';
-
   // `includeTabsContent=true` makes the Docs API duplicate the entire document
   // body into tabs[].documentTab on top of the classic top-level body.content —
   // for a single-tab document that roughly doubles an already Docs-API-verbose
@@ -250,8 +239,14 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
   // than one tab; a single-tab manuscript never needs it. For a genuinely
   // multi-tab document, this second fetch is unavoidable — the API has no way
   // to fetch one tab's content in isolation.
+  //
+  // A `fields` partial-response mask was tried here to trim the response
+  // further, but the Docs API rejected it with a 400 even for a flat,
+  // unnested mask — so this endpoint doesn't accept the generic Google API
+  // `fields` parameter the way Drive/Sheets do. Don't reintroduce it without
+  // confirming the exact accepted syntax against a live request first.
   async function fetchDocData(docId: string): Promise<GDocDocument> {
-    const stubRes = await fetchWithAuth(`https://docs.googleapis.com/v1/documents/${docId}?fields=${DOC_FIELDS}`);
+    const stubRes = await fetchWithAuth(`https://docs.googleapis.com/v1/documents/${docId}`);
     if (!stubRes.ok) throw new Error(`Failed to fetch document: ${stubRes.statusText}`);
     console.log(`[drive-import] doc stub content-length: ${stubRes.headers.get('content-length') ?? 'unknown'}`);
     const stubData: GDocDocument = await stubRes.json();
@@ -259,7 +254,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     if ((stubData.tabs?.length ?? 0) <= 1) return stubData;
 
     const res = await fetchWithAuth(
-      `https://docs.googleapis.com/v1/documents/${docId}?includeTabsContent=true&fields=${DOC_FIELDS}`
+      `https://docs.googleapis.com/v1/documents/${docId}?includeTabsContent=true`
     );
     if (!res.ok) throw new Error(`Failed to fetch document: ${res.statusText}`);
     console.log(`[drive-import] doc (with tabs) content-length: ${res.headers.get('content-length') ?? 'unknown'}`);
