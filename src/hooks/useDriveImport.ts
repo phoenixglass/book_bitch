@@ -231,11 +231,25 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
 
   // ── Google Doc import ─────────────────────────────────────────────────────
 
+  // `includeTabsContent=true` makes the Docs API duplicate the entire document
+  // body into tabs[].documentTab on top of the classic top-level body.content —
+  // for a single-tab document that roughly doubles an already Docs-API-verbose
+  // JSON payload (a JSON object per text run). Check tab count cheaply first
+  // and only pay for the duplicated payload when the doc actually has more
+  // than one tab; a single-tab manuscript (the common case) never needs it.
   async function fetchDocData(docId: string): Promise<GDocDocument> {
+    const stubRes = await fetchWithAuth(`https://docs.googleapis.com/v1/documents/${docId}`);
+    if (!stubRes.ok) throw new Error(`Failed to fetch document: ${stubRes.statusText}`);
+    console.log(`[drive-import] doc stub content-length: ${stubRes.headers.get('content-length') ?? 'unknown'}`);
+    const stubData: GDocDocument = await stubRes.json();
+    console.log(`[drive-import] doc ${docId}: ${stubData.tabs?.length ?? 0} tab(s)`);
+    if ((stubData.tabs?.length ?? 0) <= 1) return stubData;
+
     const res = await fetchWithAuth(
       `https://docs.googleapis.com/v1/documents/${docId}?includeTabsContent=true`
     );
     if (!res.ok) throw new Error(`Failed to fetch document: ${res.statusText}`);
+    console.log(`[drive-import] doc (with tabs) content-length: ${res.headers.get('content-length') ?? 'unknown'}`);
     return res.json();
   }
 
