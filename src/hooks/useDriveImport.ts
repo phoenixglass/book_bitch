@@ -431,16 +431,23 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
       // Update folder title but preserve all children (don't wipe them)
       updateItem(folderId, { title: docData.title || 'Untitled' });
 
+      // Snapshot the folder's existing children once, up front — each chapter/tab
+      // maps to a distinct key so nothing added during this pass can collide with
+      // a later lookup. Re-flattening the whole binder tree from scratch inside
+      // the loop (once per chapter) made a full-manuscript resync O(chapters ×
+      // binder size); for a long manuscript that was enough to freeze the tab.
+      const targetFolder = useAppStore.getState().binder
+        .flatMap(function flatten(item: BinderItem): BinderItem[] { return [item, ...(item.children || []).flatMap(flatten)]; })
+        .find((item) => item.id === folderId);
+      const existingChildren = targetFolder?.children ?? [];
+
       // Helper: find existing child by its stable Drive tab/heading key (survives
       // renames); fall back to matching by title for legacy children that predate
       // driveImportKey. Update its content in place; create new only if neither matches.
       const mergeChapter = (key: string | undefined, title: string, html: string) => {
-        const folder = useAppStore.getState().binder
-          .flatMap(function flatten(item: BinderItem): BinderItem[] { return [item, ...(item.children || []).flatMap(flatten)]; })
-          .find((item) => item.id === folderId);
         const existing =
-          (key && folder?.children?.find((c) => c.driveImportKey === key)) ||
-          folder?.children?.find((c) => c.title === title);
+          (key && existingChildren.find((c) => c.driveImportKey === key)) ||
+          existingChildren.find((c) => c.title === title);
         if (existing) {
           updateItem(existing.id, { title, content: html, driveImportKey: key ?? existing.driveImportKey });
         } else {
@@ -618,6 +625,14 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
   const KEEP_STYLE_PROPS = new Set(['font-weight', 'font-style', 'text-decoration', 'vertical-align']);
   function cleanGoogleDocsHtml(html: string): string {
     const doc = new DOMParser().parseFromString(html, 'text/html');
+    // Google's exporter often points formatting at numbered CSS classes
+    // (class="c3 c7") defined in a <head><style> block instead of (or in
+    // addition to) inline style attributes. We only keep <body> (see
+    // exportDocAsHtml), so that stylesheet never makes it here — any class
+    // referencing it is already inert. Strip it so the noise-span unwrap
+    // below actually catches these wrapper spans instead of leaving
+    // thousands of dead class references as bloat.
+    doc.querySelectorAll('[class]').forEach((el) => el.removeAttribute('class'));
     doc.querySelectorAll<HTMLElement>('[style]').forEach((el) => {
       const kept: string[] = [];
       for (const prop of Array.from(el.style)) {
@@ -637,7 +652,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
       el.removeAttribute('id');
     });
     // Unwrap spans left with no attributes at all — pure noise wrappers
-    doc.querySelectorAll('span:not([style]):not([class])').forEach((el) => {
+    doc.querySelectorAll('span:not([style])').forEach((el) => {
       const parent = el.parentNode;
       if (!parent) return;
       while (el.firstChild) parent.insertBefore(el.firstChild, el);
