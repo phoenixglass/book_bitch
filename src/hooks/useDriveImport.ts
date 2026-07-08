@@ -231,14 +231,27 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
 
   // ── Google Doc import ─────────────────────────────────────────────────────
 
+  // Top-level-only fields mask: drops document-wide tables this code never
+  // reads (namedStyles, lists, inlineObjects, positionedObjects, headers,
+  // footers, footnotes, revisionId, suggestion metadata) without touching
+  // body/tabs, which are needed in full. Deliberately unnested — Google's
+  // partial-response syntax supports nested selectors like
+  // `tabs(tabProperties,documentTab.body.content)`, but tabs can recurse
+  // into childTabs, and a malformed nested mask would make Google reject
+  // the request outright (worse than not trimming at all). This flat mask
+  // is unambiguous and still cuts real bloat for image/list-heavy docs.
+  const DOC_FIELDS = 'documentId,title,tabs,body';
+
   // `includeTabsContent=true` makes the Docs API duplicate the entire document
   // body into tabs[].documentTab on top of the classic top-level body.content —
   // for a single-tab document that roughly doubles an already Docs-API-verbose
   // JSON payload (a JSON object per text run). Check tab count cheaply first
   // and only pay for the duplicated payload when the doc actually has more
-  // than one tab; a single-tab manuscript (the common case) never needs it.
+  // than one tab; a single-tab manuscript never needs it. For a genuinely
+  // multi-tab document, this second fetch is unavoidable — the API has no way
+  // to fetch one tab's content in isolation.
   async function fetchDocData(docId: string): Promise<GDocDocument> {
-    const stubRes = await fetchWithAuth(`https://docs.googleapis.com/v1/documents/${docId}`);
+    const stubRes = await fetchWithAuth(`https://docs.googleapis.com/v1/documents/${docId}?fields=${DOC_FIELDS}`);
     if (!stubRes.ok) throw new Error(`Failed to fetch document: ${stubRes.statusText}`);
     console.log(`[drive-import] doc stub content-length: ${stubRes.headers.get('content-length') ?? 'unknown'}`);
     const stubData: GDocDocument = await stubRes.json();
@@ -246,7 +259,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     if ((stubData.tabs?.length ?? 0) <= 1) return stubData;
 
     const res = await fetchWithAuth(
-      `https://docs.googleapis.com/v1/documents/${docId}?includeTabsContent=true`
+      `https://docs.googleapis.com/v1/documents/${docId}?includeTabsContent=true&fields=${DOC_FIELDS}`
     );
     if (!res.ok) throw new Error(`Failed to fetch document: ${res.statusText}`);
     console.log(`[drive-import] doc (with tabs) content-length: ${res.headers.get('content-length') ?? 'unknown'}`);
@@ -472,13 +485,16 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
       };
 
       if (tabs.length > 1) {
-        for (const tab of flattenTabs(tabs)) {
+        const flatTabs = flattenTabs(tabs);
+        console.log(`[drive-import] ${flatTabs.length} tabs to merge`);
+        flatTabs.forEach((tab, i) => {
           const tabTitle =
             tab.tabProperties?.title || `Tab ${(tab.tabProperties?.index ?? 0) + 1}`;
           const html = docElementsToHtml(tab.documentTab?.body?.content || []);
           const key = driveChildKey(driveFileId, tab.tabProperties?.tabId);
+          console.log(`[drive-import] merging tab ${i + 1}/${flatTabs.length} "${tabTitle}" (${html.length.toLocaleString()} chars)`);
           mergeChapter(key, tabTitle, html);
-        }
+        });
       } else {
         const bodyContent =
           docData.tabs?.[0]?.documentTab?.body?.content ||
