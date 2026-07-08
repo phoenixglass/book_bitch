@@ -245,34 +245,24 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
 
   // ── Google Doc import ─────────────────────────────────────────────────────
 
-  // `includeTabsContent=true` makes the Docs API duplicate the entire document
-  // body into tabs[].documentTab on top of the classic top-level body.content —
-  // for a single-tab document that roughly doubles an already Docs-API-verbose
-  // JSON payload (a JSON object per text run). Check tab count cheaply first
-  // and only pay for the duplicated payload when the doc actually has more
-  // than one tab; a single-tab manuscript never needs it. For a genuinely
-  // multi-tab document, this second fetch is unavoidable — the API has no way
-  // to fetch one tab's content in isolation.
-  //
-  // A `fields` partial-response mask was tried here to trim the response
-  // further, but the Docs API rejected it with a 400 even for a flat,
-  // unnested mask — so this endpoint doesn't accept the generic Google API
-  // `fields` parameter the way Drive/Sheets do. Don't reintroduce it without
-  // confirming the exact accepted syntax against a live request first.
+  // Always request includeTabsContent=true. A previous version of this
+  // function tried to skip it for single-tab docs by checking tab count via
+  // a cheap unflagged request first, on the theory that tab metadata is
+  // populated regardless of the flag — that turned out to be wrong (or at
+  // least not reliably true): a document confirmed to have many tabs came
+  // back reporting 0 tabs from that stub request, so the second fetch never
+  // happened and only the top-level body.content (apparently just the first
+  // tab) got imported, silently dropping every other tab. Losing tabs is far
+  // worse than the extra payload size, so always fetch the full thing.
   async function fetchDocData(docId: string): Promise<GDocDocument> {
-    const stubRes = await fetchWithAuth(`https://docs.googleapis.com/v1/documents/${docId}`);
-    if (!stubRes.ok) throw new Error(await googleErrorMessage(stubRes, `Failed to fetch document: ${stubRes.statusText}`));
-    console.log(`[drive-import] doc stub content-length: ${stubRes.headers.get('content-length') ?? 'unknown'}`);
-    const stubData: GDocDocument = await stubRes.json();
-    console.log(`[drive-import] doc ${docId}: ${stubData.tabs?.length ?? 0} tab(s)`);
-    if ((stubData.tabs?.length ?? 0) <= 1) return stubData;
-
     const res = await fetchWithAuth(
       `https://docs.googleapis.com/v1/documents/${docId}?includeTabsContent=true`
     );
     if (!res.ok) throw new Error(await googleErrorMessage(res, `Failed to fetch document: ${res.statusText}`));
-    console.log(`[drive-import] doc (with tabs) content-length: ${res.headers.get('content-length') ?? 'unknown'}`);
-    return res.json();
+    console.log(`[drive-import] doc content-length: ${res.headers.get('content-length') ?? 'unknown'}`);
+    const data: GDocDocument = await res.json();
+    console.log(`[drive-import] doc ${docId}: ${data.tabs?.length ?? 0} tab(s)`);
+    return data;
   }
 
   async function importGoogleDoc(file: GooglePickerDocument) {
