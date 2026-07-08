@@ -511,14 +511,24 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
           [];
         const chapters = splitByHeading(bodyContent);
         const fullHtml = await tryExportDocAsHtml(driveFileId);
-        const chapterHtmls = fullHtml ? splitHtmlByH1(fullHtml, chapters.map((c) => c.title)) : [];
-        console.log(`[drive-import] ${chapters.length} chapters detected, ${chapterHtmls.length} HTML parts matched`);
 
-        for (let i = 0; i < chapters.length; i++) {
-          const html = chapterHtmls[i] ?? docElementsToHtml(chapters[i].elements);
-          const key = driveChildKey(driveFileId, undefined, chapters[i].headingId);
-          console.log(`[drive-import] merging chapter ${i + 1}/${chapters.length} "${chapters[i].title}" (${html.length.toLocaleString()} chars)`);
-          mergeChapter(key, chapters[i].title, html);
+        if (chapters.length === 0) {
+          // No H1 headings at all — nothing to split by chapter, and the
+          // per-chapter loop below would never run against an empty array,
+          // silently merging nothing. Merge the whole document as one item.
+          const html = fullHtml ?? docElementsToHtml(bodyContent);
+          console.log(`[drive-import] no headings — merging whole document as single item (${html.length.toLocaleString()} chars)`);
+          mergeChapter(driveFileId, docData.title || 'Untitled', html);
+        } else {
+          const chapterHtmls = fullHtml ? splitHtmlByH1(fullHtml, chapters.map((c) => c.title)) : [];
+          console.log(`[drive-import] ${chapters.length} chapters detected, ${chapterHtmls.length} HTML parts matched`);
+
+          for (let i = 0; i < chapters.length; i++) {
+            const html = chapterHtmls[i] ?? docElementsToHtml(chapters[i].elements);
+            const key = driveChildKey(driveFileId, undefined, chapters[i].headingId);
+            console.log(`[drive-import] merging chapter ${i + 1}/${chapters.length} "${chapters[i].title}" (${html.length.toLocaleString()} chars)`);
+            mergeChapter(key, chapters[i].title, html);
+          }
         }
       }
 
