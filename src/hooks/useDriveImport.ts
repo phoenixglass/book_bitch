@@ -83,6 +83,20 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     return res;
   }
 
+  // Google's error responses carry the actual reason (e.g. "insufficient
+  // permissions", "file too large to export") in the JSON body, not in
+  // res.statusText (which is just the generic HTTP reason phrase like
+  // "Forbidden"). Read it so failures are diagnosable instead of a bare
+  // status code.
+  async function googleErrorMessage(res: Response, fallback: string): Promise<string> {
+    try {
+      const body = await res.clone().json() as { error?: { message?: string } };
+      return body?.error?.message ? `${fallback}: ${body.error.message}` : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
   // ── Picker ────────────────────────────────────────────────────────────────
 
   async function importFromDrive() {
@@ -169,7 +183,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     const res = await fetchWithAuth(
       `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`
     );
-    if (!res.ok) throw new Error(`Failed to download file: ${res.statusText}`);
+    if (!res.ok) throw new Error(await googleErrorMessage(res, `Failed to download file: ${res.statusText}`));
     const arrayBuffer = await res.arrayBuffer();
 
     const baseName: string = file.name.replace(/\.[^/.]+$/, '');
@@ -247,7 +261,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
   // confirming the exact accepted syntax against a live request first.
   async function fetchDocData(docId: string): Promise<GDocDocument> {
     const stubRes = await fetchWithAuth(`https://docs.googleapis.com/v1/documents/${docId}`);
-    if (!stubRes.ok) throw new Error(`Failed to fetch document: ${stubRes.statusText}`);
+    if (!stubRes.ok) throw new Error(await googleErrorMessage(stubRes, `Failed to fetch document: ${stubRes.statusText}`));
     console.log(`[drive-import] doc stub content-length: ${stubRes.headers.get('content-length') ?? 'unknown'}`);
     const stubData: GDocDocument = await stubRes.json();
     console.log(`[drive-import] doc ${docId}: ${stubData.tabs?.length ?? 0} tab(s)`);
@@ -256,7 +270,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     const res = await fetchWithAuth(
       `https://docs.googleapis.com/v1/documents/${docId}?includeTabsContent=true`
     );
-    if (!res.ok) throw new Error(`Failed to fetch document: ${res.statusText}`);
+    if (!res.ok) throw new Error(await googleErrorMessage(res, `Failed to fetch document: ${res.statusText}`));
     console.log(`[drive-import] doc (with tabs) content-length: ${res.headers.get('content-length') ?? 'unknown'}`);
     return res.json();
   }
@@ -511,7 +525,8 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
       selectItem(folderId);
     } catch (error) {
       console.error('Re-sync failed:', error);
-      alert('Failed to re-sync from Google Drive.');
+      const msg = error instanceof Error ? error.message : String(error);
+      alert(`Failed to re-sync from Google Drive: ${msg}`);
     } finally {
       setIsLoading(false);
     }
@@ -561,7 +576,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     const res = await fetchWithAuth(
       `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`
     );
-    if (!res.ok) throw new Error(`Failed to download file: ${res.statusText}`);
+    if (!res.ok) throw new Error(await googleErrorMessage(res, `Failed to download file: ${res.statusText}`));
     const text = await res.text();
     const delimiter = /\.tsv$/i.test(file.name) || file.mimeType === 'text/tab-separated-values' ? '\t' : ',';
     const html = delimitedToHtml(text, delimiter);
@@ -598,7 +613,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     const res = await fetchWithAuth(
       `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`
     );
-    if (!res.ok) throw new Error(`Failed to download file: ${res.statusText}`);
+    if (!res.ok) throw new Error(await googleErrorMessage(res, `Failed to download file: ${res.statusText}`));
     const content = await res.text();
 
     if (targetSection !== 'manuscript') {
@@ -636,7 +651,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     const res = await fetchWithAuth(
       `https://www.googleapis.com/drive/v3/files/${docId}/export?mimeType=text/html`
     );
-    if (!res.ok) throw new Error(`Failed to export doc: ${res.statusText}`);
+    if (!res.ok) throw new Error(await googleErrorMessage(res, `Failed to export doc: ${res.statusText}`));
     const raw = await res.text();
     console.log(`[drive-import] raw export for ${docId}: ${raw.length.toLocaleString()} chars`);
     // Extract body content from the full HTML page
@@ -953,7 +968,8 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
       updateItem(docId, { title: docData.title || 'Untitled', content: html });
     } catch (error) {
       console.error('Re-sync doc failed:', error);
-      alert('Failed to re-sync document from Google Drive.');
+      const msg = error instanceof Error ? error.message : String(error);
+      alert(`Failed to re-sync document from Google Drive: ${msg}`);
     } finally {
       setIsLoading(false);
     }
