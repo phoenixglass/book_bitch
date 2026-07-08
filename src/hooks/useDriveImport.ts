@@ -8,6 +8,10 @@ import type {
 import { delimitedToHtml, parseDocx, parseXlsx } from '../utils/documentParser';
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+// Browser API key from Google Cloud Console (APIs & Services > Credentials).
+// The Picker API requires this alongside the OAuth token — without it, the
+// picker UI opens but fails to list/select Drive files ("API key not valid").
+const API_KEY = import.meta.env.VITE_GOOGLE_API_KEY || '';
 const SCOPES =
   'https://www.googleapis.com/auth/drive.readonly ' +
   'https://www.googleapis.com/auth/spreadsheets.readonly ' +
@@ -105,9 +109,11 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
   async function showPicker(accessToken: string) {
     return new Promise<void>((resolve) => {
       window.gapi.load('picker', () => {
-        const picker = new window.google.picker.PickerBuilder()
+        let builder = new window.google.picker.PickerBuilder()
           .addView(window.google.picker.ViewId.DOCS)
-          .setOAuthToken(accessToken)
+          .setOAuthToken(accessToken);
+        if (API_KEY) builder = builder.setDeveloperKey(API_KEY);
+        const picker = builder
           .setCallback(async (data: GooglePickerData) => {
             if (data.action === window.google.picker.Action.PICKED) {
               await handlePickerResult(data);
@@ -467,10 +473,12 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
         const chapters = splitByHeading(bodyContent);
         const fullHtml = await exportDocAsHtml(driveFileId);
         const chapterHtmls = splitHtmlByH1(fullHtml, chapters.map((c) => c.title));
+        console.log(`[drive-import] ${chapters.length} chapters detected, ${chapterHtmls.length} HTML parts matched`);
 
         for (let i = 0; i < chapters.length; i++) {
           const html = chapterHtmls[i] ?? docElementsToHtml(chapters[i].elements);
           const key = driveChildKey(driveFileId, undefined, chapters[i].headingId);
+          console.log(`[drive-import] merging chapter ${i + 1}/${chapters.length} "${chapters[i].title}" (${html.length.toLocaleString()} chars)`);
           mergeChapter(key, chapters[i].title, html);
         }
       }
@@ -605,9 +613,12 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     );
     if (!res.ok) throw new Error(`Failed to export doc: ${res.statusText}`);
     const raw = await res.text();
+    console.log(`[drive-import] raw export for ${docId}: ${raw.length.toLocaleString()} chars`);
     // Extract body content from the full HTML page
     const bodyMatch = raw.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-    return cleanGoogleDocsHtml(bodyMatch ? bodyMatch[1] : raw);
+    const cleaned = cleanGoogleDocsHtml(bodyMatch ? bodyMatch[1] : raw);
+    console.log(`[drive-import] cleaned export for ${docId}: ${cleaned.length.toLocaleString()} chars`);
+    return cleaned;
   }
 
   // Google's raw HTML export wraps nearly every run of text in its own
