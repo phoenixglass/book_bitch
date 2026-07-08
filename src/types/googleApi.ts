@@ -35,7 +35,6 @@ export interface GooglePickerInstance {
 export interface GooglePickerBuilder {
   addView: (viewId: string) => GooglePickerBuilder;
   setOAuthToken: (token: string) => GooglePickerBuilder;
-  setDeveloperKey: (key: string) => GooglePickerBuilder;
   setCallback: (callback: (data: GooglePickerData) => void | Promise<void>) => GooglePickerBuilder;
   build: () => GooglePickerInstance;
 }
