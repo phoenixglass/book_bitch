@@ -342,7 +342,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
       const chapters = splitByHeading(bodyContent);
 
       if (chapters.length <= 1) {
-        const html = await exportDocAsHtml(driveFileId);
+        const html = await exportDocAsHtmlOrFallback(driveFileId, bodyContent);
         items = [{
           title: docName,
           content: html,
@@ -354,8 +354,8 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
           },
         }];
       } else {
-        const fullHtml = await exportDocAsHtml(driveFileId);
-        const chapterHtmls = splitHtmlByH1(fullHtml, chapters.map((c) => c.title));
+        const fullHtml = await tryExportDocAsHtml(driveFileId);
+        const chapterHtmls = fullHtml ? splitHtmlByH1(fullHtml, chapters.map((c) => c.title)) : [];
         items = chapters.map((chapter, i) => ({
           title: chapter.title,
           content: chapterHtmls[i] ?? docElementsToHtml(chapter.elements),
@@ -419,7 +419,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
 
     if (chapters.length <= 1) {
       // Single document — use HTML export for full formatting fidelity
-      const html = await exportDocAsHtml(driveFileId);
+      const html = await exportDocAsHtmlOrFallback(driveFileId, bodyContent);
       addItem(null, 'document');
       const docId = useAppStore.getState().selectedId;
       if (docId) {
@@ -430,8 +430,8 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     }
 
     // Multi-chapter: export full HTML then split by <h1> to preserve formatting
-    const fullHtml = await exportDocAsHtml(driveFileId);
-    const chapterHtmls = splitHtmlByH1(fullHtml, chapters.map((c) => c.title));
+    const fullHtml = await tryExportDocAsHtml(driveFileId);
+    const chapterHtmls = fullHtml ? splitHtmlByH1(fullHtml, chapters.map((c) => c.title)) : [];
 
     addItem(null, 'folder');
     const folderId = useAppStore.getState().selectedId;
@@ -510,8 +510,8 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
           docData.body?.content ||
           [];
         const chapters = splitByHeading(bodyContent);
-        const fullHtml = await exportDocAsHtml(driveFileId);
-        const chapterHtmls = splitHtmlByH1(fullHtml, chapters.map((c) => c.title));
+        const fullHtml = await tryExportDocAsHtml(driveFileId);
+        const chapterHtmls = fullHtml ? splitHtmlByH1(fullHtml, chapters.map((c) => c.title)) : [];
         console.log(`[drive-import] ${chapters.length} chapters detected, ${chapterHtmls.length} HTML parts matched`);
 
         for (let i = 0; i < chapters.length; i++) {
@@ -659,6 +659,31 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     const cleaned = cleanGoogleDocsHtml(bodyMatch ? bodyMatch[1] : raw);
     console.log(`[drive-import] cleaned export for ${docId}: ${cleaned.length.toLocaleString()} chars`);
     return cleaned;
+  }
+
+  // Google's HTML export has a hard ~10MB output cap ("This file is too large
+  // to be exported") — commonly hit by a document with a large embedded image
+  // even when its text content is small. Rather than failing the whole
+  // import/re-sync, fall back to reconstructing HTML from the Docs API JSON
+  // elements we already fetched via docElementsToHtml. That path already
+  // drops inline images entirely (see renderInlines), so it's naturally
+  // exempt from the export size cap — the tradeoff is losing embedded images
+  // in that document, not losing the import.
+  async function exportDocAsHtmlOrFallback(docId: string, elements: GDocElement[]): Promise<string> {
+    return (await tryExportDocAsHtml(docId)) ?? docElementsToHtml(elements);
+  }
+
+  // Same fallback, but for callers that split the export by chapter (splitHtmlByH1)
+  // and already have their own per-chapter docElementsToHtml fallback for when a
+  // chapter doesn't line up with an <h1> part — null here just means every
+  // chapter takes that existing fallback instead of only some of them.
+  async function tryExportDocAsHtml(docId: string): Promise<string | null> {
+    try {
+      return await exportDocAsHtml(docId);
+    } catch (error) {
+      console.error(`[drive-import] HTML export failed for ${docId}, falling back to JSON-based rendering (images will be dropped):`, error);
+      return null;
+    }
   }
 
   // Google's raw HTML export wraps nearly every run of text in its own
@@ -963,8 +988,12 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
   async function performResyncDriveDoc(docId: string, driveFileId: string) {
     try {
       setIsLoading(true);
-      const html = await exportDocAsHtml(driveFileId);
       const docData = await fetchDocData(driveFileId);
+      const bodyContent =
+        docData.tabs?.[0]?.documentTab?.body?.content ||
+        docData.body?.content ||
+        [];
+      const html = await exportDocAsHtmlOrFallback(driveFileId, bodyContent);
       updateItem(docId, { title: docData.title || 'Untitled', content: html });
     } catch (error) {
       console.error('Re-sync doc failed:', error);
