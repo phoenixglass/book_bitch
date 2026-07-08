@@ -467,10 +467,12 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
         const chapters = splitByHeading(bodyContent);
         const fullHtml = await exportDocAsHtml(driveFileId);
         const chapterHtmls = splitHtmlByH1(fullHtml, chapters.map((c) => c.title));
+        console.log(`[drive-import] ${chapters.length} chapters detected, ${chapterHtmls.length} HTML parts matched`);
 
         for (let i = 0; i < chapters.length; i++) {
           const html = chapterHtmls[i] ?? docElementsToHtml(chapters[i].elements);
           const key = driveChildKey(driveFileId, undefined, chapters[i].headingId);
+          console.log(`[drive-import] merging chapter ${i + 1}/${chapters.length} "${chapters[i].title}" (${html.length.toLocaleString()} chars)`);
           mergeChapter(key, chapters[i].title, html);
         }
       }
@@ -605,9 +607,12 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     );
     if (!res.ok) throw new Error(`Failed to export doc: ${res.statusText}`);
     const raw = await res.text();
+    console.log(`[drive-import] raw export for ${docId}: ${raw.length.toLocaleString()} chars`);
     // Extract body content from the full HTML page
     const bodyMatch = raw.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-    return cleanGoogleDocsHtml(bodyMatch ? bodyMatch[1] : raw);
+    const cleaned = cleanGoogleDocsHtml(bodyMatch ? bodyMatch[1] : raw);
+    console.log(`[drive-import] cleaned export for ${docId}: ${cleaned.length.toLocaleString()} chars`);
+    return cleaned;
   }
 
   // Google's raw HTML export wraps nearly every run of text in its own
