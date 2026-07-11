@@ -12,12 +12,16 @@ interface ExtractedEntry {
   description: string;
   aliases?: string[];
   role?: string;
+  age?: string;
+  pronouns?: string;
   relationships?: string;
   physicalDetails?: string;
   atmosphere?: string;
   meaning?: string;
   appearances?: string;
 }
+
+const ENRICHABLE_TYPES = new Set<CodexType>(['character', 'place', 'motif', 'object']);
 
 function collectScenes(items: BinderItem[]): Array<{ id: string; title: string; text: string }> {
   const scenes: Array<{ id: string; title: string; text: string }> = [];
@@ -292,7 +296,7 @@ function CodexDetail({ entry, onClose }: { entry: CodexEntry; onClose: () => voi
 }
 
 export function CodexView() {
-  const { codexEntries, addCodexEntry, pendingSelectId, setPendingSelectId, binder, setAIContextObject } = useAppStore();
+  const { codexEntries, addCodexEntry, updateCodexEntry, pendingSelectId, setPendingSelectId, binder, setAIContextObject } = useAppStore();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -318,6 +322,12 @@ export function CodexView() {
   const [scanSelected, setScanSelected] = useState<boolean[]>([]);
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanTruncated, setScanTruncated] = useState(false);
+
+  // ── Post-import enrichment ──────────────────────────────────────────────────
+  const [lastImportedIds, setLastImportedIds] = useState<string[] | null>(null);
+  const [enriching, setEnriching] = useState(false);
+  const [enrichProgress, setEnrichProgress] = useState(0);
+  const [enrichError, setEnrichError] = useState<string | null>(null);
 
   const existingNames = useMemo(
     () => new Set(codexEntries.map((e) => e.name.toLowerCase())),
@@ -359,23 +369,82 @@ export function CodexView() {
 
   function importSelected() {
     if (!scanResults) return;
+    const importedIds: string[] = [];
     scanResults.forEach((entry, i) => {
       if (!scanSelected[i]) return;
-      addCodexEntry({
+      const id = addCodexEntry({
         name: entry.name,
         codexType: entry.codexType,
         description: entry.description,
         aliases: entry.aliases ?? [],
         role: entry.role,
+        age: entry.age,
+        pronouns: entry.pronouns,
         relationships: entry.relationships,
         physicalDetails: entry.physicalDetails,
         atmosphere: entry.atmosphere,
         meaning: entry.meaning,
         appearances: entry.appearances,
       });
+      if (ENRICHABLE_TYPES.has(entry.codexType)) importedIds.push(id);
     });
     setScanResults(null);
     setScanSelected([]);
+    setEnrichError(null);
+    setLastImportedIds(importedIds.length > 0 ? importedIds : null);
+  }
+
+  // Runs "Suggest Missing Fields" (the same AI enrichment used from the AI
+  // Panel) against each freshly-imported entry in turn, filling in only the
+  // fields that are still empty — voice, arc, secrets, deeper relationships,
+  // etc. — from the description the scan already grounded in the manuscript.
+  async function enrichImported() {
+    if (!lastImportedIds || lastImportedIds.length === 0) return;
+    setEnriching(true);
+    setEnrichProgress(0);
+    setEnrichError(null);
+    let failures = 0;
+    try {
+      for (const id of lastImportedIds) {
+        const entry = useAppStore.getState().codexEntries.find((e) => e.id === id);
+        if (!entry) { setEnrichProgress((n) => n + 1); continue; }
+        try {
+          const resp = await fetch('/api/ai/codex-suggest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: entry.name,
+              content: entry.description,
+              codexType: entry.codexType,
+              existingNotes: entry.notes,
+              existingFields: {
+                role: entry.role, age: entry.age, pronouns: entry.pronouns,
+                relationships: entry.relationships, physicalDetails: entry.physicalDetails,
+                voiceNotes: entry.voiceNotes, arcNotes: entry.arcNotes,
+                secrets: entry.secrets, contradictions: entry.contradictions,
+                atmosphere: entry.atmosphere, meaning: entry.meaning,
+                appearances: entry.appearances, evolution: entry.evolution,
+              },
+            }),
+          });
+          if (!resp.ok) { failures++; setEnrichProgress((n) => n + 1); continue; }
+          const data = await resp.json() as { fieldSuggestions?: Array<{ field: string; value: string }> };
+          const patch: Record<string, string> = {};
+          for (const s of data.fieldSuggestions ?? []) {
+            const current = (entry as unknown as Record<string, string>)[s.field];
+            if (s.field && s.value && !current?.trim()) patch[s.field] = s.value;
+          }
+          if (Object.keys(patch).length > 0) updateCodexEntry(id, patch);
+        } catch { failures++; }
+        setEnrichProgress((n) => n + 1);
+      }
+      if (failures > 0) {
+        setEnrichError(`${failures} of ${lastImportedIds.length} ${failures === 1 ? 'entry' : 'entries'} couldn't be enriched — try again from the entry's AI panel.`);
+      }
+    } finally {
+      setEnriching(false);
+      if (failures === 0) setLastImportedIds(null);
+    }
   }
 
   const filtered = useMemo(() => {
@@ -560,26 +629,46 @@ export function CodexView() {
             })}
           </div>
         </div>
-      ) : scanError ? (
-        <div className="flex-1 flex items-center justify-center text-gray-600">
-          <div className="text-center px-6">
-            <div className="text-3xl mb-2">⚠️</div>
-            <p className="text-sm text-red-400">{scanError}</p>
-            <button onClick={() => setScanError(null)} className="text-xs text-gray-500 hover:text-gray-300 mt-3">Dismiss</button>
-          </div>
-        </div>
-      ) : selected ? (
-        <CodexDetail key={selected.id} entry={selected} onClose={() => setSelectedId(null)} />
       ) : (
-        <div className="flex-1 flex items-center justify-center text-gray-600">
-          <div className="text-center">
-            <div className="text-5xl mb-3">📚</div>
-            <p className="text-sm">Select an entry to view it.</p>
-            <p className="text-xs mt-1 text-gray-700">Your Codex is a flexible bible for every element of your world.</p>
-            <p className="text-xs mt-3 text-gray-700">
-              Use <span className="text-blue-400">✨ Scan</span> to extract entities from your manuscript automatically.
-            </p>
-          </div>
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {lastImportedIds && lastImportedIds.length > 0 && (
+            <div className="flex items-center gap-3 px-4 py-2 bg-[#0f3460]/50 border-b border-[#0f3460] text-xs shrink-0">
+              {enrichError && <span className="text-red-400">{enrichError}</span>}
+              <span className="text-gray-300">
+                Imported {lastImportedIds.length} {lastImportedIds.length === 1 ? 'entry' : 'entries'}.
+              </span>
+              <button
+                onClick={enrichImported}
+                disabled={enriching}
+                className="text-blue-300 bg-[#16213e] hover:bg-[#1a4a7a] px-2 py-0.5 rounded disabled:opacity-60 transition-colors"
+              >
+                {enriching ? `⏳ Filling in details… ${enrichProgress}/${lastImportedIds.length}` : '✨ Fill in details from manuscript'}
+              </button>
+              <button onClick={() => setLastImportedIds(null)} className="text-gray-500 hover:text-gray-300 ml-auto">Dismiss</button>
+            </div>
+          )}
+          {scanError ? (
+            <div className="flex-1 flex items-center justify-center text-gray-600">
+              <div className="text-center px-6">
+                <div className="text-3xl mb-2">⚠️</div>
+                <p className="text-sm text-red-400">{scanError}</p>
+                <button onClick={() => setScanError(null)} className="text-xs text-gray-500 hover:text-gray-300 mt-3">Dismiss</button>
+              </div>
+            </div>
+          ) : selected ? (
+            <CodexDetail key={selected.id} entry={selected} onClose={() => setSelectedId(null)} />
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-gray-600">
+              <div className="text-center">
+                <div className="text-5xl mb-3">📚</div>
+                <p className="text-sm">Select an entry to view it.</p>
+                <p className="text-xs mt-1 text-gray-700">Your Codex is a flexible bible for every element of your world.</p>
+                <p className="text-xs mt-3 text-gray-700">
+                  Use <span className="text-blue-400">✨ Scan</span> to extract entities from your manuscript automatically.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
