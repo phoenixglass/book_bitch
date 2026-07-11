@@ -549,7 +549,7 @@ aiRouter.post('/codex-suggest', async (req: Request, res: Response) => {
   ].filter(Boolean).join('\n');
 
   try {
-    const raw = await callAI(config, systemPrompt, userPrompt);
+    const raw = await callAI(config, systemPrompt, userPrompt, 4096);
     const parsed = extractJSON(raw) as {
       fieldSuggestions: Array<{ field: string; value: string; reason: string }>;
       contradictions: string[];
