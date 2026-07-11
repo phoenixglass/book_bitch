@@ -114,9 +114,17 @@ export const CODEX_EXTRACT_SYSTEM = [
   'Deduplicate within this excerpt: one entry per entity, listing aliases.',
   'Extract every entity that is explicitly named or described in the text — characters who appear by name, real-world figures who are named, locations, institutions, publications, themes. Skip only truly generic unnamed background details.',
   '',
+  'CHARACTER BASICS — when codexType is "character", also populate these fields whenever the text explicitly states them (omit the key entirely if it is not stated — never guess, infer, or invent a value):',
+  '- role: the character\'s narrative role or relation to the protagonist as described in the text (e.g. "narrator\'s husband", "antagonist", "protagonist\'s therapist").',
+  '- physicalDetails: physical appearance, build, or distinguishing features explicitly described in the text.',
+  '- relationships: how this character explicitly relates to other named characters, grounded in the text (e.g. "married to Maya", "narrator\'s older brother").',
+  '- pronouns: pronouns explicitly used for the character in the text.',
+  '- age: age, birth year, or approximate age/generation explicitly stated in the text.',
+  'These five fields are supplementary evidence-only extractions, not required — most characters will have some empty. Do not fabricate them to fill gaps.',
+  '',
   'OUTPUT FORMAT — NDJSON: output each entity as one complete JSON object on its own line. No outer array, no wrapper object, no markdown fences. If you run out of space, stop after the last complete line — partial objects are useless.',
-  'Each line must be a complete, valid JSON object. Two examples showing the character vs reference distinction:',
-  '{"name":"Maya","codexType":"character","characterTier":"major","confidence":0.95,"description":"Maya is the narrator\'s best friend who appears throughout the story, offering advice and comic relief.","isActualStoryCharacter":true,"isPassingReference":false,"aliases":["May"],"sourceAppearances":[{"itemId":"ch1","itemTitle":"Chapter 1","evidence":"Maya laughed and poured another glass"}],"suggestedTags":["friend","recurring"]}',
+  'Each line must be a complete, valid JSON object. Two examples showing the character vs reference distinction, including the optional character-basics fields when the text supports them:',
+  '{"name":"Maya","codexType":"character","characterTier":"major","confidence":0.95,"description":"Maya is the narrator\'s best friend who appears throughout the story, offering advice and comic relief.","isActualStoryCharacter":true,"isPassingReference":false,"aliases":["May"],"role":"narrator\'s best friend","pronouns":"she/her","physicalDetails":"tall, red-haired, always in motion","sourceAppearances":[{"itemId":"ch1","itemTitle":"Chapter 1","evidence":"Maya laughed and poured another glass"}],"suggestedTags":["friend","recurring"]}',
   '{"name":"Barack Obama","codexType":"reference","characterTier":null,"confidence":0.8,"description":"The 44th US President, invoked by the narrator as a benchmark of political normalcy lost after the 2016 election.","isActualStoryCharacter":false,"isPassingReference":true,"aliases":["Obama"],"sourceAppearances":[{"itemId":"ch2","itemTitle":"Election Night","evidence":"Obama would never have let this happen"}],"suggestedTags":["politics","reference"]}',
 ].join('\n');
 
@@ -171,6 +179,11 @@ export interface RawCodexEntry {
   isActualStoryCharacter?: boolean;
   isPassingReference?: boolean;
   aliases?: string[];
+  role?: string;
+  age?: string;
+  pronouns?: string;
+  relationships?: string;
+  physicalDetails?: string;
   sourceAppearances?: RawCodexAppearance[];
   suggestedTags?: string[];
   [key: string]: unknown;
@@ -226,7 +239,7 @@ export function mergeCodexEntries(raw: RawCodexEntry[]): RawCodexEntry[] {
       if ((entry.confidence ?? 0) > (ex.confidence ?? 0)) ex.confidence = entry.confidence;
       ex.isActualStoryCharacter = ex.isActualStoryCharacter || !!entry.isActualStoryCharacter;
       ex.isPassingReference = ex.isPassingReference && !!entry.isPassingReference;
-      for (const k of ['characterTier', 'narrativeFunction', 'role', 'pronouns', 'relationships', 'physicalDetails', 'atmosphere', 'meaning', 'appearances']) {
+      for (const k of ['characterTier', 'narrativeFunction', 'role', 'age', 'pronouns', 'relationships', 'physicalDetails', 'atmosphere', 'meaning', 'appearances']) {
         if (!ex[k] && entry[k]) ex[k] = entry[k];
       }
       for (const a of aliasNorms) if (!nameIndex.has(`${codexType}::${a}`)) nameIndex.set(`${codexType}::${a}`, targetIdx);
