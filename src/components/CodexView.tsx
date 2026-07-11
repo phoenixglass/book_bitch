@@ -23,6 +23,24 @@ interface ExtractedEntry {
 
 const ENRICHABLE_TYPES = new Set<CodexType>(['character', 'place', 'motif', 'object']);
 
+// Fields a scan result can fill on a matching existing entry — never
+// overwrites a value the author has already filled in.
+const MERGEABLE_FIELDS = [
+  'description', 'role', 'age', 'pronouns', 'relationships',
+  'physicalDetails', 'atmosphere', 'meaning', 'appearances',
+] as const;
+
+function findExistingMatch(entry: ExtractedEntry, codexEntries: CodexEntry[]): CodexEntry | null {
+  const norm = (s: string) => s.trim().toLowerCase();
+  const candidates = new Set([entry.name, ...(entry.aliases ?? [])].map(norm).filter(Boolean));
+  for (const existing of codexEntries) {
+    if (existing.codexType !== entry.codexType) continue;
+    const existingNames = [existing.name, ...existing.aliases].map(norm);
+    if (existingNames.some((n) => candidates.has(n))) return existing;
+  }
+  return null;
+}
+
 function collectScenes(items: BinderItem[]): Array<{ id: string; title: string; text: string }> {
   const scenes: Array<{ id: string; title: string; text: string }> = [];
   for (const item of items) {
@@ -325,14 +343,10 @@ export function CodexView() {
 
   // ── Post-import enrichment ──────────────────────────────────────────────────
   const [lastImportedIds, setLastImportedIds] = useState<string[] | null>(null);
+  const [importSummary, setImportSummary] = useState<{ created: number; updated: number } | null>(null);
   const [enriching, setEnriching] = useState(false);
   const [enrichProgress, setEnrichProgress] = useState(0);
   const [enrichError, setEnrichError] = useState<string | null>(null);
-
-  const existingNames = useMemo(
-    () => new Set(codexEntries.map((e) => e.name.toLowerCase())),
-    [codexEntries],
-  );
 
   const handleScan = useCallback(async () => {
     const scenes = collectScenes(binder);
@@ -369,29 +383,50 @@ export function CodexView() {
 
   function importSelected() {
     if (!scanResults) return;
-    const importedIds: string[] = [];
+    const affectedIds: string[] = [];
+    let created = 0;
+    let updated = 0;
     scanResults.forEach((entry, i) => {
       if (!scanSelected[i]) return;
-      const id = addCodexEntry({
-        name: entry.name,
-        codexType: entry.codexType,
-        description: entry.description,
-        aliases: entry.aliases ?? [],
-        role: entry.role,
-        age: entry.age,
-        pronouns: entry.pronouns,
-        relationships: entry.relationships,
-        physicalDetails: entry.physicalDetails,
-        atmosphere: entry.atmosphere,
-        meaning: entry.meaning,
-        appearances: entry.appearances,
-      });
-      if (ENRICHABLE_TYPES.has(entry.codexType)) importedIds.push(id);
+      const existing = findExistingMatch(entry, codexEntries);
+      if (existing) {
+        const patch: Record<string, unknown> = {};
+        for (const field of MERGEABLE_FIELDS) {
+          const currentVal = (existing as unknown as Record<string, string | undefined>)[field];
+          const newVal = (entry as unknown as Record<string, string | undefined>)[field];
+          if (newVal && !currentVal?.trim()) patch[field] = newVal;
+        }
+        const mergedAliases = Array.from(new Set([...existing.aliases, ...(entry.aliases ?? [])]));
+        if (mergedAliases.length !== existing.aliases.length) patch.aliases = mergedAliases;
+        if (Object.keys(patch).length > 0) {
+          updateCodexEntry(existing.id, patch);
+          updated++;
+        }
+        if (ENRICHABLE_TYPES.has(entry.codexType)) affectedIds.push(existing.id);
+      } else {
+        const id = addCodexEntry({
+          name: entry.name,
+          codexType: entry.codexType,
+          description: entry.description,
+          aliases: entry.aliases ?? [],
+          role: entry.role,
+          age: entry.age,
+          pronouns: entry.pronouns,
+          relationships: entry.relationships,
+          physicalDetails: entry.physicalDetails,
+          atmosphere: entry.atmosphere,
+          meaning: entry.meaning,
+          appearances: entry.appearances,
+        });
+        created++;
+        if (ENRICHABLE_TYPES.has(entry.codexType)) affectedIds.push(id);
+      }
     });
     setScanResults(null);
     setScanSelected([]);
     setEnrichError(null);
-    setLastImportedIds(importedIds.length > 0 ? importedIds : null);
+    setImportSummary(created + updated > 0 ? { created, updated } : null);
+    setLastImportedIds(affectedIds.length > 0 ? affectedIds : null);
   }
 
   // Runs "Suggest Missing Fields" (the same AI enrichment used from the AI
@@ -443,7 +478,7 @@ export function CodexView() {
       }
     } finally {
       setEnriching(false);
-      if (failures === 0) setLastImportedIds(null);
+      if (failures === 0) { setLastImportedIds(null); setImportSummary(null); }
     }
   }
 
@@ -585,7 +620,7 @@ export function CodexView() {
             </div>
             {scanResults.map((entry, i) => {
               if (filterType && entry.codexType !== filterType) return null;
-              const isDuplicate = existingNames.has(entry.name.toLowerCase());
+              const existingMatch = findExistingMatch(entry, codexEntries);
               return (
                 <label
                   key={i}
@@ -611,9 +646,9 @@ export function CodexView() {
                       <span className="text-xs text-gray-500 bg-[#0d1117] px-1.5 py-0.5 rounded">
                         {TYPE_ICONS[entry.codexType]} {TYPE_LABELS[entry.codexType]}
                       </span>
-                      {isDuplicate && (
-                        <span className="text-xs text-yellow-600 bg-yellow-900/20 px-1.5 py-0.5 rounded" title="An entry with this name already exists in your Codex">
-                          already exists
+                      {existingMatch && (
+                        <span className="text-xs text-yellow-600 bg-yellow-900/20 px-1.5 py-0.5 rounded" title="Already in your Codex — importing will fill in any empty fields on the existing entry, not create a duplicate">
+                          will update existing
                         </span>
                       )}
                     </div>
@@ -631,20 +666,28 @@ export function CodexView() {
         </div>
       ) : (
         <div className="flex-1 flex flex-col overflow-hidden">
-          {lastImportedIds && lastImportedIds.length > 0 && (
+          {importSummary && (
             <div className="flex items-center gap-3 px-4 py-2 bg-[#0f3460]/50 border-b border-[#0f3460] text-xs shrink-0">
               {enrichError && <span className="text-red-400">{enrichError}</span>}
               <span className="text-gray-300">
-                Imported {lastImportedIds.length} {lastImportedIds.length === 1 ? 'entry' : 'entries'}.
+                {importSummary.created > 0 && `Created ${importSummary.created} ${importSummary.created === 1 ? 'entry' : 'entries'}`}
+                {importSummary.created > 0 && importSummary.updated > 0 && ', '}
+                {importSummary.updated > 0 && `updated ${importSummary.updated} existing ${importSummary.updated === 1 ? 'entry' : 'entries'}`}
+                .
               </span>
+              {lastImportedIds && lastImportedIds.length > 0 && (
+                <button
+                  onClick={enrichImported}
+                  disabled={enriching}
+                  className="text-blue-300 bg-[#16213e] hover:bg-[#1a4a7a] px-2 py-0.5 rounded disabled:opacity-60 transition-colors"
+                >
+                  {enriching ? `⏳ Filling in details… ${enrichProgress}/${lastImportedIds.length}` : '✨ Fill in details from manuscript'}
+                </button>
+              )}
               <button
-                onClick={enrichImported}
-                disabled={enriching}
-                className="text-blue-300 bg-[#16213e] hover:bg-[#1a4a7a] px-2 py-0.5 rounded disabled:opacity-60 transition-colors"
-              >
-                {enriching ? `⏳ Filling in details… ${enrichProgress}/${lastImportedIds.length}` : '✨ Fill in details from manuscript'}
-              </button>
-              <button onClick={() => setLastImportedIds(null)} className="text-gray-500 hover:text-gray-300 ml-auto">Dismiss</button>
+                onClick={() => { setImportSummary(null); setLastImportedIds(null); }}
+                className="text-gray-500 hover:text-gray-300 ml-auto"
+              >Dismiss</button>
             </div>
           )}
           {scanError ? (
