@@ -695,6 +695,22 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
   const KEEP_STYLE_PROPS = new Set(['font-weight', 'font-style', 'text-decoration', 'vertical-align']);
   function cleanGoogleDocsHtml(html: string): string {
     const doc = new DOMParser().parseFromString(html, 'text/html');
+    // Google's HTML export has no separate asset channel, so every embedded
+    // picture comes back as a full-resolution `data:image/...;base64,...` URI
+    // inlined straight into the markup — a single photo can add tens of MB of
+    // text. That bloat then gets serialized again for every IndexedDB write
+    // and every debounced cloud save, multiplying it further, which is enough
+    // to crash the tab outright right after import. The JSON-elements import
+    // path already drops inline images for the same reason (see
+    // renderInlines) — do the same here instead of only relying on Google's
+    // export size cap to trigger that fallback, since a photo can be "big but
+    // under the cap" and still be too much for the browser to hold multiple
+    // copies of.
+    doc.querySelectorAll('img[src^="data:"]').forEach((el) => {
+      const placeholder = doc.createElement('em');
+      placeholder.textContent = '[Image omitted — re-import from the original file to keep it]';
+      el.replaceWith(placeholder);
+    });
     // Google's exporter often points formatting at numbered CSS classes
     // (class="c3 c7") defined in a <head><style> block instead of (or in
     // addition to) inline style attributes. We only keep <body> (see
