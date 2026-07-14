@@ -34,6 +34,10 @@ function getDB(): Promise<IDBDatabase> {
   return dbPromise;
 }
 
+const WRITE_DEBOUNCE_MS = 250;
+let writeTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingResolvers: Array<{ resolve: () => void; reject: (err: unknown) => void }> = [];
+
 export const idbStorage: StateStorage = {
   async getItem(key: string): Promise<string | null> {
     const db = await getDB();
@@ -52,9 +56,30 @@ export const idbStorage: StateStorage = {
     return value ?? null;
   },
 
+  // zustand's persist middleware re-serializes and writes the *entire* app
+  // state on every single store mutation, with no coalescing of its own. A
+  // bulk operation that fires dozens of mutations in a tight synchronous
+  // loop (e.g. re-syncing a many-tab Google Doc, one addItem/updateItem per
+  // tab) would otherwise kick off that many concurrent IndexedDB writes,
+  // each holding its own full (and growing) serialized copy of the state
+  // alive in memory until its own write resolves — nothing awaits the
+  // previous one, so they all pile up at once. Debounce so only the last
+  // (most complete) value in a burst actually gets written; every caller
+  // still resolves once that write lands.
   async setItem(key: string, value: string): Promise<void> {
-    const db = await getDB();
-    await tx(db, 'readwrite', (s) => s.put(value, key));
+    return new Promise((resolve, reject) => {
+      pendingResolvers.push({ resolve, reject });
+      if (writeTimer) clearTimeout(writeTimer);
+      writeTimer = setTimeout(() => {
+        writeTimer = null;
+        const resolvers = pendingResolvers;
+        pendingResolvers = [];
+        getDB()
+          .then((db) => tx(db, 'readwrite', (s) => s.put(value, key)))
+          .then(() => resolvers.forEach((r) => r.resolve()))
+          .catch((err) => resolvers.forEach((r) => r.reject(err)));
+      }, WRITE_DEBOUNCE_MS);
+    });
   },
 
   async removeItem(key: string): Promise<void> {
