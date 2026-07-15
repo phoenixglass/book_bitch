@@ -19,6 +19,7 @@ interface ExtractedEntry {
   atmosphere?: string;
   meaning?: string;
   appearances?: string;
+  sourceAppearances?: Array<{ itemId?: string; itemTitle?: string; evidence?: string }>;
 }
 
 const ENRICHABLE_TYPES = new Set<CodexType>(['character', 'place', 'motif', 'object']);
@@ -388,6 +389,7 @@ export function CodexView() {
     let updated = 0;
     scanResults.forEach((entry, i) => {
       if (!scanSelected[i]) return;
+      const sceneIds = Array.from(new Set((entry.sourceAppearances ?? []).map((a) => a.itemId).filter((v): v is string => !!v)));
       const existing = findExistingMatch(entry, codexEntries);
       if (existing) {
         const patch: Record<string, unknown> = {};
@@ -398,6 +400,8 @@ export function CodexView() {
         }
         const mergedAliases = Array.from(new Set([...existing.aliases, ...(entry.aliases ?? [])]));
         if (mergedAliases.length !== existing.aliases.length) patch.aliases = mergedAliases;
+        const mergedSceneIds = Array.from(new Set([...existing.relatedSceneIds, ...sceneIds]));
+        if (mergedSceneIds.length !== existing.relatedSceneIds.length) patch.relatedSceneIds = mergedSceneIds;
         if (Object.keys(patch).length > 0) {
           updateCodexEntry(existing.id, patch);
           updated++;
@@ -417,6 +421,7 @@ export function CodexView() {
           atmosphere: entry.atmosphere,
           meaning: entry.meaning,
           appearances: entry.appearances,
+          relatedSceneIds: sceneIds,
         });
         created++;
         if (ENRICHABLE_TYPES.has(entry.codexType)) affectedIds.push(id);
@@ -429,21 +434,27 @@ export function CodexView() {
     setLastImportedIds(affectedIds.length > 0 ? affectedIds : null);
   }
 
-  // Runs "Suggest Missing Fields" (the same AI enrichment used from the AI
-  // Panel) against each freshly-imported entry in turn, filling in only the
-  // fields that are still empty — voice, arc, secrets, deeper relationships,
-  // etc. — from the description the scan already grounded in the manuscript.
+  // Runs grounded field enrichment against each freshly-imported entry in
+  // turn, filling in only the fields that are still empty — voice, arc,
+  // secrets, deeper relationships, etc. — by re-reading the actual manuscript
+  // scenes the entry appeared in during the scan (not just its short
+  // description), so results stay evidenced in the text rather than guessed.
   async function enrichImported() {
     if (!lastImportedIds || lastImportedIds.length === 0) return;
     setEnriching(true);
     setEnrichProgress(0);
     setEnrichError(null);
     let failures = 0;
+    const sceneMap = new Map(collectScenes(binder).map((s) => [s.id, s]));
     try {
       for (const id of lastImportedIds) {
         const entry = useAppStore.getState().codexEntries.find((e) => e.id === id);
         if (!entry) { setEnrichProgress((n) => n + 1); continue; }
         try {
+          const manuscriptExcerpts = entry.relatedSceneIds
+            .map((sceneId) => sceneMap.get(sceneId))
+            .filter((s): s is { id: string; title: string; text: string } => !!s)
+            .map((s) => ({ itemId: s.id, itemTitle: s.title, text: s.text }));
           const resp = await fetch('/api/ai/codex-suggest', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -460,6 +471,7 @@ export function CodexView() {
                 atmosphere: entry.atmosphere, meaning: entry.meaning,
                 appearances: entry.appearances, evolution: entry.evolution,
               },
+              manuscriptExcerpts,
             }),
           });
           if (!resp.ok) { failures++; setEnrichProgress((n) => n + 1); continue; }
