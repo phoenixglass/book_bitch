@@ -546,6 +546,9 @@ export interface StoryBrief {
   content: string;
   generatedAt: number;
   wordCountAtGeneration: number;
+  // Author's own persistent notes. Never touched by AI generation/regeneration —
+  // only changes when the author edits it directly.
+  authorNotes?: string;
 }
 
 // ─── Continuity Check ────────────────────────────────────────────────────────
