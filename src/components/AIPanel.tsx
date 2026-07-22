@@ -1500,6 +1500,8 @@ export function AIPanel() {
   const [editingBrief, setEditingBrief] = useState(false);
   const [briefDraft, setBriefDraft] = useState('');
   const [enteringBriefManually, setEnteringBriefManually] = useState(false);
+  const [editingAuthorNotes, setEditingAuthorNotes] = useState(false);
+  const [authorNotesDraft, setAuthorNotesDraft] = useState('');
   const [continuityLoading, setContinuityLoading] = useState(false);
   const [continuityError, setContinuityError] = useState<string | null>(null);
   const [showContinuityFindings, setShowContinuityFindings] = useState(false);
@@ -1570,7 +1572,7 @@ export function AIPanel() {
       const res = await fetch('/api/ai/generate-brief', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenes }),
+        body: JSON.stringify({ scenes, authorNotes: storyBrief?.authorNotes ?? '' }),
       });
       if (!res.ok) {
         const text = await res.text();
@@ -1586,7 +1588,9 @@ export function AIPanel() {
         throw new Error(data.error ?? `Server returned ${res.status}`);
       }
       const currentWc = totalWordCount(binder);
-      setStoryBrief({ content: data.brief, generatedAt: Date.now(), wordCountAtGeneration: currentWc });
+      // authorNotes is the user's own persistent section — regeneration must
+      // never overwrite it, only the AI-generated content/metadata.
+      setStoryBrief({ content: data.brief, generatedAt: Date.now(), wordCountAtGeneration: currentWc, authorNotes: storyBrief?.authorNotes ?? '' });
       setShowBriefContent(false);
       setEditingBrief(false);
     } catch (err) {
@@ -1871,27 +1875,31 @@ export function AIPanel() {
           {/* Story Brief */}
           {!statusLoading && aiStatus?.configured && (() => {
             const currentWc = totalWordCount(binder);
-            const drift = storyBrief ? Math.abs(currentWc - storyBrief.wordCountAtGeneration) : 0;
+            // "Your Notes" can exist on its own with no AI-generated content
+            // (e.g. after Clear, or before ever generating) — the content-related
+            // UI below should treat that state the same as no brief at all.
+            const hasBriefContent = !!storyBrief?.content?.trim();
+            const drift = hasBriefContent ? Math.abs(currentWc - (storyBrief?.wordCountAtGeneration ?? 0)) : 0;
             const isStale = drift > 500;
             return (
               <div className="border border-[#0f3460] rounded bg-[#1a1a3e]">
                 <div className="flex items-center justify-between px-2.5 py-2">
                   <div className="flex items-center gap-1.5">
                     <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Story Brief</span>
-                    {storyBrief && (
+                    {hasBriefContent && (
                       <span className="text-[10px] text-green-400 bg-green-900/20 rounded px-1 py-0.5">active</span>
                     )}
-                    {storyBrief && isStale && (
+                    {hasBriefContent && isStale && (
                       <span className="text-[10px] text-amber-400 bg-amber-900/20 rounded px-1 py-0.5">stale</span>
                     )}
                   </div>
                   <div className="flex items-center gap-1">
-                    {storyBrief && (
+                    {hasBriefContent && (
                       <button
                         onClick={() => {
                           setShowBriefContent(v => !v);
                           if (!showBriefContent) {
-                            setBriefDraft(storyBrief.content);
+                            setBriefDraft(storyBrief?.content ?? '');
                             setEditingBrief(false);
                           }
                         }}
@@ -1900,7 +1908,7 @@ export function AIPanel() {
                         {showBriefContent ? 'hide' : 'view'}
                       </button>
                     )}
-                    {!storyBrief && !enteringBriefManually && (
+                    {!hasBriefContent && !enteringBriefManually && (
                       <button
                         onClick={() => { setEnteringBriefManually(true); setBriefDraft(''); }}
                         className="text-[10px] px-2 py-0.5 rounded bg-[#1e3a5f]/60 text-blue-300 hover:bg-[#1e3a5f] hover:text-white transition-colors"
@@ -1913,11 +1921,17 @@ export function AIPanel() {
                       disabled={briefLoading}
                       className="text-[10px] px-2 py-0.5 rounded bg-purple-900/40 text-purple-300 hover:bg-purple-800/40 hover:text-white disabled:opacity-50 disabled:cursor-default transition-colors"
                     >
-                      {briefLoading ? '⟳ Generating…' : storyBrief ? '↺ Regen' : 'Generate'}
+                      {briefLoading ? '⟳ Generating…' : hasBriefContent ? '↺ Regen' : 'Generate'}
                     </button>
-                    {storyBrief && (
+                    {hasBriefContent && (
                       <button
-                        onClick={() => { setStoryBrief(null); setShowBriefContent(false); }}
+                        onClick={() => {
+                          // "Clear brief" only clears the AI-generated content —
+                          // Your Notes is the user's own section and survives this.
+                          const notes = storyBrief?.authorNotes?.trim();
+                          setStoryBrief(notes ? { content: '', generatedAt: 0, wordCountAtGeneration: 0, authorNotes: storyBrief?.authorNotes } : null);
+                          setShowBriefContent(false);
+                        }}
                         className="text-[10px] text-gray-600 hover:text-red-400 px-1"
                         title="Clear brief"
                       >
@@ -1927,13 +1941,70 @@ export function AIPanel() {
                   </div>
                 </div>
 
-                {!storyBrief && !briefLoading && !enteringBriefManually && (
+                {/* Your Notes — a persistent, user-authored section of the brief.
+                    Unlike the AI-generated content above, this never changes on
+                    Regen/Paste — it only changes when you edit it yourself. */}
+                <div className="px-2.5 pb-2 pt-1 border-t border-[#0f3460]/60">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Your Notes</span>
+                    {!editingAuthorNotes && (
+                      <button
+                        onClick={() => { setAuthorNotesDraft(storyBrief?.authorNotes ?? ''); setEditingAuthorNotes(true); }}
+                        className="text-[10px] text-gray-500 hover:text-gray-300 underline"
+                      >
+                        {storyBrief?.authorNotes?.trim() ? 'edit' : 'add'}
+                      </button>
+                    )}
+                  </div>
+                  {editingAuthorNotes ? (
+                    <div className="flex flex-col gap-1.5">
+                      <textarea
+                        value={authorNotesDraft}
+                        onChange={e => setAuthorNotesDraft(e.target.value)}
+                        rows={6}
+                        placeholder="Notes only you write — never touched by Regen or Paste. E.g. house rules, things the AI keeps getting wrong, reminders to yourself…"
+                        className="w-full bg-[#0f1022] border border-[#2d3748] rounded px-2 py-1.5 text-[11px] text-gray-300 font-mono leading-relaxed resize-y outline-none focus:border-blue-700 placeholder-gray-700"
+                      />
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => {
+                            setStoryBrief(
+                              storyBrief
+                                ? { ...storyBrief, authorNotes: authorNotesDraft }
+                                : { content: '', generatedAt: 0, wordCountAtGeneration: 0, authorNotes: authorNotesDraft }
+                            );
+                            setEditingAuthorNotes(false);
+                          }}
+                          className="text-[10px] px-2 py-0.5 rounded bg-blue-700 text-white hover:bg-blue-600"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={() => setEditingAuthorNotes(false)}
+                          className="text-[10px] px-2 py-0.5 rounded bg-[#2d3748] text-gray-400 hover:text-white"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : storyBrief?.authorNotes?.trim() ? (
+                    <p className="text-[10px] text-gray-400 leading-relaxed whitespace-pre-wrap max-h-24 overflow-y-auto">
+                      {storyBrief.authorNotes}
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-gray-600 leading-relaxed">
+                      Nothing yet — add notes that stay put across regenerations.
+                    </p>
+                  )}
+                </div>
+
+                {!hasBriefContent && !briefLoading && !enteringBriefManually && (
                   <p className="px-2.5 pb-2 text-[10px] text-gray-600 leading-relaxed">
                     Generate a brief so the AI knows your full story — characters, plot, tone, gaps. Or paste one you've already written.
                   </p>
                 )}
 
-                {!storyBrief && enteringBriefManually && (
+                {!hasBriefContent && enteringBriefManually && (
                   <div className="px-2.5 pb-2 flex flex-col gap-1.5">
                     <textarea
                       value={briefDraft}
@@ -1946,7 +2017,7 @@ export function AIPanel() {
                       <button
                         onClick={() => {
                           if (briefDraft.trim()) {
-                            setStoryBrief({ content: briefDraft.trim(), generatedAt: Date.now(), wordCountAtGeneration: totalWordCount(binder) });
+                            setStoryBrief({ content: briefDraft.trim(), generatedAt: Date.now(), wordCountAtGeneration: totalWordCount(binder), authorNotes: storyBrief?.authorNotes });
                             setEnteringBriefManually(false);
                             setBriefDraft('');
                           }
@@ -1966,7 +2037,7 @@ export function AIPanel() {
                   </div>
                 )}
 
-                {storyBrief && !showBriefContent && (
+                {hasBriefContent && !showBriefContent && storyBrief && (
                   <div className="px-2.5 pb-2 flex flex-col gap-0.5">
                     <p className="text-[10px] text-gray-600">
                       {new Date(storyBrief.generatedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -1980,7 +2051,7 @@ export function AIPanel() {
                   </div>
                 )}
 
-                {storyBrief && showBriefContent && (
+                {hasBriefContent && showBriefContent && storyBrief && (
                   <div className="px-2.5 pb-2 flex flex-col gap-1.5">
                     {isStale && (
                       <p className="text-[10px] text-amber-500">

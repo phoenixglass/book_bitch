@@ -872,8 +872,9 @@ aiRouter.post('/generate-brief', async (req: Request, res: Response) => {
     return;
   }
 
-  const { scenes } = req.body as {
+  const { scenes, authorNotes } = req.body as {
     scenes: Array<{ id: string; title: string; text: string }>;
+    authorNotes?: string;
   };
 
   if (!scenes || scenes.length === 0) {
@@ -925,6 +926,7 @@ aiRouter.post('/generate-brief', async (req: Request, res: Response) => {
   ].join('\n');
 
   const userPrompt = [
+    authorNotes?.trim() ? `Author's own notes (context only — do not treat as a section to reproduce):\n${authorNotes.trim()}\n` : '',
     `Manuscript (${scenes.length} scene${scenes.length !== 1 ? 's' : ''}):`,
     '',
     manuscriptText,
