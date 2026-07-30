@@ -3,6 +3,8 @@ import { useAppStore } from '../store/appStore';
 import { TagInput } from './TagInput';
 import { WritingEditor } from './WritingEditor';
 import { ImportPreviewModal } from './ImportPreviewModal';
+import { migrateProjectInlineImages } from '../utils/migrateInlineImages';
+import { hasInlineImage } from '../lib/imageStorage';
 import { GoogleDriveUpload } from './GoogleDriveUpload';
 import { ConnectionsPanel } from './ConnectionsPanel';
 import { RelationshipPicker } from './RelationshipPicker';
@@ -177,6 +179,35 @@ export function ResearchView() {
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const uploadRef = useRef<HTMLInputElement>(null);
+  const [migratingImages, setMigratingImages] = useState(false);
+  const [migrationNote, setMigrationNote] = useState<string | null>(null);
+
+  // Content imported before images were uploaded to Storage still carries them
+  // inlined as base64, which is what makes the project JSON enormous. Only
+  // offer the repair when there is something to repair.
+  const inlineImageCount = useMemo(() => {
+    const { fragments, omittedMaterial } = useAppStore.getState();
+    return [...researchEntries, ...fragments, ...omittedMaterial]
+      .filter((item) => typeof item.content === 'string' && hasInlineImage(item.content)).length;
+  }, [researchEntries]);
+
+  async function handleMigrateImages() {
+    setMigratingImages(true);
+    setMigrationNote(null);
+    try {
+      const result = await migrateProjectInlineImages();
+      const freedMb = (result.bytesFreed / 1e6).toFixed(1);
+      setMigrationNote(
+        result.imagesFailed > 0
+          ? `Moved ${result.imagesUploaded} image(s), freeing ~${freedMb} MB. ${result.imagesFailed} could not be uploaded and were left in place.`
+          : `Moved ${result.imagesUploaded} image(s) out of the project, freeing ~${freedMb} MB.`,
+      );
+    } catch (err) {
+      setMigrationNote(`Could not move images: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setMigratingImages(false);
+    }
+  }
 
   useEffect(() => {
     setAIContextObject(selectedId ? { type: 'research_item', id: selectedId } : null);
@@ -355,6 +386,23 @@ export function ResearchView() {
               </button>
             </div>
           </div>
+          {inlineImageCount > 0 && (
+            <div className="mb-1">
+              <button
+                onClick={handleMigrateImages}
+                disabled={migratingImages}
+                className="w-full text-xs bg-[#1a1a2e] border border-[#6b46c1] text-gray-300 px-2 py-1 rounded hover:bg-[#241f3d] disabled:opacity-50"
+                title="Imported images are stored inside the project, which bloats every save and version snapshot. This moves them to cloud storage."
+              >
+                {migratingImages
+                  ? 'Moving images…'
+                  : `Move ${inlineImageCount} embedded image${inlineImageCount === 1 ? '' : 's'} to storage`}
+              </button>
+            </div>
+          )}
+          {migrationNote && (
+            <p className="text-[11px] text-gray-400 mb-1">{migrationNote}</p>
+          )}
           <input
             value={filterText}
             onChange={(e) => setFilterText(e.target.value)}
