@@ -154,6 +154,36 @@ export async function snapshotProjectRevision(
   await pruneOldRevisions(projectId);
 }
 
+// Called once a project's row is gone. Its revisions deliberately outlive it
+// (migration 003) so the project can still be recovered — but recovery reads
+// the *last* revision, and nothing in the app can browse the rest: the version
+// history dialog only ever lists the active project's revisions, and a deleted
+// project can't be active. The other ~49 full copies were therefore
+// unreachable and unprunable, since pruneOldRevisions only ever runs when a
+// new snapshot is inserted for the same project — which can never happen
+// again. Collapsing to the newest keeps the documented recovery path and stops
+// every deletion from leaking a manuscript's worth of storage forever.
+//
+// Best-effort: the project is already deleted by this point, so failing here
+// must not surface as a failed deletion.
+export async function collapseRevisionsToLatest(projectId: string) {
+  const { data, error } = await withRetry(() => supabase
+    .from('project_revisions')
+    .select('id')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false })
+    .range(1, 1000));
+  if (error || !data || data.length === 0) return;
+  const supersededIds = data.map((row) => row.id as string);
+  const { error: deleteError } = await withRetry(() => supabase
+    .from('project_revisions')
+    .delete()
+    .in('id', supersededIds));
+  if (deleteError) {
+    console.error('Failed to collapse revisions for deleted project:', deleteError.message);
+  }
+}
+
 async function pruneOldRevisions(projectId: string) {
   const { data, error } = await withRetry(() => supabase
     .from('project_revisions')
