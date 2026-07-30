@@ -483,6 +483,7 @@ aiRouter.post('/codex-suggest', async (req: Request, res: Response) => {
     existingFields = {},
     mode = 'analysis_only',
     allowDrafting = false,
+    manuscriptExcerpts = [],
   } = req.body as {
     title?: string;
     content?: string;
@@ -491,16 +492,24 @@ aiRouter.post('/codex-suggest', async (req: Request, res: Response) => {
     existingFields?: Record<string, unknown>;
     mode?: string;
     allowDrafting?: boolean;
+    manuscriptExcerpts?: Array<{ itemId: string; itemTitle: string; text: string }>;
   };
 
-  if (!content && !existingNotes) {
+  if (!content && !existingNotes && manuscriptExcerpts.length === 0) {
     res.status(400).json({ error: 'No content provided.' });
     return;
   }
 
   const plainDesc = stripHTML(content ?? '');
-  const { text: truncatedDesc, truncated } = truncate([plainDesc, existingNotes].filter(Boolean).join('\n\n'));
+  const { text: truncatedDesc, truncated: descTruncated } = truncate([plainDesc, existingNotes].filter(Boolean).join('\n\n'));
   const preamble = modePreamble(mode, allowDrafting);
+
+  const hasManuscript = manuscriptExcerpts.length > 0;
+  const manuscriptBody = manuscriptExcerpts
+    .map((s) => `[SCENE id="${s.itemId}" title="${(s.itemTitle || 'Untitled').replace(/"/g, "'")}"]\n${stripHTML(s.text ?? '')}`)
+    .join('\n\n');
+  const { text: truncatedManuscript, truncated: manuscriptTruncated } = truncate(manuscriptBody, 60000);
+  const truncated = descTruncated || manuscriptTruncated;
 
   const existingSummary = Object.entries(existingFields)
     .filter(([, v]) => v && typeof v === 'string' && (v as string).trim())
@@ -518,34 +527,59 @@ aiRouter.post('/codex-suggest', async (req: Request, res: Response) => {
     ? `- For a ${codexType}, use these exact field names when applicable: ${knownFields.join(', ')}. Use camelCase (e.g., physicalDetails, voiceNotes).`
     : '';
 
-  const systemPrompt = [
-    `You are a writing assistant helping a novelist enrich their world-bible codex entry for a ${codexType}.`,
-    preamble,
-    'Your task: identify missing or incomplete information and suggest what might be worth developing.',
-    'Rules:',
-    '- Base suggestions ONLY on gaps evident from the existing entry.',
-    '- Do NOT invent facts not implied by the text.',
-    '- Identify contradictions or unresolved questions if present.',
-    '- Field suggestions should be specific to the codex entry type.',
-    knownFieldsNote,
-    '',
-    'Return ONLY valid JSON in this exact structure:',
-    JSON.stringify({
-      fieldSuggestions: [
-        { field: 'field name', value: 'suggested content based on existing text', reason: 'why this matters' },
-      ],
-      contradictions: ['Any apparent contradiction or inconsistency in the entry'],
-      openQuestions: ['An unresolved question raised by this entry'],
-    }),
-  ].filter(Boolean).join('\n');
+  const systemPrompt = hasManuscript
+    ? [
+        `You are a story-bible (Codex) builder for a novelist, filling in missing fields on an existing ${codexType} entry using ONLY the manuscript scenes provided below.`,
+        preamble,
+        'DO NOT DRAFT PROSE. Analytical output only.',
+        'ABSOLUTE RULE: Do NOT invent, infer, or hallucinate facts. Every field value you suggest MUST be explicitly stated or directly evidenced in the manuscript scenes provided. You are an extractor, not a predictor — do not add details that "seem like" they might be true.',
+        'Your task: read the manuscript scenes and extract concrete facts to fill the fields that are still empty on this entry. Do not restate fields that are already filled in.',
+        'Rules:',
+        '- Only suggest a field value if you can quote verbatim (max 10-15 words) supporting text from the scenes as evidence — put that quote in the "evidence" key.',
+        '- If a field is not addressed anywhere in the provided scenes, omit it entirely — never guess.',
+        '- contradictions: only list one if two provided passages actually conflict; quote both in the entry.',
+        '- openQuestions: only list a question the text ITSELF leaves unresolved (e.g. an unexplained detail raised in a scene), never a generic prompt for the author to brainstorm.',
+        '- Field suggestions should be specific to the codex entry type.',
+        knownFieldsNote,
+        '',
+        'Return ONLY valid JSON in this exact structure:',
+        JSON.stringify({
+          fieldSuggestions: [
+            { field: 'field name', value: 'fact extracted from the scenes', reason: 'why this matters', evidence: 'verbatim quote from the scene' },
+          ],
+          contradictions: ['Quoted contradiction between two passages, if any'],
+          openQuestions: ['Unresolved question the text itself raises, if any'],
+        }),
+      ].filter(Boolean).join('\n')
+    : [
+        `You are a writing assistant helping a novelist enrich their world-bible codex entry for a ${codexType}.`,
+        preamble,
+        'Your task: identify missing or incomplete information and suggest what might be worth developing.',
+        'Rules:',
+        '- Base suggestions ONLY on gaps evident from the existing entry.',
+        '- Do NOT invent facts not implied by the text.',
+        '- Identify contradictions or unresolved questions if present.',
+        '- Field suggestions should be specific to the codex entry type.',
+        knownFieldsNote,
+        '',
+        'Return ONLY valid JSON in this exact structure:',
+        JSON.stringify({
+          fieldSuggestions: [
+            { field: 'field name', value: 'suggested content based on existing text', reason: 'why this matters' },
+          ],
+          contradictions: ['Any apparent contradiction or inconsistency in the entry'],
+          openQuestions: ['An unresolved question raised by this entry'],
+        }),
+      ].filter(Boolean).join('\n');
 
   const userPrompt = [
     `Codex entry: ${title ?? 'Untitled'}`,
     `Type: ${codexType}`,
-    existingSummary ? `\nExisting fields:\n${existingSummary}` : '',
-    '',
-    'Description and notes:',
-    truncatedDesc,
+    existingSummary ? `\nExisting fields (already filled — do not resuggest these):\n${existingSummary}` : '',
+    hasManuscript ? '\nManuscript scenes where this entry appears:' : '',
+    hasManuscript ? truncatedManuscript : '',
+    !hasManuscript ? '\nDescription and notes:' : '',
+    !hasManuscript ? truncatedDesc : '',
   ].filter(Boolean).join('\n');
 
   try {
