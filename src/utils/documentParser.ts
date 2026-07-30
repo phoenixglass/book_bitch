@@ -1,5 +1,6 @@
 import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
+import { uploadImage } from '../lib/imageStorage';
 
 export interface ParsedItem {
   id: string;
@@ -106,7 +107,21 @@ export async function parseDocx(
   options: ParseOptions = {},
 ): Promise<ParsedItem[]> {
   const { splitLevel = 1, fileName } = options;
-  const result = await mammoth.convertToHtml({ arrayBuffer });
+  // Without an explicit converter mammoth inlines every embedded image as a
+  // base64 data URI, which lands the binary in the project JSON that gets
+  // rewritten on every autosave and copied into every revision snapshot.
+  // Uploading to Storage keeps the document to a URL's worth of text.
+  const result = await mammoth.convertToHtml({ arrayBuffer }, {
+    convertImage: mammoth.images.imgElement(async (image) => {
+      const buffer = await image.readAsArrayBuffer();
+      const url = await uploadImage(new Blob([buffer], { type: image.contentType }), image.contentType);
+      // Deliberately no data-URI fallback: re-inlining on failure would
+      // quietly reintroduce the bloat this exists to prevent. An image that
+      // can't be stored is dropped, and says so.
+      if (!url) return { src: '', alt: 'Image could not be imported' };
+      return { src: url };
+    }),
+  });
   const html = result.value;
 
   const items = parseHtmlByHeadings(html, splitLevel, fileName);
