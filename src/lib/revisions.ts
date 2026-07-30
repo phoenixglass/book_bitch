@@ -1,7 +1,10 @@
 import { supabase } from './supabase';
 import { withRetry } from './dbRetry';
 
-const MAX_REVISIONS_PER_PROJECT = 50;
+// How many revisions the history dialog shows. Retention itself is no longer
+// decided here — the cleanup_project_revisions SQL function owns that, so the
+// number can't drift between the client and the database.
+const REVISION_LIST_LIMIT = 50;
 
 // Every snapshot used to store the whole project as raw JSONB, so 50 retained
 // revisions meant 50 full copies of the manuscript per project. Two changes cut
@@ -151,49 +154,30 @@ export async function snapshotProjectRevision(
     console.error('Failed to snapshot project revision:', error.message);
     throw new Error(error.message);
   }
-  await pruneOldRevisions(projectId);
+  await cleanupRevisions();
 }
 
-// Called once a project's row is gone. Its revisions deliberately outlive it
-// (migration 003) so the project can still be recovered — but recovery reads
-// the *last* revision, and nothing in the app can browse the rest: the version
-// history dialog only ever lists the active project's revisions, and a deleted
-// project can't be active. The other ~49 full copies were therefore
-// unreachable and unprunable, since pruneOldRevisions only ever runs when a
-// new snapshot is inserted for the same project — which can never happen
-// again. Collapsing to the newest keeps the documented recovery path and stops
-// every deletion from leaking a manuscript's worth of storage forever.
-//
-// Best-effort: the project is already deleted by this point, so failing here
-// must not surface as a failed deletion.
-export async function collapseRevisionsToLatest(projectId: string) {
-  const { data, error } = await withRetry(() => supabase
-    .from('project_revisions')
-    .select('id')
-    .eq('project_id', projectId)
-    .order('created_at', { ascending: false })
-    .range(1, 1000));
-  if (error || !data || data.length === 0) return;
-  const supersededIds = data.map((row) => row.id as string);
-  const { error: deleteError } = await withRetry(() => supabase
-    .from('project_revisions')
-    .delete()
-    .in('id', supersededIds));
-  if (deleteError) {
-    console.error('Failed to collapse revisions for deleted project:', deleteError.message);
+/**
+ * Applies both retention rules across every project belonging to the caller:
+ * live projects keep the most recent N revisions, and a project that no longer
+ * exists collapses to its newest one — the copy migration 003 describes as the
+ * recovery path for a deleted project.
+ *
+ * Both rules live in the `cleanup_project_revisions` SQL function rather than
+ * here (migration 007). Keeping a second implementation client-side meant the
+ * retention count existed in two places that could silently disagree, and the
+ * old select-then-delete pair could act on a row set that a concurrent snapshot
+ * had already changed. One statement, one definition.
+ *
+ * Best-effort by design. Both callers run after the work that matters has
+ * already succeeded, so a failure here must never surface to the user as a
+ * failed save or a failed deletion.
+ */
+export async function cleanupRevisions() {
+  const { error } = await withRetry(() => supabase.rpc('cleanup_project_revisions'));
+  if (error) {
+    console.error('Revision cleanup failed:', error.message);
   }
-}
-
-async function pruneOldRevisions(projectId: string) {
-  const { data, error } = await withRetry(() => supabase
-    .from('project_revisions')
-    .select('id')
-    .eq('project_id', projectId)
-    .order('created_at', { ascending: false })
-    .range(MAX_REVISIONS_PER_PROJECT, MAX_REVISIONS_PER_PROJECT + 200));
-  if (error || !data || data.length === 0) return;
-  const staleIds = data.map((row) => row.id as string);
-  await withRetry(() => supabase.from('project_revisions').delete().in('id', staleIds));
 }
 
 export async function listProjectRevisions(projectId: string): Promise<RevisionMeta[]> {
@@ -202,7 +186,7 @@ export async function listProjectRevisions(projectId: string): Promise<RevisionM
     .select('id, name, word_count, created_at')
     .eq('project_id', projectId)
     .order('created_at', { ascending: false })
-    .limit(MAX_REVISIONS_PER_PROJECT));
+    .limit(REVISION_LIST_LIMIT));
   if (error) {
     console.error('Failed to list project revisions:', error.message);
     throw new Error(error.message);
