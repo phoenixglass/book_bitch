@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import {
   listProjects, createProject, saveProjectToCloud, loadProjectFromCloud, deleteProjectFromCloud,
 } from '../lib/sync';
-import { snapshotProjectRevision, getProjectRevisionData, collapseRevisionsToLatest } from '../lib/revisions';
+import { snapshotProjectRevision, getProjectRevisionData, cleanupRevisions } from '../lib/revisions';
 import { useAppStore, totalWordCount } from '../store/appStore';
 import { SyncContext } from '../hooks/useSyncContext';
 import type { User } from '@supabase/supabase-js';
@@ -203,8 +203,9 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       }
       await deleteProjectFromCloud(projectId);
       // Only after the row is actually gone: if the delete had failed, the
-      // project survives and should keep its full history.
-      await collapseRevisionsToLatest(projectId);
+      // project survives and should keep its full history. The just-deleted
+      // project is now an orphan, which is the case the cleanup collapses.
+      await cleanupRevisions();
       const remaining = projectsRef.current.filter((p) => p.id !== projectId);
       setProjects(remaining);
       if (useAppStore.getState().activeProjectId === projectId) {
