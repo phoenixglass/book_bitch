@@ -12,9 +12,17 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session ?? null);
-    });
+    supabase.auth.getSession()
+      .then(({ data }) => {
+        setSession(data.session ?? null);
+      })
+      // If the session lookup rejects (offline, or Supabase unreachable) there
+      // is no second chance to leave the 'loading' state, and the app sits on
+      // the "Loading…" screen forever. Fall through to the sign-in form.
+      .catch((err) => {
+        console.error('Session lookup failed:', err);
+        setSession(null);
+      });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, sess) => {
       setSession(sess ?? null);
     });
