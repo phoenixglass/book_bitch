@@ -13,6 +13,7 @@ import {
 } from 'docx';
 import type { BinderItem, ManuscriptSettings, SceneOrder } from '../types';
 import { collectScenes, sortScenes, formatTimelineDate } from './timelineOrder';
+import { sanitizeXmlText } from './xmlText';
 
 export const FONT = 'Times New Roman';
 export const FONT_SIZE = 24; // half-points: 24 = 12pt
@@ -42,7 +43,7 @@ interface RunFmt {
 
 export function makeRun(text: string, fmt?: RunFmt): TextRun {
   return new TextRun({
-    text,
+    text: sanitizeXmlText(text),
     font: FONT,
     size: FONT_SIZE,
     bold: fmt?.bold || undefined,
@@ -160,7 +161,7 @@ export function htmlToDocxParagraphs(
       const text = (el.textContent ?? '').trim();
       result.push(
         makeParagraph(
-          [new TextRun({ text: text.toUpperCase(), font: FONT, size: FONT_SIZE, bold: true })],
+          [new TextRun({ text: sanitizeXmlText(text).toUpperCase(), font: FONT, size: FONT_SIZE, bold: true })],
           { center: true, noIndent: true, singleSpaced, spaceBefore: 240, spaceAfter: 120 },
         ),
       );
@@ -323,7 +324,7 @@ export async function exportManuscriptDocx(
             spacing: { before: 0, after: 0, line: 240, lineRule: LineRuleType.AUTO },
             children: [
               new TextRun({
-                text: `${authorLastName} / ${shortTitle} / `,
+                text: sanitizeXmlText(`${authorLastName} / ${shortTitle} / `),
                 font: FONT,
                 size: FONT_SIZE,
               }),
@@ -349,14 +350,14 @@ export async function exportManuscriptDocx(
       new Paragraph({
         alignment: AlignmentType.LEFT,
         spacing: { before: 0, after: 0, line: 240, lineRule: LineRuleType.AUTO },
-        children: [new TextRun({ text, font: FONT, size: FONT_SIZE })],
+        children: [new TextRun({ text: sanitizeXmlText(text), font: FONT, size: FONT_SIZE })],
       });
 
     const centerLine = (text: string, bold = false) =>
       new Paragraph({
         alignment: AlignmentType.CENTER,
         spacing: { before: 0, after: 0, line: 240, lineRule: LineRuleType.AUTO },
-        children: [new TextRun({ text, font: FONT, size: FONT_SIZE, bold: bold || undefined })],
+        children: [new TextRun({ text: sanitizeXmlText(text), font: FONT, size: FONT_SIZE, bold: bold || undefined })],
       });
 
     // Author contact block — top left
@@ -420,7 +421,7 @@ export async function exportManuscriptDocx(
             lineRule: LineRuleType.AUTO,
           },
           children: [
-            new TextRun({ text: chapter.title.toUpperCase(), font: FONT, size: FONT_SIZE }),
+            new TextRun({ text: sanitizeXmlText(chapter.title).toUpperCase(), font: FONT, size: FONT_SIZE }),
           ],
         }),
       );
@@ -442,7 +443,7 @@ export async function exportManuscriptDocx(
           spacing: { before: 0, after: convertInchesToTwip(0.25), line: 480, lineRule: LineRuleType.AUTO },
           children: [
             new TextRun({
-              text: chapter.timelineLabel,
+              text: sanitizeXmlText(chapter.timelineLabel),
               font: FONT,
               size: FONT_SIZE,
               italics: true,
@@ -500,7 +501,7 @@ export async function exportManuscriptDocx(
         spacing: { before: 0, after: 480, line: 240, lineRule: LineRuleType.AUTO },
         children: [
           new TextRun({
-            text: `${bookTitle.toUpperCase()} — SYNOPSIS`,
+            text: sanitizeXmlText(`${bookTitle.toUpperCase()} — SYNOPSIS`),
             font: FONT,
             size: FONT_SIZE,
             bold: true,
@@ -555,7 +556,7 @@ export async function exportManuscriptDocx(
   const a = document.createElement('a');
   a.href = url;
   const orderSuffix = exportOrder === 'chronological' ? '_chronological' : '';
-  a.download = `${bookTitle.replace(/\s+/g, '_')}_manuscript${orderSuffix}.docx`;
+  a.download = `${sanitizeXmlText(bookTitle).replace(/\s+/g, '_')}_manuscript${orderSuffix}.docx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
