@@ -18,6 +18,7 @@ import {
   formatWordCount,
   countManuscriptWords,
 } from './manuscriptExport';
+import { sanitizeXmlText } from './xmlText';
 
 const SINGLE_LINE = 240;
 
@@ -33,7 +34,7 @@ function centerLine(
       line: SINGLE_LINE,
       lineRule: LineRuleType.AUTO,
     },
-    children: [new TextRun({ text, font: FONT, size: FONT_SIZE, bold: opts?.bold || undefined })],
+    children: [new TextRun({ text: sanitizeXmlText(text), font: FONT, size: FONT_SIZE, bold: opts?.bold || undefined })],
   });
 }
 
@@ -102,7 +103,7 @@ export async function exportBetaReaderPacket(
         new Paragraph({
           alignment: AlignmentType.LEFT,
           spacing: { before: 240, after: 60, line: SINGLE_LINE, lineRule: LineRuleType.AUTO },
-          children: [new TextRun({ text: chapter.title, font: FONT, size: FONT_SIZE, bold: true })],
+          children: [new TextRun({ text: sanitizeXmlText(chapter.title), font: FONT, size: FONT_SIZE, bold: true })],
         }),
       );
       if (chapter.synopsis.trim()) {
@@ -111,7 +112,7 @@ export async function exportBetaReaderPacket(
             alignment: AlignmentType.LEFT,
             indent: undefined,
             spacing: { before: 0, after: 0, line: SINGLE_LINE, lineRule: LineRuleType.AUTO },
-            children: [new TextRun({ text: chapter.synopsis.trim(), font: FONT, size: FONT_SIZE, italics: true })],
+            children: [new TextRun({ text: sanitizeXmlText(chapter.synopsis).trim(), font: FONT, size: FONT_SIZE, italics: true })],
           }),
         );
       }
@@ -137,7 +138,7 @@ export async function exportBetaReaderPacket(
           alignment: AlignmentType.CENTER,
           pageBreakBefore: needsPageBreak,
           spacing: { before: needsPageBreak ? 0 : 240, after: 240, line: SINGLE_LINE, lineRule: LineRuleType.AUTO },
-          children: [new TextRun({ text: chapter.title.toUpperCase(), font: FONT, size: FONT_SIZE, bold: true })],
+          children: [new TextRun({ text: sanitizeXmlText(chapter.title).toUpperCase(), font: FONT, size: FONT_SIZE, bold: true })],
         }),
       );
     } else if (needsPageBreak) {
@@ -203,7 +204,7 @@ export async function exportBetaReaderPacket(
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${projectTitle.replace(/\s+/g, '_')}_beta_reader_packet.docx`;
+  a.download = `${sanitizeXmlText(projectTitle).replace(/\s+/g, '_')}_beta_reader_packet.docx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

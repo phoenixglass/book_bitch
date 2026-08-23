@@ -1,11 +1,14 @@
 import JSZip from 'jszip';
 import type { BinderItem, ManuscriptSettings, SceneOrder } from '../types';
 import { gatherChapters } from './manuscriptExport';
+import { sanitizeXmlText } from './xmlText';
 
 // ─── XML/XHTML helpers ────────────────────────────────────────────────────────
 
 function escapeXml(text: string): string {
-  return text
+  // Control characters are illegal in XML text and make the EPUB unreadable,
+  // exactly as they do in a .docx — strip them before escaping the markup.
+  return sanitizeXmlText(text)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -328,7 +331,7 @@ ${navPoints}
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${bookTitle.replace(/\s+/g, '_')}${exportOrder === 'chronological' ? '_chronological' : ''}.epub`;
+  a.download = `${sanitizeXmlText(bookTitle).replace(/\s+/g, '_')}${exportOrder === 'chronological' ? '_chronological' : ''}.epub`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
