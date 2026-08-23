@@ -7,6 +7,8 @@ import {
   type CleanupIssue,
 } from '../utils/manuscriptExport';
 import { exportManuscriptEpub } from '../utils/epubExport';
+import { collectScenes, hasChronologicalPlacement } from '../utils/timelineOrder';
+import type { SceneOrder } from '../types';
 
 interface Props {
   onClose: () => void;
@@ -94,6 +96,12 @@ export function ManuscriptExportDialog({ onClose }: Props) {
 
   const wordCount = countManuscriptWords(binder);
   const roundedCount = Math.round(wordCount / 100) * 100;
+
+  const exportOrder: SceneOrder = manuscriptSettings.exportOrder ?? 'manuscript';
+  const manuscriptScenes = collectScenes(
+    binder.filter((b) => b.id !== 'research' && b.id !== 'trash'),
+  );
+  const unplacedCount = manuscriptScenes.filter((s) => !hasChronologicalPlacement(s)).length;
 
   const set = useCallback(
     (patch: Parameters<typeof updateManuscriptSettings>[0]) => updateManuscriptSettings(patch),
@@ -252,6 +260,60 @@ export function ManuscriptExportDialog({ onClose }: Props) {
 
           {activeTab === 'format' && (
             <div className="flex flex-col gap-5">
+              <div className="flex flex-col gap-2">
+                <label className="text-xs text-gray-400">Scene order</label>
+                <div className="flex gap-2">
+                  {([
+                    ['manuscript', '📖 Manuscript Order', 'Binder order — chapters and scenes as filed'],
+                    ['chronological', '📅 Chronological', 'Story-time order, as shown in the Timeline view'],
+                  ] as [SceneOrder, string, string][]).map(([value, label, hint]) => (
+                    <button
+                      key={value}
+                      onClick={() => set({ exportOrder: value })}
+                      title={hint}
+                      className={`flex-1 py-2 px-3 rounded text-sm transition-colors border ${
+                        exportOrder === value
+                          ? 'bg-[#6b46c1] text-white border-[#6b46c1]'
+                          : 'bg-[#1a1a2e] text-gray-400 border-[#2d3748] hover:text-white'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {exportOrder === 'chronological' ? (
+                  <div className="bg-[#1a1a2e] rounded p-3 text-xs text-gray-500 space-y-1">
+                    <p>
+                      Scenes are compiled in story-time order using each scene's timeline date,
+                      exactly as the Timeline view's Chronological mode sorts them. Chapter folders
+                      are not used for grouping — every scene becomes its own section titled with
+                      the scene name.
+                    </p>
+                    {unplacedCount > 0 && (
+                      <p className="text-amber-400">
+                        ⚠ {unplacedCount} scene{unplacedCount !== 1 ? 's have' : ' has'} no timeline
+                        placement — {unplacedCount !== 1 ? 'they are' : 'it is'} still exported, in
+                        binder order, at the end.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-600">
+                    Scenes are compiled in binder order, grouped into chapters by folder.
+                  </p>
+                )}
+                {exportOrder === 'chronological' && (
+                  <Checkbox
+                    checked={manuscriptSettings.includeTimelineDates ?? false}
+                    onChange={(v) => set({ includeTimelineDates: v })}
+                    label="Print timeline dates"
+                    sublabel="Adds each scene's timeline date as a centered line beneath its title"
+                  />
+                )}
+              </div>
+
+              <hr className="border-[#0f3460]" />
+
               <div className="bg-[#1a1a2e] rounded-lg p-4 text-xs text-gray-400 space-y-1.5">
                 <p className="text-gray-300 font-medium mb-2">Format rules (fixed for this preset):</p>
                 <p>• Font: Times New Roman, 12 pt</p>
@@ -315,8 +377,12 @@ export function ManuscriptExportDialog({ onClose }: Props) {
                 <Checkbox
                   checked={manuscriptSettings.includeChapterTitles}
                   onChange={(v) => set({ includeChapterTitles: v })}
-                  label="Include chapter titles"
-                  sublabel="Each chapter folder name appears as a centered heading; each chapter starts on a new page"
+                  label={exportOrder === 'chronological' ? 'Include scene titles' : 'Include chapter titles'}
+                  sublabel={
+                    exportOrder === 'chronological'
+                      ? 'Each scene title appears as a centered heading; each scene starts on a new page'
+                      : 'Each chapter folder name appears as a centered heading; each chapter starts on a new page'
+                  }
                 />
                 <Checkbox
                   checked={manuscriptSettings.includeEndMarker}

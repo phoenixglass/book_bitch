@@ -11,7 +11,8 @@ import {
   PageNumber,
   convertInchesToTwip,
 } from 'docx';
-import type { BinderItem, ManuscriptSettings } from '../types';
+import type { BinderItem, ManuscriptSettings, SceneOrder } from '../types';
+import { collectScenes, sortScenes, formatTimelineDate } from './timelineOrder';
 
 export const FONT = 'Times New Roman';
 export const FONT_SIZE = 24; // half-points: 24 = 12pt
@@ -195,9 +196,32 @@ export interface Chapter {
   isNamedChapter: boolean; // true when a folder gives the chapter its name
   synopsis: string;
   scenes: SceneItem[];
+  /** Timeline date label, set only for chronologically ordered exports. */
+  timelineLabel?: string;
 }
 
-export function gatherChapters(items: BinderItem[]): Chapter[] {
+/**
+ * Chronological export: the binder's folder grouping no longer describes the
+ * reading order, so every scene becomes its own titled section, sorted exactly
+ * as the Timeline view's Chronological mode sorts them (scenes with no
+ * timeline placement keep their binder order and fall at the end).
+ */
+function gatherChronologicalChapters(items: BinderItem[]): Chapter[] {
+  return sortScenes(collectScenes(items), 'chronological').map((scene) => ({
+    title: scene.title,
+    isNamedChapter: true,
+    synopsis: scene.synopsis ?? '',
+    scenes: [{ title: scene.title, content: scene.content ?? '' }],
+    timelineLabel: formatTimelineDate(scene.sceneMetadata) ?? undefined,
+  }));
+}
+
+export function gatherChapters(
+  items: BinderItem[],
+  order: SceneOrder = 'manuscript',
+): Chapter[] {
+  if (order === 'chronological') return gatherChronologicalChapters(items);
+
   const chapters: Chapter[] = [];
 
   for (const item of items) {
@@ -272,6 +296,10 @@ export async function exportManuscriptDocx(
     includeQueryLetter,
     queryLetterContent,
   } = settings;
+
+  // Projects saved before chronological export existed have no exportOrder.
+  const exportOrder: SceneOrder = settings.exportOrder ?? 'manuscript';
+  const includeTimelineDates = settings.includeTimelineDates ?? false;
 
   const bookTitle = settingsTitle.trim() || projectTitle;
   const authorLastName =
@@ -373,7 +401,7 @@ export async function exportManuscriptDocx(
 
   // ── Section 2: Manuscript Body ────────────────────────────────────────────
   const bodyChildren: Paragraph[] = [];
-  const chapters = gatherChapters(manuscriptItems);
+  const chapters = gatherChapters(manuscriptItems, exportOrder);
   let isFirstChapter = true;
 
   for (const chapter of chapters) {
@@ -402,6 +430,24 @@ export async function exportManuscriptDocx(
           pageBreakBefore: true,
           spacing: { before: 0, after: 0, line: 480, lineRule: LineRuleType.AUTO },
           children: [],
+        }),
+      );
+    }
+
+    // Timeline date line, under the scene title in chronological exports
+    if (includeTimelineDates && chapter.timelineLabel) {
+      bodyChildren.push(
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          spacing: { before: 0, after: convertInchesToTwip(0.25), line: 480, lineRule: LineRuleType.AUTO },
+          children: [
+            new TextRun({
+              text: chapter.timelineLabel,
+              font: FONT,
+              size: FONT_SIZE,
+              italics: true,
+            }),
+          ],
         }),
       );
     }
@@ -508,7 +554,8 @@ export async function exportManuscriptDocx(
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${bookTitle.replace(/\s+/g, '_')}_manuscript.docx`;
+  const orderSuffix = exportOrder === 'chronological' ? '_chronological' : '';
+  a.download = `${bookTitle.replace(/\s+/g, '_')}_manuscript${orderSuffix}.docx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

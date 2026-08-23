@@ -1,18 +1,12 @@
 import { useState, useMemo } from 'react';
 import { useAppStore } from '../store/appStore';
-import type { BinderItem } from '../types';
-
-function collectScenes(items: BinderItem[]): BinderItem[] {
-  const scenes: BinderItem[] = [];
-  for (const item of items) {
-    if (item.id === 'trash') continue;
-    if (item.type === 'document') scenes.push(item);
-    if (item.children.length) scenes.push(...collectScenes(item.children));
-  }
-  return scenes;
-}
-
-type TimelineOrder = 'manuscript' | 'chronological';
+import type { SceneOrder } from '../types';
+import {
+  collectScenes,
+  sortScenes,
+  hasChronologicalPlacement,
+  formatTimelineDate,
+} from '../utils/timelineOrder';
 
 const STATUS_COLORS: Record<string, string> = {
   'No Status': '#4a5568', 'To Do': '#63b3ed', 'In Progress': '#f6ad55',
@@ -21,7 +15,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 export function TimelineView() {
   const { binder, selectItem, setViewMode, setArea } = useAppStore();
-  const [order, setOrder] = useState<TimelineOrder>('manuscript');
+  const [order, setOrder] = useState<SceneOrder>('manuscript');
   const [filterPov, setFilterPov] = useState('');
   const [filterPlotline, setFilterPlotline] = useState('');
   const [filterLocation, setFilterLocation] = useState('');
@@ -38,82 +32,17 @@ export function TimelineView() {
     return scenes;
   }, [allScenes, filterPov, filterPlotline, filterLocation, filterStatus]);
 
-  const sorted = useMemo(() => {
-    function tryParseDate(dateStr?: string): number | null {
-      if (!dateStr) return null;
-      const trimmed = dateStr.trim();
-
-      // yyyy-mm-dd or yyyy-mm
-      const iso = trimmed.match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$/);
-      if (iso) {
-        const year = parseInt(iso[1], 10);
-        const month = parseInt(iso[2], 10);
-        const day = iso[3] ? parseInt(iso[3], 10) : 0;
-        return year * 10000 + month * 100 + day;
-      }
-
-      const parts = trimmed.split('/');
-      if (parts.length === 3) {
-        // mm/dd/yyyy
-        const year = parseInt(parts[2], 10);
-        const month = parseInt(parts[0], 10);
-        const day = parseInt(parts[1], 10);
-        if (!isNaN(year) && !isNaN(month) && !isNaN(day))
-          return year * 10000 + month * 100 + day;
-      } else if (parts.length === 2) {
-        // mm/yyyy
-        const year = parseInt(parts[1], 10);
-        const month = parseInt(parts[0], 10);
-        if (!isNaN(year) && !isNaN(month))
-          return year * 10000 + month * 100;
-      }
-
-      // fallback for free text like "August 31, 2024"
-      const parsed = Date.parse(trimmed);
-      if (!isNaN(parsed)) {
-        const d = new Date(parsed);
-        return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
-      }
-
-      return null;
-    }
-
-    function parseDateSortKey(meta: typeof filtered[0]['sceneMetadata']): number {
-      const specific = tryParseDate(meta?.timelineSpecificDate);
-      if (specific !== null) return specific;
-      const clue = tryParseDate(meta?.timelineDateStart);
-      if (clue !== null) return clue;
-      return Number.MAX_SAFE_INTEGER;
-    }
-
-    return [...filtered].sort((a, b) => {
-      if (order === 'manuscript') {
-        const ma = a.sceneMetadata?.manuscriptOrder ?? 9999;
-        const mb = b.sceneMetadata?.manuscriptOrder ?? 9999;
-        return ma - mb;
-      } else {
-        const da = parseDateSortKey(a.sceneMetadata);
-        const db = parseDateSortKey(b.sceneMetadata);
-        if (da !== db) return da - db;
-        const ca = a.sceneMetadata?.chronologicalOrder ?? 9999;
-        const cb = b.sceneMetadata?.chronologicalOrder ?? 9999;
-        return ca - cb;
-      }
-    });
-  }, [filtered, order]);
-
-  const hasChronoPlacement = (s: typeof sorted[0]) =>
-    !!(s.sceneMetadata?.timelineSpecificDate || s.sceneMetadata?.timelineDateStart || s.sceneMetadata?.chronologicalOrder);
+  const sorted = useMemo(() => sortScenes(filtered, order), [filtered, order]);
 
   const unplaced = sorted.filter(s =>
     order === 'manuscript'
       ? !s.sceneMetadata?.manuscriptOrder
-      : !hasChronoPlacement(s),
+      : !hasChronologicalPlacement(s),
   );
   const placed = sorted.filter(s =>
     order === 'manuscript'
       ? !!s.sceneMetadata?.manuscriptOrder
-      : hasChronoPlacement(s),
+      : hasChronologicalPlacement(s),
   );
 
   function openScene(id: string) {
@@ -133,7 +62,7 @@ export function TimelineView() {
         <span className="text-xs text-gray-400 font-semibold">{sorted.length} scenes</span>
 
         <div className="flex gap-1 bg-[#0d1117] rounded p-0.5">
-          {(['manuscript','chronological'] as TimelineOrder[]).map(o => (
+          {(['manuscript','chronological'] as SceneOrder[]).map(o => (
             <button
               key={o}
               onClick={() => setOrder(o)}
@@ -174,11 +103,7 @@ export function TimelineView() {
           {placed.map((scene) => {
             const meta = scene.sceneMetadata ?? {};
             const num = order === 'manuscript' ? meta.manuscriptOrder : meta.chronologicalOrder;
-            const dateLabel = order === 'chronological' && meta.timelineSpecificDate
-              ? `${meta.timelineSpecificDate}${meta.timelineUncertain ? ' ~' : ''}`
-              : meta.timelineDateStart
-                ? `${meta.timelineDateStart}${meta.timelineDateEnd ? ` – ${meta.timelineDateEnd}` : ''}${meta.timelineUncertain ? ' ~' : ''}`
-                : null;
+            const dateLabel = formatTimelineDate(meta);
 
             return (
               <div key={scene.id} className="flex items-start gap-0 mb-4">

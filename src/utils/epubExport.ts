@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import type { BinderItem, ManuscriptSettings } from '../types';
+import type { BinderItem, ManuscriptSettings, SceneOrder } from '../types';
 import { gatherChapters } from './manuscriptExport';
 
 // ─── XML/XHTML helpers ────────────────────────────────────────────────────────
@@ -130,6 +130,7 @@ const STYLESHEET = `body { font-family: Georgia, "Times New Roman", serif; line-
 h1 { text-align: center; font-size: 1.5em; margin: 2em 0 1em; }
 p { margin: 0 0 0.6em; text-indent: 1.5em; }
 p.scene-break { text-align: center; text-indent: 0; margin: 1.5em 0; }
+p.timeline-date { text-align: center; text-indent: 0; font-style: italic; color: #555; margin: -0.5em 0 1.5em; }
 .title-page { text-align: center; margin-top: 30%; }
 .title-page h1 { font-size: 2em; margin-bottom: 0.3em; }
 .title-page .subtitle { font-size: 1.2em; font-style: italic; margin-bottom: 1.5em; text-indent: 0; }
@@ -160,11 +161,15 @@ export async function exportManuscriptEpub(
     queryLetterContent,
   } = settings;
 
+  // Projects saved before chronological export existed have no exportOrder.
+  const exportOrder: SceneOrder = settings.exportOrder ?? 'manuscript';
+  const includeTimelineDates = settings.includeTimelineDates ?? false;
+
   const bookTitle = settingsTitle.trim() || projectTitle || 'Untitled';
   const author = authorName.trim() || 'Unknown Author';
 
   const manuscriptItems = binder.filter((b) => b.id !== 'research' && b.id !== 'trash');
-  const chapters = gatherChapters(manuscriptItems);
+  const chapters = gatherChapters(manuscriptItems, exportOrder);
 
   interface EpubItem {
     id: string;
@@ -198,7 +203,11 @@ ${genre ? `<p class="genre">${escapeXml(genre)}</p>` : ''}
       sceneParts.push('<p class="scene-break">END</p>');
     }
 
-    const body = `${showHeading ? `<h1>${escapeXml(chapter.title)}</h1>` : ''}\n${sceneParts.join('\n')}`;
+    const dateLine =
+      includeTimelineDates && chapter.timelineLabel
+        ? `<p class="timeline-date">${escapeXml(chapter.timelineLabel)}</p>`
+        : '';
+    const body = `${showHeading ? `<h1>${escapeXml(chapter.title)}</h1>` : ''}\n${dateLine}${dateLine ? '\n' : ''}${sceneParts.join('\n')}`;
     items.push({
       id: `chapter${idx + 1}`,
       href: `chapter${idx + 1}.xhtml`,
@@ -319,7 +328,7 @@ ${navPoints}
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${bookTitle.replace(/\s+/g, '_')}.epub`;
+  a.download = `${bookTitle.replace(/\s+/g, '_')}${exportOrder === 'chronological' ? '_chronological' : ''}.epub`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

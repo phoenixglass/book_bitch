@@ -313,6 +313,8 @@ export const useAppStore = create<AppState>()(
         bookTitle: '',
         subtitle: '',
         genre: '',
+        exportOrder: 'manuscript',
+        includeTimelineDates: false,
         sceneBreakStyle: '#',
         includeEndMarker: true,
         includeChapterTitles: true,
