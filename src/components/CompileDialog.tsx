@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import { ManuscriptExportDialog } from './ManuscriptExportDialog';
 import { BetaReaderPacketDialog } from './BetaReaderPacketDialog';
-import type { BinderItem } from '../types';
+import type { SceneOrder } from '../types';
+import { collectScenes, sortScenes, formatTimelineDate } from '../utils/timelineOrder';
 
 function stripHtml(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html');
@@ -42,15 +43,6 @@ function htmlToMarkdown(html: string): string {
   return nodeToMd(doc.body).replace(/\n{3,}/g, '\n\n').trim();
 }
 
-function collectDocuments(items: BinderItem[]): BinderItem[] {
-  const docs: BinderItem[] = [];
-  for (const item of items) {
-    if (item.type === 'document' && item.id !== 'trash') docs.push(item);
-    if (item.type === 'folder' && item.id !== 'trash') docs.push(...collectDocuments(item.children));
-  }
-  return docs;
-}
-
 function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -76,9 +68,10 @@ export function CompileDialog({ onClose }: CompileDialogProps) {
   const [separatorLine, setSeparatorLine] = useState(true);
   const [includeSceneMeta, setIncludeSceneMeta] = useState(false);
   const [includeNotes, setIncludeNotes] = useState(false);
+  const [order, setOrder] = useState<SceneOrder>('manuscript');
   const [showImport, setShowImport] = useState(false);
 
-  const docs = collectDocuments(binder.filter(b => b.id !== 'research'));
+  const docs = sortScenes(collectScenes(binder.filter(b => b.id !== 'research')), order);
 
   function buildManuscriptContent(): string {
     const parts: string[] = [];
@@ -93,10 +86,12 @@ export function CompileDialog({ onClose }: CompileDialogProps) {
     for (const doc of docs) {
       const safeDocTitle = escapeHtml(doc.title);
       const meta = doc.sceneMetadata ?? {};
+      const dateLabel = order === 'chronological' ? formatTimelineDate(meta) : null;
 
       if (format === 'html') {
         parts.push(`<h2>${safeDocTitle}</h2>`);
         if (includeSynopsis && doc.synopsis) parts.push(`<p class="synopsis"><em>${escapeHtml(doc.synopsis)}</em></p>`);
+        if (dateLabel) parts.push(`<p class="meta"><small>${escapeHtml(dateLabel)}</small></p>`);
         if (includeSceneMeta && meta.povCharacter) parts.push(`<p class="meta"><small>POV: ${escapeHtml(meta.povCharacter)}</small></p>`);
         parts.push(doc.content || '<p></p>');
         if (includeNotes && doc.notes) parts.push(`<div class="notes"><p><em>Notes: ${escapeHtml(doc.notes)}</em></p></div>`);
@@ -104,6 +99,7 @@ export function CompileDialog({ onClose }: CompileDialogProps) {
       } else if (format === 'md') {
         parts.push(`## ${doc.title}\n`);
         if (includeSynopsis && doc.synopsis) parts.push(`*${doc.synopsis}*\n`);
+        if (dateLabel) parts.push(`*${dateLabel}*\n`);
         if (includeSceneMeta && meta.povCharacter) parts.push(`> POV: ${meta.povCharacter}\n`);
         parts.push(htmlToMarkdown(doc.content));
         if (includeNotes && doc.notes) parts.push(`\n> Notes: ${doc.notes}\n`);
@@ -112,6 +108,7 @@ export function CompileDialog({ onClose }: CompileDialogProps) {
         parts.push(doc.title);
         parts.push('-'.repeat(doc.title.length));
         if (includeSynopsis && doc.synopsis) parts.push(`[${doc.synopsis}]\n`);
+        if (dateLabel) parts.push(dateLabel);
         if (includeSceneMeta && meta.povCharacter) parts.push(`POV: ${meta.povCharacter}`);
         parts.push(stripHtml(doc.content));
         if (includeNotes && doc.notes) parts.push(`\n[Notes: ${doc.notes}]`);
@@ -158,7 +155,8 @@ ${parts.join('\n')}
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${projectTitle.replace(/\s+/g, '_')}.${ext}`;
+    const orderSuffix = order === 'chronological' ? '_chronological' : '';
+    a.download = `${projectTitle.replace(/\s+/g, '_')}${orderSuffix}.${ext}`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -273,6 +271,33 @@ ${parts.join('\n')}
 
           {format !== 'json-backup' && (
             <>
+              <div>
+                <label className="text-xs text-gray-400 block mb-1">Order</label>
+                <div className="flex gap-2">
+                  {([
+                    ['manuscript', '📖 Manuscript Order'],
+                    ['chronological', '📅 Chronological'],
+                  ] as [SceneOrder, string][]).map(([value, label]) => (
+                    <button
+                      key={value}
+                      onClick={() => setOrder(value)}
+                      className={`py-1.5 px-3 rounded text-sm transition-colors ${
+                        order === value
+                          ? 'bg-[#6b46c1] text-white'
+                          : 'bg-[#1a1a2e] text-gray-400 hover:text-white border border-[#2d3748]'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-600 mt-1">
+                  {order === 'chronological'
+                    ? "Scenes are exported in story-time order, as shown in the Timeline view, with their timeline dates. Scenes with no timeline placement come last."
+                    : 'Scenes are exported in binder order.'}
+                </p>
+              </div>
+
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={includeTitle} onChange={(e) => setIncludeTitle(e.target.checked)} className="accent-purple-500" />
                 <span className="text-gray-300">Include project title</span>
@@ -295,7 +320,9 @@ ${parts.join('\n')}
               </label>
 
               <div className="bg-[#1a1a2e] rounded p-3 text-xs text-gray-500">
-                <p className="mb-1 font-semibold text-gray-400">Documents to export ({docs.length}):</p>
+                <p className="mb-1 font-semibold text-gray-400">
+                  Documents to export ({docs.length}, in {order === 'chronological' ? 'chronological' : 'manuscript'} order):
+                </p>
                 {docs.slice(0, 8).map((d) => (
                   <p key={d.id} className="truncate">• {d.title}</p>
                 ))}

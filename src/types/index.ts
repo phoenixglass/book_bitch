@@ -31,6 +31,9 @@ export interface Snapshot {
   note?: string;
 }
 
+/** Ordering used by the Timeline view and by exports. */
+export type SceneOrder = 'manuscript' | 'chronological';
+
 export interface SceneMetadata {
   povCharacter: string;
   charactersPresent: string[];
@@ -519,6 +522,10 @@ export interface ManuscriptSettings {
   subtitle: string;
   genre: string;
   // Export options
+  /** Order scenes are compiled in: binder/manuscript order or timeline order. */
+  exportOrder: SceneOrder;
+  /** Print each scene's timeline date above it (chronological exports only). */
+  includeTimelineDates: boolean;
   sceneBreakStyle: '#' | '***';
   includeEndMarker: boolean;
   includeChapterTitles: boolean;

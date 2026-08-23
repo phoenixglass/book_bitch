@@ -11,6 +11,7 @@ An online writing tool inspired by Scrivener — organize, write, and export lon
 - **Inspector** — per-document synopsis, private notes, label, status, word target, deadline; project-level word target
 - **Snapshots** — take labelled version snapshots of any document; restore or delete from the Inspector
 - **Compile & Export** — export the whole project to plain text, HTML, or Markdown; optional project title, synopses, and section separators
+- **Chronological Export** — compile the full document in story-time order (the Timeline view's Chronological mode) instead of binder order, for .docx, .epub, plain text, HTML, and Markdown; optional timeline dates printed with each scene
 - **Project Targets** — live word count in the toolbar with a progress bar toward your project word target
 - **Full-screen Composition Mode** — distraction-free writing with a single-column layout
 - **Trash** — deleted items are moved to the Trash folder in the binder
