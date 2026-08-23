@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { idbStorage } from '../utils/idbStorage';
 import { countWords as countWordsInHtml } from '../utils/textStats';
 import { replaceInBinder } from '../utils/findReplace';
+import { downloadBlob } from '../utils/exportDownload';
 import type {
   AppState,
   AppArea,
@@ -1880,12 +1881,10 @@ export const useAppStore = create<AppState>()(
         const blob = new Blob([JSON.stringify(backup, null, 2)], {
           type: 'application/json;charset=utf-8',
         });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${state.projectTitle.replace(/\s+/g, '_')}_backup_${new Date().toISOString().split('T')[0]}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
+        downloadBlob(
+          blob,
+          `${state.projectTitle.replace(/\s+/g, '_')}_backup_${new Date().toISOString().split('T')[0]}.json`,
+        );
         get().recordEvent({
           eventType: 'exported',
           objectType: 'scene',

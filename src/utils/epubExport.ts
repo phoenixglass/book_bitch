@@ -2,6 +2,7 @@ import JSZip from 'jszip';
 import type { BinderItem, ManuscriptSettings, SceneOrder } from '../types';
 import { gatherChapters } from './manuscriptExport';
 import { sanitizeXmlText } from './xmlText';
+import { downloadVerifiedArchive } from './exportDownload';
 
 // ─── XML/XHTML helpers ────────────────────────────────────────────────────────
 
@@ -328,12 +329,8 @@ ${navPoints}
     compression: 'DEFLATE',
     compressionOptions: { level: 6 },
   });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${sanitizeXmlText(bookTitle).replace(/\s+/g, '_')}${exportOrder === 'chronological' ? '_chronological' : ''}.epub`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  await downloadVerifiedArchive(
+    blob,
+    `${sanitizeXmlText(bookTitle).replace(/\s+/g, '_')}${exportOrder === 'chronological' ? '_chronological' : ''}.epub`,
+  );
 }

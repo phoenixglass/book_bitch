@@ -36,3 +36,23 @@ export function sanitizeXmlText(value: string | null | undefined): string {
     .replace(ILLEGAL, '')
     .replace(SURROGATE, (match) => (match.length === 2 ? match : ''));
 }
+
+/**
+ * Locates the first character a generated XML part must not contain, with a
+ * little surrounding text so the author can tell which scene it came from.
+ * Used to check finished exports rather than to clean them: sanitizeXmlText()
+ * runs on everything on the way in, so a hit here means something slipped
+ * past it, and the export is stopped instead of handing Word a file it will
+ * refuse to open.
+ */
+export function findIllegalXmlChar(
+  xml: string,
+): { codePoint: string; context: string } | null {
+  // eslint-disable-next-line no-control-regex
+  const match = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/.exec(xml);
+  if (!match) return null;
+  const at = match.index;
+  const codePoint = `U+${xml.charCodeAt(at).toString(16).toUpperCase().padStart(4, '0')}`;
+  const context = xml.slice(Math.max(0, at - 60), at + 60).replace(ILLEGAL, '?');
+  return { codePoint, context };
+}
