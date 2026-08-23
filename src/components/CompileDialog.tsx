@@ -4,6 +4,7 @@ import { ManuscriptExportDialog } from './ManuscriptExportDialog';
 import { BetaReaderPacketDialog } from './BetaReaderPacketDialog';
 import type { SceneOrder } from '../types';
 import { collectScenes, sortScenes, formatTimelineDate } from '../utils/timelineOrder';
+import { downloadBlob } from '../utils/exportDownload';
 
 function stripHtml(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html');
@@ -152,13 +153,8 @@ ${parts.join('\n')}
     const mime = format === 'html' ? 'text/html' : format === 'md' ? 'text/markdown' : 'text/plain';
 
     const blob = new Blob([content], { type: `${mime};charset=utf-8` });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
     const orderSuffix = order === 'chronological' ? '_chronological' : '';
-    a.download = `${projectTitle.replace(/\s+/g, '_')}${orderSuffix}.${ext}`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, `${projectTitle.replace(/\s+/g, '_')}${orderSuffix}.${ext}`);
   }
 
   function handleImport(e: React.ChangeEvent<HTMLInputElement>) {

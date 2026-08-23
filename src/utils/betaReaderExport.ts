@@ -19,6 +19,7 @@ import {
   countManuscriptWords,
 } from './manuscriptExport';
 import { sanitizeXmlText } from './xmlText';
+import { downloadVerifiedArchive } from './exportDownload';
 
 const SINGLE_LINE = 240;
 
@@ -201,14 +202,10 @@ export async function exportBetaReaderPacket(
 
   const doc = new Document({ sections: docSections });
   const blob = await Packer.toBlob(doc);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${sanitizeXmlText(projectTitle).replace(/\s+/g, '_')}_beta_reader_packet.docx`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  await downloadVerifiedArchive(
+    blob,
+    `${sanitizeXmlText(projectTitle).replace(/\s+/g, '_')}_beta_reader_packet.docx`,
+  );
 }
 
 export function countBetaReaderChapters(binder: BinderItem[]): { chapters: number; withSynopsis: number } {

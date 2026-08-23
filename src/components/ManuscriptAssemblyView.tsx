@@ -3,6 +3,7 @@ import { useAppStore } from '../store/appStore';
 import { countWords } from '../utils/textStats';
 import { TruthMirrorPanel } from './TruthMirrorPanel';
 import type { AssemblyScene, BinderItem, ManuscriptAssembly } from '../types';
+import { downloadBlob } from '../utils/exportDownload';
 
 function flattenDocuments(items: BinderItem[], path: string[] = []): Array<{ item: BinderItem; path: string }> {
   return items.flatMap((item) => {
@@ -142,12 +143,7 @@ export function ManuscriptAssemblyView() {
     });
     setExportWarning(missing.length ? `Skipped ${missing.length} missing scene reference(s).` : '');
     const blob = new Blob([lines.join('\n')], { type: 'text/markdown;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${selectedAssembly.title.replace(/[^a-z0-9]+/gi, '_') || 'assembly'}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, `${selectedAssembly.title.replace(/[^a-z0-9]+/gi, '_') || 'assembly'}.md`);
   }
 
   function renderAssemblyCard(assembly: ManuscriptAssembly) {

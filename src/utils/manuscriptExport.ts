@@ -14,6 +14,7 @@ import {
 import type { BinderItem, ManuscriptSettings, SceneOrder } from '../types';
 import { collectScenes, sortScenes, formatTimelineDate } from './timelineOrder';
 import { sanitizeXmlText } from './xmlText';
+import { downloadVerifiedArchive } from './exportDownload';
 
 export const FONT = 'Times New Roman';
 export const FONT_SIZE = 24; // half-points: 24 = 12pt
@@ -552,15 +553,11 @@ export async function exportManuscriptDocx(
   // ── Build and download ────────────────────────────────────────────────────
   const doc = new Document({ sections: docSections });
   const blob = await Packer.toBlob(doc);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
   const orderSuffix = exportOrder === 'chronological' ? '_chronological' : '';
-  a.download = `${sanitizeXmlText(bookTitle).replace(/\s+/g, '_')}_manuscript${orderSuffix}.docx`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  await downloadVerifiedArchive(
+    blob,
+    `${sanitizeXmlText(bookTitle).replace(/\s+/g, '_')}_manuscript${orderSuffix}.docx`,
+  );
 }
 
 // ─── Cleanup detection ────────────────────────────────────────────────────────
