@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import type { BinderItem, ImportSourceMeta } from '../types';
 import type {
-  GDocDocument, GDocElement, GDocParagraph, GDocParagraphElement, GDocTab, GDocTable,
+  GDocDocument, GDocElement, GDocLists, GDocParagraph, GDocParagraphElement, GDocTab, GDocTable,
   GooglePickerData, GooglePickerDocument,
 } from '../types/googleApi';
 import { delimitedToHtml, parseDocx, parseXlsx } from '../utils/documentParser';
@@ -313,7 +313,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
         const tabTitle = tab.tabProperties?.title || `Tab ${(tab.tabProperties?.index ?? 0) + 1}`;
         return {
           title: tabTitle,
-          content: docElementsToHtml(tab.documentTab?.body?.content || []),
+          content: docElementsToHtml(tab.documentTab?.body?.content || [], listsForTab(tab)),
           importSource: {
             fileName: docName,
             fileType: 'google_doc' as const,
@@ -332,7 +332,11 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
       const chapters = splitByHeading(bodyContent);
 
       if (chapters.length <= 1) {
-        const html = await exportDocAsHtmlOrFallback(driveFileId, bodyContent);
+        const html = await exportDocAsHtmlOrFallback(
+          driveFileId,
+          bodyContent,
+          listsForDocument(docData),
+        );
         items = [{
           title: docName,
           content: html,
@@ -348,7 +352,8 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
         const chapterHtmls = fullHtml ? splitHtmlByH1(fullHtml, chapters.map((c) => c.title)) : [];
         items = chapters.map((chapter, i) => ({
           title: chapter.title,
-          content: chapterHtmls[i] ?? docElementsToHtml(chapter.elements),
+          content:
+            chapterHtmls[i] ?? docElementsToHtml(chapter.elements, listsForDocument(docData)),
           importSource: {
             fileName: docName,
             fileType: 'google_doc' as const,
@@ -385,7 +390,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
       const tabTitle =
         tab.tabProperties?.title || `Tab ${(tab.tabProperties?.index ?? 0) + 1}`;
       const elements: GDocElement[] = tab.documentTab?.body?.content || [];
-      const html = docElementsToHtml(elements);
+      const html = docElementsToHtml(elements, listsForTab(tab));
 
       addItem(folderId, 'document');
       const docId = useAppStore.getState().selectedId;
@@ -409,7 +414,11 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
 
     if (chapters.length <= 1) {
       // Single document — use HTML export for full formatting fidelity
-      const html = await exportDocAsHtmlOrFallback(driveFileId, bodyContent);
+      const html = await exportDocAsHtmlOrFallback(
+        driveFileId,
+        bodyContent,
+        listsForDocument(docData),
+      );
       addItem(null, 'document');
       const docId = useAppStore.getState().selectedId;
       if (docId) {
@@ -430,7 +439,8 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     updateItem(folderId, { title: docName, driveFileId, expanded: true });
 
     for (let i = 0; i < chapters.length; i++) {
-      const html = chapterHtmls[i] ?? docElementsToHtml(chapters[i].elements);
+      const html =
+        chapterHtmls[i] ?? docElementsToHtml(chapters[i].elements, listsForDocument(docData));
       addItem(folderId, 'document');
       const docId = useAppStore.getState().selectedId;
       if (docId) {
@@ -489,7 +499,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
         flatTabs.forEach((tab, i) => {
           const tabTitle =
             tab.tabProperties?.title || `Tab ${(tab.tabProperties?.index ?? 0) + 1}`;
-          const html = docElementsToHtml(tab.documentTab?.body?.content || []);
+          const html = docElementsToHtml(tab.documentTab?.body?.content || [], listsForTab(tab));
           const key = driveChildKey(driveFileId, tab.tabProperties?.tabId);
           console.log(`[drive-import] merging tab ${i + 1}/${flatTabs.length} "${tabTitle}" (${html.length.toLocaleString()} chars)`);
           mergeChapter(key, tabTitle, html);
@@ -506,7 +516,7 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
           // No H1 headings at all — nothing to split by chapter, and the
           // per-chapter loop below would never run against an empty array,
           // silently merging nothing. Merge the whole document as one item.
-          const html = fullHtml ?? docElementsToHtml(bodyContent);
+          const html = fullHtml ?? docElementsToHtml(bodyContent, listsForDocument(docData));
           console.log(`[drive-import] no headings — merging whole document as single item (${html.length.toLocaleString()} chars)`);
           mergeChapter(driveFileId, docData.title || 'Untitled', html);
         } else {
@@ -514,7 +524,9 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
           console.log(`[drive-import] ${chapters.length} chapters detected, ${chapterHtmls.length} HTML parts matched`);
 
           for (let i = 0; i < chapters.length; i++) {
-            const html = chapterHtmls[i] ?? docElementsToHtml(chapters[i].elements);
+            const html =
+              chapterHtmls[i] ??
+              docElementsToHtml(chapters[i].elements, listsForDocument(docData));
             const key = driveChildKey(driveFileId, undefined, chapters[i].headingId);
             console.log(`[drive-import] merging chapter ${i + 1}/${chapters.length} "${chapters[i].title}" (${html.length.toLocaleString()} chars)`);
             mergeChapter(key, chapters[i].title, html);
@@ -673,8 +685,12 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
   // drops inline images entirely (see renderInlines), so it's naturally
   // exempt from the export size cap — the tradeoff is losing embedded images
   // in that document, not losing the import.
-  async function exportDocAsHtmlOrFallback(docId: string, elements: GDocElement[]): Promise<string> {
-    return (await tryExportDocAsHtml(docId)) ?? docElementsToHtml(elements);
+  async function exportDocAsHtmlOrFallback(
+    docId: string,
+    elements: GDocElement[],
+    lists?: GDocLists,
+  ): Promise<string> {
+    return (await tryExportDocAsHtml(docId)) ?? docElementsToHtml(elements, lists);
   }
 
   // Same fallback, but for callers that split the export by chapter (splitHtmlByH1)
@@ -836,6 +852,16 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
 
   // ── DOM helpers ───────────────────────────────────────────────────────────
 
+  // The list definitions that go with a body: per-tab for a tabbed document,
+  // top-level otherwise. Without them every numbered list imports as bullets.
+  function listsForTab(tab: GDocTab): GDocLists | undefined {
+    return tab.documentTab?.lists;
+  }
+
+  function listsForDocument(docData: GDocDocument): GDocLists | undefined {
+    return docData.tabs?.[0]?.documentTab?.lists ?? docData.lists;
+  }
+
   function flattenTabs(tabs: GDocTab[]): GDocTab[] {
     const out: GDocTab[] = [];
     for (const tab of tabs) {
@@ -880,10 +906,80 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
       .trim();
   }
 
+  // A numbered list in Google Docs is a run of paragraphs that each name a list
+  // and a depth; the glyph for that depth lives in the document's `lists` map.
+  // Anything counting — decimal, alpha, roman — is an <ol>; everything else is
+  // a bullet.
+  const ORDERED_GLYPHS = /^(DECIMAL|ZERO_DECIMAL|UPPER_ALPHA|ALPHA|UPPER_ROMAN|ROMAN)$/;
+
+  function listTypeFor(
+    lists: GDocLists | undefined,
+    listId: string | undefined,
+    nestingLevel: number,
+  ): 'ul' | 'ol' {
+    const glyph = listId
+      ? lists?.[listId]?.listProperties?.nestingLevels?.[nestingLevel]?.glyphType
+      : undefined;
+    return glyph && ORDERED_GLYPHS.test(glyph) ? 'ol' : 'ul';
+  }
+
+  interface ListEntry {
+    level: number;
+    type: 'ul' | 'ol';
+    html: string;
+  }
+
+  /**
+   * Renders one run of list paragraphs, nesting deeper items inside the item
+   * they belong to — `<ul><li>a<ul><li>b</li></ul></li></ul>` — because a list
+   * parented directly to another list is not something the editor's schema
+   * accepts, and it would be dropped on load.
+   */
+  function renderList(entries: ListEntry[], start: number, level: number): [string, number] {
+    const parts: string[] = [`<${entries[start].type}>`];
+    let i = start;
+
+    while (i < entries.length && entries[i].level >= level) {
+      // A deeper item is handled by the recursive call below; anything
+      // shallower belongs to an enclosing list.
+      if (entries[i].level > level) break;
+      parts.push(`<li>${entries[i].html}`);
+      i += 1;
+      if (i < entries.length && entries[i].level > level) {
+        const [nested, next] = renderList(entries, i, entries[i].level);
+        parts.push(nested);
+        i = next;
+      }
+      parts.push('</li>');
+    }
+
+    parts.push(`</${entries[start].type}>`);
+    return [parts.join(''), i];
+  }
+
+  function renderListRun(entries: ListEntry[]): string {
+    const parts: string[] = [];
+    let i = 0;
+    while (i < entries.length) {
+      const [html, next] = renderList(entries, i, entries[i].level);
+      parts.push(html);
+      i = next;
+    }
+    return parts.join('');
+  }
+
   // Convert Google Docs API elements to HTML with full formatting preserved
-  function docElementsToHtml(elements: GDocElement[]): string {
+  function docElementsToHtml(elements: GDocElement[], lists?: GDocLists): string {
     const out: string[] = [];
-    const listStack: Array<{ type: 'ul' | 'ol'; nestingLevel: number }> = [];
+    let pending: ListEntry[] = [];
+    let pendingListId: string | undefined;
+
+    const flushList = () => {
+      if (pending.length === 0) return;
+      out.push(renderListRun(pending));
+      pending = [];
+      pendingListId = undefined;
+    };
 
     for (const el of elements) {
       if (el.paragraph) {
@@ -891,33 +987,26 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
         const bullet = p.bullet;
 
         if (bullet) {
-          // Determine list type from nesting level and list ID
-          const nestingLevel = bullet.nestingLevel ?? 0;
-          const listType: 'ul' | 'ol' = 'ul'; // Default; could inspect listId for ordered
-          if (listStack.length === 0) {
-            out.push(`<${listType}>`);
-            listStack.push({ type: listType, nestingLevel });
-          }
-          out.push(`<li>${renderInlines(p.elements || [])}</li>`);
+          // Two adjacent lists are separate lists, not one with a gap in it.
+          if (pending.length > 0 && bullet.listId !== pendingListId) flushList();
+          const level = bullet.nestingLevel ?? 0;
+          pendingListId = bullet.listId;
+          pending.push({
+            level,
+            type: listTypeFor(lists, bullet.listId, level),
+            html: renderInlines(p.elements || []),
+          });
         } else {
-          // Close any open lists
-          if (listStack.length > 0) {
-            while (listStack.length > 0) {
-              out.push(`</${listStack.pop()!.type}>`);
-            }
-          }
+          flushList();
           out.push(paragraphToHtml(p));
         }
       } else if (el.table) {
-        if (listStack.length > 0) {
-          while (listStack.length > 0) out.push(`</${listStack.pop()!.type}>`);
-        }
+        flushList();
         out.push(tableToHtml(el.table));
       }
     }
 
-    // Close any remaining open lists
-    while (listStack.length > 0) out.push(`</${listStack.pop()!.type}>`);
+    flushList();
 
     return out.join('');
   }
@@ -1078,7 +1167,11 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
         docData.tabs?.[0]?.documentTab?.body?.content ||
         docData.body?.content ||
         [];
-      const html = await exportDocAsHtmlOrFallback(driveFileId, bodyContent);
+      const html = await exportDocAsHtmlOrFallback(
+        driveFileId,
+        bodyContent,
+        listsForDocument(docData),
+      );
       updateItem(docId, { title: docData.title || 'Untitled', content: html });
     } catch (error) {
       console.error('Re-sync doc failed:', error);

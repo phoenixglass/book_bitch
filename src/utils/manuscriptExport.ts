@@ -18,11 +18,12 @@ import {
   WidthType,
   convertInchesToTwip,
 } from 'docx';
-import type { FileChild, INumberingOptions } from 'docx';
+import type { FileChild, INumberingOptions, ParagraphChild } from 'docx';
 import type { BinderItem, ManuscriptSettings, SceneOrder } from '../types';
 import { collectScenes, sortScenes, formatTimelineDate } from './timelineOrder';
 import { sanitizeXmlText } from './xmlText';
 import { downloadVerifiedArchive } from './exportDownload';
+import { imageRunFor, loadDocxImages, type DocxImageMap } from './docxImages';
 
 export const FONT = 'Times New Roman';
 export const FONT_SIZE = 24; // half-points: 24 = 12pt
@@ -82,7 +83,7 @@ export interface MakeParagraphOptions {
 }
 
 export function makeParagraph(
-  children: TextRun[],
+  children: readonly ParagraphChild[],
   opts?: MakeParagraphOptions,
 ): Paragraph {
   const doubleSpaceLineVal = 480; // 240 per single line in Word's units
@@ -239,8 +240,18 @@ function alignmentFromStyle(el: Element): (typeof AlignmentType)[keyof typeof Al
 
 // ─── HTML → Paragraph conversion ─────────────────────────────────────────────
 
-function processInlineNodes(node: Node, fmt: RunFmt): TextRun[] {
-  const runs: TextRun[] = [];
+/** An image whose bytes could not be fetched, so the reader knows one is missing. */
+function missingImageRun(): TextRun {
+  return new TextRun({
+    text: '[Image could not be exported]',
+    font: FONT,
+    size: FONT_SIZE,
+    italics: true,
+  });
+}
+
+function processInlineNodes(node: Node, fmt: RunFmt, images?: DocxImageMap): ParagraphChild[] {
+  const runs: ParagraphChild[] = [];
 
   for (const child of node.childNodes) {
     if (child.nodeType === Node.TEXT_NODE) {
@@ -258,13 +269,18 @@ function processInlineNodes(node: Node, fmt: RunFmt): TextRun[] {
         continue;
       }
 
+      if (tag === 'img') {
+        runs.push(images ? (imageRunFor(el, images) ?? missingImageRun()) : missingImageRun());
+        continue;
+      }
+
       const newFmt: RunFmt = { ...fmt };
       if (tag === 'strong' || tag === 'b') newFmt.bold = true;
       if (tag === 'em' || tag === 'i') newFmt.italic = true;
       if (tag === 's') newFmt.strike = true;
       // Preserve italics; do not convert to underline
 
-      runs.push(...processInlineNodes(el, newFmt));
+      runs.push(...processInlineNodes(el, newFmt, images));
     }
   }
 
@@ -281,15 +297,16 @@ const LIST_TAGS = new Set(['ul', 'ol']);
  * A list item's own text, excluding any nested list, which becomes its own
  * deeper-level items rather than being flattened into the parent's text.
  */
-function listItemRuns(li: Element): TextRun[] {
+function listItemRuns(li: Element, images?: DocxImageMap): ParagraphChild[] {
   const clone = li.cloneNode(true) as Element;
   clone.querySelectorAll('ul, ol').forEach((nested) => nested.remove());
-  return processInlineNodes(clone, {});
+  return processInlineNodes(clone, {}, images);
 }
 
 function listToParagraphs(
   list: Element,
   singleSpaced: boolean,
+  images?: DocxImageMap,
   level = 0,
   instance = nextNumberingInstance(),
 ): Paragraph[] {
@@ -300,7 +317,7 @@ function listToParagraphs(
   for (const li of Array.from(list.children)) {
     if (li.tagName.toLowerCase() !== 'li') continue;
 
-    const runs = listItemRuns(li);
+    const runs = listItemRuns(li, images);
     paragraphs.push(
       makeParagraph(runs.length ? runs : [makeRun('')], {
         singleSpaced,
@@ -319,6 +336,7 @@ function listToParagraphs(
         ...listToParagraphs(
           child,
           singleSpaced,
+          images,
           level + 1,
           nestedOrdered === ordered ? instance : nextNumberingInstance(),
         ),
@@ -335,14 +353,14 @@ const CELL_BORDER = { style: BorderStyle.SINGLE, size: 4, color: '999999' } as c
 
 // Table cells are always single-spaced and flush left: a double-spaced,
 // first-line-indented manuscript paragraph is unreadable in a narrow cell.
-function cellChildren(cell: Element): Paragraph[] {
+function cellChildren(cell: Element, images?: DocxImageMap): Paragraph[] {
   const header = cell.tagName.toLowerCase() === 'th';
   const blocks = Array.from(cell.children).filter((child) =>
     ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'div'].includes(child.tagName.toLowerCase()),
   );
 
   const paragraphs = (blocks.length ? blocks : [cell]).map((block) =>
-    makeParagraph(processInlineNodes(block, { bold: header }), {
+    makeParagraph(processInlineNodes(block, { bold: header }, images), {
       noIndent: true,
       singleSpaced: true,
     }),
@@ -358,7 +376,7 @@ function cellChildren(cell: Element): Paragraph[] {
 // table fills the page instead of collapsing to the library's 100-twip default.
 const TEXT_WIDTH = convertInchesToTwip(6.5);
 
-function htmlTableToDocx(table: Element): Table | null {
+function htmlTableToDocx(table: Element, images?: DocxImageMap): Table | null {
   const rows: TableRow[] = [];
   let maxColumns = 0;
 
@@ -375,7 +393,7 @@ function htmlTableToDocx(table: Element): Table | null {
         children: cells.map(
           (cell) =>
             new TableCell({
-              children: cellChildren(cell),
+              children: cellChildren(cell, images),
               columnSpan: Number((cell as HTMLTableCellElement).colSpan) || undefined,
               rowSpan: Number((cell as HTMLTableCellElement).rowSpan) || undefined,
             }),
@@ -409,6 +427,7 @@ export function htmlToDocxParagraphs(
   html: string,
   sceneBreakStyle: '#' | '***',
   singleSpaced = false,
+  images?: DocxImageMap,
 ): FileChild[] {
   if (!html?.trim()) return [];
   const dom = new DOMParser().parseFromString(html, 'text/html');
@@ -438,7 +457,7 @@ export function htmlToDocxParagraphs(
         continue;
       }
 
-      const runs = processInlineNodes(el, {});
+      const runs = processInlineNodes(el, {}, images);
       // Always create the paragraph; empty body paragraphs preserve spacing
       result.push(
         makeParagraph(runs.length ? runs : [makeRun('')], {
@@ -469,12 +488,19 @@ export function htmlToDocxParagraphs(
     }
 
     if (LIST_TAGS.has(tag)) {
-      result.push(...listToParagraphs(el, singleSpaced));
+      result.push(...listToParagraphs(el, singleSpaced, images));
+      continue;
+    }
+
+    // An image the editor left at block level rather than inside a paragraph.
+    if (tag === 'img') {
+      const run = images ? imageRunFor(el, images) : null;
+      result.push(makeParagraph([run ?? missingImageRun()], { noIndent: true, singleSpaced }));
       continue;
     }
 
     if (tag === 'table') {
-      const table = htmlTableToDocx(el);
+      const table = htmlTableToDocx(el, images);
       if (table) {
         result.push(table);
         // Word needs a paragraph after a table, and two adjacent tables would
@@ -485,7 +511,7 @@ export function htmlToDocxParagraphs(
     }
 
     // Default: treat as body paragraph
-    const runs = processInlineNodes(el, {});
+    const runs = processInlineNodes(el, {}, images);
     if (runs.length) {
       result.push(
         makeParagraph(runs, {
@@ -720,6 +746,14 @@ export async function exportManuscriptDocx(
   const chapters = gatherChapters(manuscriptItems, exportOrder);
   let isFirstChapter = true;
 
+  // Every image in the export, fetched once up front: the HTML→docx conversion
+  // itself is synchronous, and Word needs the bytes, not the URL.
+  const images = await loadDocxImages([
+    ...chapters.flatMap((chapter) => chapter.scenes.map((scene) => scene.content)),
+    synopsisContent,
+    queryLetterContent,
+  ]);
+
   for (const chapter of chapters) {
     const needsPageBreak = !isFirstChapter;
     isFirstChapter = false;
@@ -780,7 +814,12 @@ export async function exportManuscriptDocx(
           }),
         );
       }
-      const sceneParagraphs = htmlToDocxParagraphs(chapter.scenes[i].content, sceneBreakStyle);
+      const sceneParagraphs = htmlToDocxParagraphs(
+        chapter.scenes[i].content,
+        sceneBreakStyle,
+        false,
+        images,
+      );
       bodyChildren.push(...sceneParagraphs);
     }
   }
@@ -823,7 +862,7 @@ export async function exportManuscriptDocx(
           }),
         ],
       }),
-      ...htmlToDocxParagraphs(synopsisContent, sceneBreakStyle, true),
+      ...htmlToDocxParagraphs(synopsisContent, sceneBreakStyle, true, images),
     ];
 
     docSections.push({
@@ -851,7 +890,7 @@ export async function exportManuscriptDocx(
           }),
         ],
       }),
-      ...htmlToDocxParagraphs(queryLetterContent, sceneBreakStyle, true),
+      ...htmlToDocxParagraphs(queryLetterContent, sceneBreakStyle, true, images),
     ];
 
     docSections.push({
