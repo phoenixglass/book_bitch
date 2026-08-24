@@ -8,21 +8,93 @@ import { downloadBlob } from '../utils/exportDownload';
 
 function stripHtml(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html');
-  doc.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, br').forEach((el) => {
+  // Table cells run together without a separator of their own; a tab keeps the
+  // columns readable and pastes back into a spreadsheet.
+  doc.querySelectorAll('td, th').forEach((el) => {
+    el.after(document.createTextNode('\t'));
+  });
+  doc.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, tr, br').forEach((el) => {
     el.after(document.createTextNode('\n'));
   });
-  return (doc.body.textContent ?? '').replace(/\n{3,}/g, '\n\n').trim();
+  return (doc.body.textContent ?? '')
+    .replace(/\t\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function htmlToMarkdown(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html');
 
-  function nodeToMd(node: Node): string {
+  // Markdown tables cannot hold line breaks, and a stray pipe would split a
+  // cell in two.
+  function cellToMd(cell: Element): string {
+    return inlineToMd(cell).replace(/\|/g, '\\|').replace(/\s*\n\s*/g, ' ').trim();
+  }
+
+  function tableToMd(table: Element): string {
+    const rows = Array.from((table as HTMLTableElement).rows ?? []).map((tr) =>
+      Array.from(tr.children)
+        .filter((c) => c.tagName === 'TD' || c.tagName === 'TH')
+        .map(cellToMd),
+    );
+    if (rows.length === 0) return '';
+
+    const columns = Math.max(...rows.map((r) => r.length));
+    const pad = (cells: string[]) =>
+      `| ${Array.from({ length: columns }, (_, i) => cells[i] ?? '').join(' | ')} |`;
+
+    // GFM requires a header row; a table that starts with body cells gets an
+    // empty one rather than losing its first row of data to the header.
+    const hasHeader = Array.from((table as HTMLTableElement).rows[0].children).some(
+      (c) => c.tagName === 'TH',
+    );
+    const header = hasHeader ? rows[0] : Array.from({ length: columns }, () => '');
+    const body = hasHeader ? rows.slice(1) : rows;
+
+    return [
+      pad(header),
+      `| ${Array.from({ length: columns }, () => '---').join(' | ')} |`,
+      ...body.map(pad),
+    ].join('\n') + '\n\n';
+  }
+
+  function listToMd(list: Element, depth: number): string {
+    const ordered = list.tagName === 'OL';
+    const start = Number(list.getAttribute('start')) || 1;
+    const pad = '  '.repeat(depth);
+    let index = start;
+    let out = '';
+
+    for (const li of Array.from(list.children)) {
+      if (li.tagName !== 'LI') continue;
+      const marker = ordered ? `${index++}. ` : '- ';
+      const nested = Array.from(li.children).filter(
+        (c) => c.tagName === 'UL' || c.tagName === 'OL',
+      );
+      const own = Array.from(li.childNodes)
+        .filter((c) => !nested.includes(c as Element))
+        .map((c) => nodeToMd(c, depth))
+        .join('')
+        .trim();
+      out += `${pad}${marker}${own}\n`;
+      for (const child of nested) out += listToMd(child, depth + 1);
+    }
+
+    return out + (depth === 0 ? '\n' : '');
+  }
+
+  function inlineToMd(el: Element): string {
+    return Array.from(el.childNodes).map((c) => nodeToMd(c, 0)).join('');
+  }
+
+  function nodeToMd(node: Node, depth: number): string {
     if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
     if (node.nodeType !== Node.ELEMENT_NODE) return '';
     const el = node as Element;
     const tag = el.tagName.toLowerCase();
-    const inner = Array.from(el.childNodes).map(nodeToMd).join('');
+    if (tag === 'ul' || tag === 'ol') return listToMd(el, depth);
+    if (tag === 'table') return tableToMd(el);
+    const inner = Array.from(el.childNodes).map((c) => nodeToMd(c, depth)).join('');
     switch (tag) {
       case 'h1': return `# ${inner}\n\n`;
       case 'h2': return `## ${inner}\n\n`;
@@ -34,14 +106,13 @@ function htmlToMarkdown(html: string): string {
       case 'mark': return `==${inner}==`;
       case 'blockquote': return inner.split('\n').map((l) => `> ${l}`).join('\n') + '\n\n';
       case 'li': return `- ${inner}\n`;
-      case 'ul': case 'ol': return inner + '\n';
       case 'p': return `${inner}\n\n`;
       case 'br': return '\n';
       default: return inner;
     }
   }
 
-  return nodeToMd(doc.body).replace(/\n{3,}/g, '\n\n').trim();
+  return nodeToMd(doc.body, 0).replace(/\n{3,}/g, '\n\n').trim();
 }
 
 function escapeHtml(text: string): string {
@@ -131,6 +202,10 @@ export function CompileDialog({ onClose }: CompileDialogProps) {
   .meta { color: #999; font-size: 0.85em; }
   .notes { background: #f9f9f9; border-left: 3px solid #ccc; padding: 0.5em 1em; margin: 1em 0; }
   hr { border: none; border-top: 1px solid #ddd; margin: 2em 0; }
+  table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+  th, td { border: 1px solid #ccc; padding: 0.4em 0.6em; text-align: left; vertical-align: top; }
+  th { background: #f4f4f4; }
+  img { max-width: 100%; height: auto; }
 </style>
 </head>
 <body>

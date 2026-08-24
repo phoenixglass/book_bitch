@@ -654,9 +654,13 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     if (!res.ok) throw new Error(await googleErrorMessage(res, `Failed to export doc: ${res.statusText}`));
     const raw = await res.text();
     console.log(`[drive-import] raw export for ${docId}: ${raw.length.toLocaleString()} chars`);
-    // Extract body content from the full HTML page
+    // Extract body content from the full HTML page, but read the stylesheet in
+    // <head> first — that is where the exporter puts paragraph indentation.
     const bodyMatch = raw.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-    const cleaned = cleanGoogleDocsHtml(bodyMatch ? bodyMatch[1] : raw);
+    const cleaned = cleanGoogleDocsHtml(
+      bodyMatch ? bodyMatch[1] : raw,
+      collectClassStyles(raw),
+    );
     console.log(`[drive-import] cleaned export for ${docId}: ${cleaned.length.toLocaleString()} chars`);
     return cleaned;
   }
@@ -692,8 +696,60 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
   // megabytes of markup. That bloat froze the page when it hit the rich-text
   // editor and the localStorage/cloud sync write. Strip everything except the
   // formatting that actually changes the rendered output.
-  const KEEP_STYLE_PROPS = new Set(['font-weight', 'font-style', 'text-decoration', 'vertical-align']);
-  function cleanGoogleDocsHtml(html: string): string {
+
+  // Paragraph indentation and alignment as the author set it in Google Docs.
+  // The exporter states these in the <head> stylesheet rather than inline, so
+  // they have to be resolved onto the elements before the classes are dropped.
+  const LAYOUT_STYLE_PROPS = ['text-indent', 'margin-left', 'text-align'];
+  const LAYOUT_BLOCK_TAGS = new Set([
+    'P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'DIV', 'BLOCKQUOTE', 'TD', 'TH',
+  ]);
+  const ZERO_LENGTH = /^-?0(\.0+)?(pt|px|in|cm|mm|em|rem|%)?$/;
+
+  /**
+   * Maps each class the export defines (`.c3 { text-indent: 36pt; … }`) to the
+   * layout declarations worth keeping. A zero indent is dropped rather than
+   * recorded: it says nothing the default doesn't already say, and preserving
+   * it would suppress the manuscript's own first-line indent on export.
+   */
+  function collectClassStyles(rawHtml: string): Map<string, string[]> {
+    const byClass = new Map<string, string[]>();
+
+    // Read the stylesheets out of the raw markup rather than parsing the whole
+    // export a second time: these documents run to megabytes.
+    for (const styleBlock of rawHtml.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)) {
+      // Braceless at-rules (the export opens with an @import for its fonts)
+      // would otherwise be read as part of the first rule's selector.
+      const css = styleBlock[1].replace(/@[^;{}]*;/g, '');
+      for (const rule of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+        const declarations = rule[2]
+          .split(';')
+          .map((d) => d.split(':').map((part) => part.trim()))
+          .filter(
+            ([prop, value]) =>
+              LAYOUT_STYLE_PROPS.includes(prop) && value && !ZERO_LENGTH.test(value),
+          )
+          .map(([prop, value]) => `${prop}: ${value}`);
+        if (declarations.length === 0) continue;
+
+        for (const selector of rule[1].split(',')) {
+          const match = selector.trim().match(/^\.([\w-]+)$/);
+          if (match) byClass.set(match[1], declarations);
+        }
+      }
+    }
+
+    return byClass;
+  }
+
+  const KEEP_STYLE_PROPS = new Set([
+    'font-weight',
+    'font-style',
+    'text-decoration',
+    'vertical-align',
+    ...LAYOUT_STYLE_PROPS,
+  ]);
+  function cleanGoogleDocsHtml(html: string, classStyles: Map<string, string[]> = new Map()): string {
     const doc = new DOMParser().parseFromString(html, 'text/html');
     // Google's HTML export has no separate asset channel, so every embedded
     // picture comes back as a full-resolution `data:image/...;base64,...` URI
@@ -718,7 +774,18 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
     // referencing it is already inert. Strip it so the noise-span unwrap
     // below actually catches these wrapper spans instead of leaving
     // thousands of dead class references as bloat.
-    doc.querySelectorAll('[class]').forEach((el) => el.removeAttribute('class'));
+    doc.querySelectorAll('[class]').forEach((el) => {
+      // Pull the author's indentation out of those classes before they go.
+      if (LAYOUT_BLOCK_TAGS.has(el.tagName)) {
+        for (const className of Array.from(el.classList)) {
+          for (const declaration of classStyles.get(className) ?? []) {
+            const [prop, value] = declaration.split(':').map((part) => part.trim());
+            (el as HTMLElement).style.setProperty(prop, value);
+          }
+        }
+      }
+      el.removeAttribute('class');
+    });
     doc.querySelectorAll<HTMLElement>('[style]').forEach((el) => {
       const kept: string[] = [];
       for (const prop of Array.from(el.style)) {
@@ -728,6 +795,8 @@ export function useDriveImport(targetSection: 'manuscript' | 'fragments' | 'omit
         if (prop === 'font-style' && value === 'normal') continue;
         if (prop === 'text-decoration' && value === 'none') continue;
         if (prop === 'vertical-align' && (value === 'baseline' || value === '')) continue;
+        if (LAYOUT_STYLE_PROPS.includes(prop) && ZERO_LENGTH.test(value)) continue;
+        if (prop === 'text-align' && (value === 'left' || value === 'start')) continue;
         kept.push(`${prop}: ${value}`);
       }
       if (kept.length) {

@@ -5,12 +5,20 @@ import {
   TextRun,
   Header,
   AlignmentType,
+  LevelFormat,
   LineRuleType,
+  BorderStyle,
   SectionType,
   NumberFormat,
   PageNumber,
+  Table,
+  TableCell,
+  TableLayoutType,
+  TableRow,
+  WidthType,
   convertInchesToTwip,
 } from 'docx';
+import type { FileChild, INumberingOptions } from 'docx';
 import type { BinderItem, ManuscriptSettings, SceneOrder } from '../types';
 import { collectScenes, sortScenes, formatTimelineDate } from './timelineOrder';
 import { sanitizeXmlText } from './xmlText';
@@ -53,23 +61,50 @@ export function makeRun(text: string, fmt?: RunFmt): TextRun {
   });
 }
 
+export interface ParagraphIndent {
+  left?: number;
+  firstLine?: number;
+  hanging?: number;
+}
+
+export interface MakeParagraphOptions {
+  center?: boolean;
+  noIndent?: boolean;
+  singleSpaced?: boolean;
+  spaceBefore?: number;
+  spaceAfter?: number;
+  pageBreakBefore?: boolean;
+  /** Alignment carried over from the source document, when it set one. */
+  alignment?: (typeof AlignmentType)[keyof typeof AlignmentType];
+  /** Indentation carried over from the source document, in twips. */
+  indent?: ParagraphIndent;
+  numbering?: { reference: string; level: number; instance: number };
+}
+
 export function makeParagraph(
   children: TextRun[],
-  opts?: {
-    center?: boolean;
-    noIndent?: boolean;
-    singleSpaced?: boolean;
-    spaceBefore?: number;
-    spaceAfter?: number;
-    pageBreakBefore?: boolean;
-  },
+  opts?: MakeParagraphOptions,
 ): Paragraph {
   const doubleSpaceLineVal = 480; // 240 per single line in Word's units
   const singleSpaceLineVal = 240;
 
+  const alignment = opts?.alignment ?? (opts?.center ? AlignmentType.CENTER : AlignmentType.LEFT);
+
+  // A paragraph that carried its own indentation in the source document keeps
+  // it; only paragraphs with nothing of their own fall back to the standard
+  // manuscript half-inch first line, and a centred or right-aligned line never
+  // wants one. List items take their indentation from the numbering definition
+  // instead.
+  const wantsDefaultIndent =
+    !opts?.noIndent &&
+    alignment !== AlignmentType.CENTER &&
+    alignment !== AlignmentType.RIGHT;
+  const defaultIndent = wantsDefaultIndent ? { firstLine: HALF_INCH } : undefined;
+  const indent = opts?.numbering ? undefined : (opts?.indent ?? defaultIndent);
+
   return new Paragraph({
-    alignment: opts?.center ? AlignmentType.CENTER : AlignmentType.LEFT,
-    indent: !opts?.noIndent && !opts?.center ? { firstLine: HALF_INCH } : undefined,
+    alignment,
+    indent,
     spacing: {
       line: opts?.singleSpaced ? singleSpaceLineVal : doubleSpaceLineVal,
       lineRule: LineRuleType.AUTO,
@@ -77,8 +112,129 @@ export function makeParagraph(
       after: opts?.spaceAfter ?? 0,
     },
     pageBreakBefore: opts?.pageBreakBefore,
+    numbering: opts?.numbering,
     children,
   });
+}
+
+// ─── Lists ────────────────────────────────────────────────────────────────────
+
+export const BULLET_NUMBERING = 'bb-bullet';
+export const ORDERED_NUMBERING = 'bb-ordered';
+
+const LIST_LEVELS = [0, 1, 2, 3];
+const BULLET_GLYPHS = ['\u2022', '\u25E6', '\u25AA', '\u2022'];
+const ORDERED_FORMATS = [
+  LevelFormat.DECIMAL,
+  LevelFormat.LOWER_LETTER,
+  LevelFormat.LOWER_ROMAN,
+  LevelFormat.DECIMAL,
+];
+
+function levelIndent(level: number) {
+  return {
+    indent: {
+      left: convertInchesToTwip(0.5 * (level + 1)),
+      hanging: convertInchesToTwip(0.25),
+    },
+  };
+}
+
+/**
+ * Every document produced by this app registers the same two list definitions,
+ * so `htmlToDocxParagraphs` can point list items at them without each caller
+ * having to know about numbering.
+ */
+export const NUMBERING_CONFIG: INumberingOptions = {
+  config: [
+    {
+      reference: BULLET_NUMBERING,
+      levels: LIST_LEVELS.map((level) => ({
+        level,
+        format: LevelFormat.BULLET,
+        text: BULLET_GLYPHS[level],
+        alignment: AlignmentType.LEFT,
+        style: { paragraph: levelIndent(level) },
+      })),
+    },
+    {
+      reference: ORDERED_NUMBERING,
+      levels: LIST_LEVELS.map((level) => ({
+        level,
+        format: ORDERED_FORMATS[level],
+        text: `%${level + 1}.`,
+        alignment: AlignmentType.LEFT,
+        style: { paragraph: levelIndent(level) },
+      })),
+    },
+  ],
+};
+
+// Word continues a numbered list wherever the same numbering instance is
+// reused, so each <ol> gets its own instance and restarts at 1. The counter is
+// only required to be unique within a document; it never needs resetting.
+let numberingInstanceSeq = 0;
+function nextNumberingInstance(): number {
+  numberingInstanceSeq += 1;
+  return numberingInstanceSeq;
+}
+
+// ─── Inline CSS carried over from imported documents ─────────────────────────
+
+const CSS_LENGTH = /^(-?[\d.]+)\s*(pt|px|in|cm|mm|em|rem)$/;
+const TWIPS_PER_UNIT: Record<string, number> = {
+  pt: 20,
+  px: 15, // 96 CSS px per inch
+  in: 1440,
+  cm: 567,
+  mm: 56.7,
+  em: 240, // relative to the 12pt manuscript body size
+  rem: 240,
+};
+
+function cssLengthToTwip(value: string): number | undefined {
+  const match = value.trim().match(CSS_LENGTH);
+  if (!match) return undefined;
+  const twips = Math.round(parseFloat(match[1]) * TWIPS_PER_UNIT[match[2]]);
+  return Number.isFinite(twips) ? twips : undefined;
+}
+
+/**
+ * Indentation the author set in the source document (Google Docs and .docx
+ * imports both write it as inline CSS, and the editor now preserves it).
+ * Returns undefined when the paragraph said nothing about its own indentation,
+ * which is what lets the manuscript default apply instead.
+ */
+function indentFromStyle(el: Element): ParagraphIndent | undefined {
+  const style = (el as HTMLElement).style;
+  if (!style) return undefined;
+
+  const indent: ParagraphIndent = {};
+  const left = style.marginLeft ? cssLengthToTwip(style.marginLeft) : undefined;
+  if (left !== undefined) indent.left = left;
+
+  if (style.textIndent) {
+    const firstLine = cssLengthToTwip(style.textIndent);
+    // A negative text-indent is a hanging indent in Word's model.
+    if (firstLine !== undefined && firstLine >= 0) indent.firstLine = firstLine;
+    else if (firstLine !== undefined) indent.hanging = Math.abs(firstLine);
+  }
+
+  return Object.keys(indent).length > 0 ? indent : undefined;
+}
+
+const ALIGNMENTS: Record<string, (typeof AlignmentType)[keyof typeof AlignmentType]> = {
+  left: AlignmentType.LEFT,
+  start: AlignmentType.LEFT,
+  center: AlignmentType.CENTER,
+  right: AlignmentType.RIGHT,
+  end: AlignmentType.RIGHT,
+  justify: AlignmentType.JUSTIFIED,
+};
+
+function alignmentFromStyle(el: Element): (typeof AlignmentType)[keyof typeof AlignmentType] | undefined {
+  const align = (el as HTMLElement).style?.textAlign;
+  return align ? ALIGNMENTS[align.trim().toLowerCase()] : undefined;
 }
 
 // ─── HTML → Paragraph conversion ─────────────────────────────────────────────
@@ -119,14 +275,144 @@ function isSceneBreakText(text: string): boolean {
   return text === '#' || text === '***';
 }
 
+const LIST_TAGS = new Set(['ul', 'ol']);
+
+/**
+ * A list item's own text, excluding any nested list, which becomes its own
+ * deeper-level items rather than being flattened into the parent's text.
+ */
+function listItemRuns(li: Element): TextRun[] {
+  const clone = li.cloneNode(true) as Element;
+  clone.querySelectorAll('ul, ol').forEach((nested) => nested.remove());
+  return processInlineNodes(clone, {});
+}
+
+function listToParagraphs(
+  list: Element,
+  singleSpaced: boolean,
+  level = 0,
+  instance = nextNumberingInstance(),
+): Paragraph[] {
+  const ordered = list.tagName.toLowerCase() === 'ol';
+  const reference = ordered ? ORDERED_NUMBERING : BULLET_NUMBERING;
+  const paragraphs: Paragraph[] = [];
+
+  for (const li of Array.from(list.children)) {
+    if (li.tagName.toLowerCase() !== 'li') continue;
+
+    const runs = listItemRuns(li);
+    paragraphs.push(
+      makeParagraph(runs.length ? runs : [makeRun('')], {
+        singleSpaced,
+        // Word only supports four levels of the definitions registered above;
+        // deeper nesting keeps the deepest one rather than falling apart.
+        numbering: { reference, level: Math.min(level, LIST_LEVELS.length - 1), instance },
+      }),
+    );
+
+    for (const child of Array.from(li.children)) {
+      if (!LIST_TAGS.has(child.tagName.toLowerCase())) continue;
+      // A nested list of the same kind continues the parent's numbering
+      // instance so its counters restart per parent item, as Word expects.
+      const nestedOrdered = child.tagName.toLowerCase() === 'ol';
+      paragraphs.push(
+        ...listToParagraphs(
+          child,
+          singleSpaced,
+          level + 1,
+          nestedOrdered === ordered ? instance : nextNumberingInstance(),
+        ),
+      );
+    }
+  }
+
+  return paragraphs;
+}
+
+// ─── Tables ───────────────────────────────────────────────────────────────────
+
+const CELL_BORDER = { style: BorderStyle.SINGLE, size: 4, color: '999999' } as const;
+
+// Table cells are always single-spaced and flush left: a double-spaced,
+// first-line-indented manuscript paragraph is unreadable in a narrow cell.
+function cellChildren(cell: Element): Paragraph[] {
+  const header = cell.tagName.toLowerCase() === 'th';
+  const blocks = Array.from(cell.children).filter((child) =>
+    ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'div'].includes(child.tagName.toLowerCase()),
+  );
+
+  const paragraphs = (blocks.length ? blocks : [cell]).map((block) =>
+    makeParagraph(processInlineNodes(block, { bold: header }), {
+      noIndent: true,
+      singleSpaced: true,
+    }),
+  );
+
+  // Word requires every cell to hold at least one paragraph.
+  return paragraphs.length
+    ? paragraphs
+    : [makeParagraph([makeRun('')], { noIndent: true, singleSpaced: true })];
+}
+
+// Usable width inside the 1" page margins, split evenly between columns so the
+// table fills the page instead of collapsing to the library's 100-twip default.
+const TEXT_WIDTH = convertInchesToTwip(6.5);
+
+function htmlTableToDocx(table: Element): Table | null {
+  const rows: TableRow[] = [];
+  let maxColumns = 0;
+
+  for (const tr of Array.from((table as HTMLTableElement).rows ?? [])) {
+    const cells = Array.from(tr.children).filter((c) =>
+      ['td', 'th'].includes(c.tagName.toLowerCase()),
+    );
+    if (cells.length === 0) continue;
+    maxColumns = Math.max(maxColumns, cells.length);
+
+    rows.push(
+      new TableRow({
+        tableHeader: cells.every((c) => c.tagName.toLowerCase() === 'th'),
+        children: cells.map(
+          (cell) =>
+            new TableCell({
+              children: cellChildren(cell),
+              columnSpan: Number((cell as HTMLTableCellElement).colSpan) || undefined,
+              rowSpan: Number((cell as HTMLTableCellElement).rowSpan) || undefined,
+            }),
+        ),
+      }),
+    );
+  }
+
+  if (rows.length === 0) return null;
+
+  return new Table({
+    rows,
+    layout: TableLayoutType.AUTOFIT,
+    columnWidths: Array.from(
+      { length: maxColumns },
+      () => Math.floor(TEXT_WIDTH / maxColumns),
+    ),
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: {
+      top: CELL_BORDER,
+      bottom: CELL_BORDER,
+      left: CELL_BORDER,
+      right: CELL_BORDER,
+      insideHorizontal: CELL_BORDER,
+      insideVertical: CELL_BORDER,
+    },
+  });
+}
+
 export function htmlToDocxParagraphs(
   html: string,
   sceneBreakStyle: '#' | '***',
   singleSpaced = false,
-): Paragraph[] {
+): FileChild[] {
   if (!html?.trim()) return [];
   const dom = new DOMParser().parseFromString(html, 'text/html');
-  const result: Paragraph[] = [];
+  const result: FileChild[] = [];
 
   for (const node of dom.body.childNodes) {
     if (node.nodeType !== Node.ELEMENT_NODE) continue;
@@ -154,7 +440,13 @@ export function htmlToDocxParagraphs(
 
       const runs = processInlineNodes(el, {});
       // Always create the paragraph; empty body paragraphs preserve spacing
-      result.push(makeParagraph(runs.length ? runs : [makeRun('')], { singleSpaced }));
+      result.push(
+        makeParagraph(runs.length ? runs : [makeRun('')], {
+          singleSpaced,
+          indent: indentFromStyle(el),
+          alignment: alignmentFromStyle(el),
+        }),
+      );
       continue;
     }
 
@@ -163,24 +455,46 @@ export function htmlToDocxParagraphs(
       result.push(
         makeParagraph(
           [new TextRun({ text: sanitizeXmlText(text).toUpperCase(), font: FONT, size: FONT_SIZE, bold: true })],
-          { center: true, noIndent: true, singleSpaced, spaceBefore: 240, spaceAfter: 120 },
+          {
+            center: true,
+            noIndent: true,
+            singleSpaced,
+            spaceBefore: 240,
+            spaceAfter: 120,
+            alignment: alignmentFromStyle(el),
+          },
         ),
       );
       continue;
     }
 
-    if (tag === 'ul' || tag === 'ol') {
-      for (const liNode of el.childNodes) {
-        if (liNode.nodeType !== Node.ELEMENT_NODE) continue;
-        const runs = processInlineNodes(liNode, {});
-        result.push(makeParagraph(runs, { singleSpaced }));
+    if (LIST_TAGS.has(tag)) {
+      result.push(...listToParagraphs(el, singleSpaced));
+      continue;
+    }
+
+    if (tag === 'table') {
+      const table = htmlTableToDocx(el);
+      if (table) {
+        result.push(table);
+        // Word needs a paragraph after a table, and two adjacent tables would
+        // otherwise be merged into one.
+        result.push(makeParagraph([makeRun('')], { noIndent: true, singleSpaced }));
       }
       continue;
     }
 
     // Default: treat as body paragraph
     const runs = processInlineNodes(el, {});
-    if (runs.length) result.push(makeParagraph(runs, { singleSpaced }));
+    if (runs.length) {
+      result.push(
+        makeParagraph(runs, {
+          singleSpaced,
+          indent: indentFromStyle(el),
+          alignment: alignmentFromStyle(el),
+        }),
+      );
+    }
   }
 
   return result;
@@ -402,7 +716,7 @@ export async function exportManuscriptDocx(
   }
 
   // ── Section 2: Manuscript Body ────────────────────────────────────────────
-  const bodyChildren: Paragraph[] = [];
+  const bodyChildren: FileChild[] = [];
   const chapters = gatherChapters(manuscriptItems, exportOrder);
   let isFirstChapter = true;
 
@@ -496,7 +810,7 @@ export async function exportManuscriptDocx(
 
   // ── Section 3: Synopsis (optional, single-spaced) ─────────────────────────
   if (includeSynopsis && synopsisContent.trim()) {
-    const synopsisChildren: Paragraph[] = [
+    const synopsisChildren: FileChild[] = [
       new Paragraph({
         alignment: AlignmentType.CENTER,
         spacing: { before: 0, after: 480, line: 240, lineRule: LineRuleType.AUTO },
@@ -524,7 +838,7 @@ export async function exportManuscriptDocx(
 
   // ── Section 4: Query Letter (optional, single-spaced) ─────────────────────
   if (includeQueryLetter && queryLetterContent.trim()) {
-    const queryChildren: Paragraph[] = [
+    const queryChildren: FileChild[] = [
       new Paragraph({
         alignment: AlignmentType.CENTER,
         spacing: { before: 0, after: 480, line: 240, lineRule: LineRuleType.AUTO },
@@ -551,7 +865,7 @@ export async function exportManuscriptDocx(
   }
 
   // ── Build and download ────────────────────────────────────────────────────
-  const doc = new Document({ sections: docSections });
+  const doc = new Document({ numbering: NUMBERING_CONFIG, sections: docSections });
   const blob = await Packer.toBlob(doc);
   const orderSuffix = exportOrder === 'chronological' ? '_chronological' : '';
   await downloadVerifiedArchive(

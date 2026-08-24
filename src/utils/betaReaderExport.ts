@@ -7,6 +7,7 @@ import {
   LineRuleType,
   SectionType,
 } from 'docx';
+import type { FileChild } from 'docx';
 import type { BinderItem, BetaReaderSettings } from '../types';
 import {
   FONT,
@@ -15,6 +16,7 @@ import {
   makeRun,
   htmlToDocxParagraphs,
   gatherChapters,
+  NUMBERING_CONFIG,
   formatWordCount,
   countManuscriptWords,
 } from './manuscriptExport';
@@ -126,7 +128,7 @@ export async function exportBetaReaderPacket(
   }
 
   // ── Section 3: Manuscript body (single-spaced reading copy) ───────────────
-  const bodyChildren: Paragraph[] = [];
+  const bodyChildren: FileChild[] = [];
   let isFirstChapter = true;
 
   for (const chapter of chapters) {
@@ -200,7 +202,7 @@ export async function exportBetaReaderPacket(
     });
   }
 
-  const doc = new Document({ sections: docSections });
+  const doc = new Document({ numbering: NUMBERING_CONFIG, sections: docSections });
   const blob = await Packer.toBlob(doc);
   await downloadVerifiedArchive(
     blob,
