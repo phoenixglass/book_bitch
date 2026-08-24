@@ -111,6 +111,21 @@ export interface GDocBullet {
   listId?: string;
 }
 
+// Google Docs keeps list markers out of the paragraphs themselves: a bulleted
+// paragraph only names the list it belongs to, and the glyph for its nesting
+// level is defined once, here.
+export interface GDocNestingLevel {
+  glyphType?: string;
+  glyphSymbol?: string;
+  startNumber?: number;
+}
+
+export interface GDocList {
+  listProperties?: { nestingLevels?: GDocNestingLevel[] };
+}
+
+export type GDocLists = Record<string, GDocList>;
+
 export interface GDocParagraph {
   paragraphStyle?: GDocParagraphStyle;
   bullet?: GDocBullet;
@@ -142,7 +157,7 @@ export interface GDocTabProperties {
 
 export interface GDocTab {
   tabProperties?: GDocTabProperties;
-  documentTab?: { body?: { content?: GDocElement[] } };
+  documentTab?: { body?: { content?: GDocElement[] }; lists?: GDocLists };
   childTabs?: GDocTab[];
 }
 
@@ -150,4 +165,5 @@ export interface GDocDocument {
   title?: string;
   tabs?: GDocTab[];
   body?: { content?: GDocElement[] };
+  lists?: GDocLists;
 }

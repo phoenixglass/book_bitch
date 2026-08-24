@@ -20,6 +20,7 @@ import {
   formatWordCount,
   countManuscriptWords,
 } from './manuscriptExport';
+import { loadDocxImages } from './docxImages';
 import { sanitizeXmlText } from './xmlText';
 import { downloadVerifiedArchive } from './exportDownload';
 
@@ -131,6 +132,12 @@ export async function exportBetaReaderPacket(
   const bodyChildren: FileChild[] = [];
   let isFirstChapter = true;
 
+  // Fetched up front: the HTML→docx conversion is synchronous and Word needs
+  // the image bytes rather than the URL.
+  const images = await loadDocxImages(
+    chapters.flatMap((chapter) => chapter.scenes.map((scene) => scene.content)),
+  );
+
   for (const chapter of chapters) {
     const needsPageBreak = !isFirstChapter;
     isFirstChapter = false;
@@ -164,7 +171,9 @@ export async function exportBetaReaderPacket(
           }),
         );
       }
-      bodyChildren.push(...htmlToDocxParagraphs(chapter.scenes[i].content, sceneBreakStyle, true));
+      bodyChildren.push(
+        ...htmlToDocxParagraphs(chapter.scenes[i].content, sceneBreakStyle, true, images),
+      );
     }
   }
 
