@@ -62,6 +62,39 @@ function inlineToXhtml(node: Node): string {
   return out;
 }
 
+// Indentation and alignment the author set in the source document. The editor
+// preserves these as inline CSS, so they survive into the book instead of being
+// replaced by the stylesheet's default first-line indent.
+const CARRIED_STYLES = ['text-indent', 'margin-left', 'text-align'];
+
+function blockStyleAttr(el: Element): string {
+  const style = (el as HTMLElement).style;
+  if (!style) return '';
+  const kept = CARRIED_STYLES.filter((prop) => style.getPropertyValue(prop)).map(
+    (prop) => `${prop}: ${style.getPropertyValue(prop)}`,
+  );
+  return kept.length ? ` style="${escapeXml(kept.join('; '))}"` : '';
+}
+
+function tableToXhtml(table: Element): string {
+  const rows: string[] = [];
+
+  for (const tr of Array.from((table as HTMLTableElement).rows ?? [])) {
+    const cells = Array.from(tr.children).filter((c) => c.tagName === 'TD' || c.tagName === 'TH');
+    if (cells.length === 0) continue;
+    const rendered = cells.map((cell) => {
+      const tag = cell.tagName.toLowerCase();
+      const { colSpan, rowSpan } = cell as HTMLTableCellElement;
+      const attrs =
+        (colSpan > 1 ? ` colspan="${colSpan}"` : '') + (rowSpan > 1 ? ` rowspan="${rowSpan}"` : '');
+      return `<${tag}${attrs}>${inlineToXhtml(cell)}</${tag}>`;
+    });
+    rows.push(`<tr>${rendered.join('')}</tr>`);
+  }
+
+  return rows.length ? `<table>${rows.join('')}</table>` : '';
+}
+
 // Converts a single document's tiptap-generated HTML into a sequence of
 // block-level XHTML elements suitable for embedding in an EPUB chapter.
 function htmlToXhtml(html: string, sceneBreakMark: string): string {
@@ -86,12 +119,18 @@ function htmlToXhtml(html: string, sceneBreakMark: string): string {
         continue;
       }
       const inner = inlineToXhtml(el);
-      parts.push(`<p>${inner || ' '}</p>`);
+      parts.push(`<p${blockStyleAttr(el)}>${inner || ' '}</p>`);
       continue;
     }
 
     if (/^h[1-6]$/.test(tag)) {
-      parts.push(`<${tag}>${inlineToXhtml(el)}</${tag}>`);
+      parts.push(`<${tag}${blockStyleAttr(el)}>${inlineToXhtml(el)}</${tag}>`);
+      continue;
+    }
+
+    if (tag === 'table') {
+      const table = tableToXhtml(el);
+      if (table) parts.push(table);
       continue;
     }
 
@@ -141,7 +180,10 @@ p.timeline-date { text-align: center; text-indent: 0; font-style: italic; color:
 .title-page .byline { font-size: 1.1em; margin-top: 2em; text-indent: 0; }
 .title-page .genre { color: #555; text-indent: 0; }
 blockquote { margin: 1em 2em; font-style: italic; }
-blockquote p { text-indent: 0; }`;
+blockquote p { text-indent: 0; }
+table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+th, td { border: 1px solid #999; padding: 0.3em 0.5em; text-align: left; text-indent: 0; vertical-align: top; }
+th { font-weight: bold; }`;
 
 // ─── Main export function ─────────────────────────────────────────────────────
 

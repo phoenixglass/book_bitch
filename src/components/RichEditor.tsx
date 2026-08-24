@@ -1,12 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import Highlight from '@tiptap/extension-highlight';
-import { TextStyle } from '@tiptap/extension-text-style';
-import Color from '@tiptap/extension-color';
-import TaskList from '@tiptap/extension-task-list';
-import TaskItem from '@tiptap/extension-task-item';
-import CharacterCount from '@tiptap/extension-character-count';
+import { createEditorExtensions } from '../lib/editorExtensions';
 import { useAppStore } from '../store/appStore';
 
 interface EditorProps {
@@ -27,6 +21,17 @@ function setDragDataForText(
   e.dataTransfer.setData('text/plain', text);
   e.dataTransfer.effectAllowed = 'copy';
 }
+
+type EditorInstance = ReturnType<typeof useEditor>;
+
+// Only rendered while the cursor is inside a table.
+const TABLE_BTNS = [
+  { label: '+Row', title: 'Add row below', cmd: (e: EditorInstance) => e?.chain().focus().addRowAfter().run() },
+  { label: '+Col', title: 'Add column after', cmd: (e: EditorInstance) => e?.chain().focus().addColumnAfter().run() },
+  { label: '−Row', title: 'Delete row', cmd: (e: EditorInstance) => e?.chain().focus().deleteRow().run() },
+  { label: '−Col', title: 'Delete column', cmd: (e: EditorInstance) => e?.chain().focus().deleteColumn().run() },
+  { label: '⌫▦', title: 'Delete table', cmd: (e: EditorInstance) => e?.chain().focus().deleteTable().run() },
+];
 
 const TOOLBAR_BTNS = [
   { label: 'B', title: 'Bold', cmd: (e: ReturnType<typeof useEditor>) => e?.chain().focus().toggleBold().run(), active: (e: ReturnType<typeof useEditor>) => e?.isActive('bold') ?? false, style: 'font-bold' },
@@ -56,15 +61,7 @@ export function RichEditor({ itemId, content, compositionMode }: EditorProps) {
   }, [editorSettings]);
 
   const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Highlight,
-      TextStyle,
-      Color,
-      TaskList,
-      TaskItem.configure({ nested: true }),
-      CharacterCount,
-    ],
+    extensions: createEditorExtensions(),
     content,
     onUpdate({ editor }) {
       updateItem(itemId, { content: editor.getHTML() });
@@ -209,6 +206,41 @@ export function RichEditor({ itemId, content, compositionMode }: EditorProps) {
         >
           ☑
         </button>
+
+        <div className="w-px h-5 bg-[#0f3460] mx-1" />
+
+        {/* Table */}
+        <button
+          onMouseDown={(e) => {
+            e.preventDefault();
+            editor
+              ?.chain()
+              .focus()
+              .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+              .run();
+          }}
+          title="Insert table"
+          className="w-7 h-7 rounded text-xs text-gray-400 hover:text-white hover:bg-[#2d3748] transition-colors"
+        >
+          ▦
+        </button>
+        {editor?.isActive('table') && (
+          <>
+            {TABLE_BTNS.map((btn) => (
+              <button
+                key={btn.title}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  btn.cmd(editor);
+                }}
+                title={btn.title}
+                className="px-1.5 h-7 rounded text-[11px] whitespace-nowrap text-gray-400 hover:text-white hover:bg-[#2d3748] transition-colors"
+              >
+                {btn.label}
+              </button>
+            ))}
+          </>
+        )}
 
         <div className="w-px h-5 bg-[#0f3460] mx-1" />
 
