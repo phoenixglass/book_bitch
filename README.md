@@ -11,6 +11,7 @@ An online writing tool inspired by Scrivener — organize, write, and export lon
 - **Inspector** — per-document synopsis, private notes, label, status, word target, deadline; project-level word target
 - **Snapshots** — take labelled version snapshots of any document; restore or delete from the Inspector
 - **Compile & Export** — export the whole project to plain text, HTML, or Markdown; optional project title, synopses, and section separators
+- **Structural Map** — see the shape of the book scene by scene, in manuscript or chronological order. Multi-select layers (tension, emotion, word count, status, POV, plotline, location, overall location, characters present, tags, motifs, themes) and switch between three views: **Lanes** (every selected layer stacked over one shared scene axis), **Bars** (tile strip with height from a metric and color from any layer), and **Matrix** (cross any two layers, e.g. characters × motifs, as scene counts or average tension/emotion). Click any value to highlight the scenes that carry it; highlights combine with AND and carry across views
 - **Chronological Export** — compile the full document in story-time order (the Timeline view's Chronological mode) instead of binder order, for .docx, .epub, plain text, HTML, and Markdown; optional timeline dates printed with each scene
 - **Project Targets** — live word count in the toolbar with a progress bar toward your project word target
 - **Full-screen Composition Mode** — distraction-free writing with a single-column layout
