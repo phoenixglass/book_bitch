@@ -1,4 +1,5 @@
 import type { BinderItem, SceneMetadata } from '../types';
+import { toList, toScale, toText } from './metaValues';
 
 /**
  * Data model behind the Structural Map. Kept separate from the component so
@@ -50,18 +51,9 @@ export interface CategoryLayer extends LayerBase {
 export type Layer = MetricLayer | CategoryLayer;
 
 /** 1–10 scale fields treat 0/undefined as "not set", like the Inspector does. */
-function scale(v: number | undefined): number | null {
-  return typeof v === 'number' && v > 0 ? v : null;
-}
-
-function one(v: string | undefined): string[] {
-  const t = v?.trim();
-  return t ? [t] : [];
-}
-
-function many(v: string[] | undefined): string[] {
-  return (v ?? []).map((s) => s.trim()).filter(Boolean);
-}
+const scale = (v: unknown) => toScale(v);
+const one = (v: unknown): string[] => { const t = toText(v); return t ? [t] : []; };
+const many = (v: unknown): string[] => toList(v);
 
 const meta = (s: BinderItem): Meta => s.sceneMetadata ?? {};
 
@@ -80,7 +72,7 @@ export const CATEGORY_LAYERS: CategoryLayer[] = [
   { id: 'location', kind: 'category', multi: false, label: 'Location', color: '#4fd1c5', read: (s) => one(meta(s).location) },
   { id: 'region', kind: 'category', multi: false, label: 'Overall location', color: '#38b2ac', read: (s) => one(meta(s).locationOverall) },
   { id: 'plotline', kind: 'category', multi: false, label: 'Plotline', color: '#f687b3', read: (s) => one(meta(s).plotline) },
-  { id: 'status', kind: 'category', multi: false, label: 'Status', color: '#a0aec0', read: (s) => (s.status && s.status !== 'No Status' ? [s.status] : []) },
+  { id: 'status', kind: 'category', multi: false, label: 'Status', color: '#a0aec0', read: (s) => (typeof s.status === 'string' && s.status && s.status !== 'No Status' ? [s.status] : []) },
 ];
 
 export const ALL_LAYERS: Layer[] = [...METRIC_LAYERS, ...CATEGORY_LAYERS];
@@ -114,7 +106,8 @@ export interface LayerValue {
   firstPosition: number;
 }
 
-export function countWords(html: string): number {
+export function countWords(html: unknown): number {
+  if (typeof html !== 'string') return 0;
   return html.replace(/<[^>]+>/g, ' ').trim().split(/\s+/).filter(Boolean).length;
 }
 

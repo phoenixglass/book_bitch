@@ -17,6 +17,7 @@ import type {
   OmittedMaterial,
   ResearchEntry,
 } from '../types';
+import { toList } from './metaValues';
 
 export type VocabField = 'themes' | 'motifs' | 'tags';
 
@@ -147,14 +148,13 @@ function walkScenes(items: BinderItem[], visit: (item: BinderItem) => void, skip
 }
 
 function sceneValues(item: BinderItem, field: VocabField): string[] {
-  const v = item.sceneMetadata?.[field];
-  return Array.isArray(v) ? v : [];
+  return toList(item.sceneMetadata?.[field]);
 }
 
 function flatValues(obj: unknown, prop: string | undefined): string[] {
   if (!prop) return [];
   const v = (obj as Record<string, unknown>)[prop];
-  return Array.isArray(v) ? (v as string[]) : [];
+  return Array.isArray(v) ? toList(v) : [];
 }
 
 function titleOf(obj: unknown): string {
@@ -191,11 +191,8 @@ export function collectVocabulary(state: VocabState, field: VocabField): VocabEn
 export function collectSceneList(binder: BinderItem[], key: 'charactersPresent' | VocabField): string[] {
   const counts = new Map<string, number>();
   walkScenes(binder, (item) => {
-    const v = item.sceneMetadata?.[key];
-    if (!Array.isArray(v)) return;
-    for (const s of v) {
-      const t = s.trim();
-      if (t) counts.set(t, (counts.get(t) ?? 0) + 1);
+    for (const t of toList(item.sceneMetadata?.[key])) {
+      counts.set(t, (counts.get(t) ?? 0) + 1);
     }
   }, true);
   return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([v]) => v);

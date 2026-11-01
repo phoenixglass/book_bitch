@@ -12,7 +12,7 @@ export function collectScenes(items: BinderItem[]): BinderItem[] {
   for (const item of items) {
     if (item.id === 'trash') continue;
     if (item.type === 'document') scenes.push(item);
-    if (item.children.length) scenes.push(...collectScenes(item.children));
+    if (item.children?.length) scenes.push(...collectScenes(item.children));
   }
   return scenes;
 }

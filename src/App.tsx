@@ -28,6 +28,7 @@ import { TrashView } from './components/TrashView';
 import { GlobalSearch } from './components/GlobalSearch';
 import { ReferencePane } from './components/ReferencePane';
 import { AIPanel } from './components/AIPanel';
+import { ErrorBoundary, PaneError } from './components/ErrorBoundary';
 import { useAppStore, findItem } from './store/appStore';
 
 function App() {
@@ -171,7 +172,11 @@ function App() {
                       {viewMode === 'scene-cards' && <SceneCards />}
                       {viewMode === 'timeline' && <TimelineView />}
                       {viewMode === 'dashboard' && <DashboardView />}
-                      {viewMode === 'structural-map' && <StructuralMap />}
+                      {viewMode === 'structural-map' && (
+                        <ErrorBoundary fallback={(error, reset) => <PaneError name="Structural Map" error={error} reset={reset} />}>
+                          <StructuralMap />
+                        </ErrorBoundary>
+                      )}
                     </div>
 
                     {/* Reference pane (split-screen) */}

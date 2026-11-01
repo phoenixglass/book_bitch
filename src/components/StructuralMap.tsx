@@ -44,10 +44,27 @@ function loadPrefs(): MapPrefs {
   try {
     const raw = localStorage.getItem(PREFS_KEY);
     if (!raw) return DEFAULT_PREFS;
-    const parsed = JSON.parse(raw) as Partial<MapPrefs>;
-    const merged = { ...DEFAULT_PREFS, ...parsed };
-    merged.layers = (merged.layers ?? []).filter((id) => id in LAYER_BY_ID);
-    return merged;
+    const parsed = JSON.parse(raw) as Partial<MapPrefs> | null;
+    if (!parsed || typeof parsed !== 'object') return DEFAULT_PREFS;
+    // Each field falls back on its own, so one stale value (a layer that was
+    // renamed, a hand-edited entry) can't wedge the map on every load.
+    const pick = <K extends keyof MapPrefs>(key: K, ok: (v: unknown) => boolean): MapPrefs[K] =>
+      ok(parsed[key]) ? (parsed[key] as MapPrefs[K]) : DEFAULT_PREFS[key];
+    const isCategory = (v: unknown) => typeof v === 'string' && CATEGORY_LAYERS.some((l) => l.id === v);
+    const isMetricId = (v: unknown) => typeof v === 'string' && METRIC_LAYERS.some((l) => l.id === v);
+    return {
+      view: pick('view', (v) => v === 'lanes' || v === 'bars' || v === 'matrix'),
+      order: pick('order', (v) => v === 'manuscript' || v === 'chronological'),
+      layers: Array.isArray(parsed.layers)
+        ? parsed.layers.filter((id): id is LayerId => typeof id === 'string' && Object.hasOwn(LAYER_BY_ID, id))
+        : DEFAULT_PREFS.layers,
+      zoom: pick('zoom', (v) => typeof v === 'number' && v >= 8 && v <= 36),
+      barHeight: pick('barHeight', (v) => v === 'none' || isMetricId(v)),
+      barColor: pick('barColor', (v) => v === 'none' || (typeof v === 'string' && Object.hasOwn(LAYER_BY_ID, v))),
+      matrixRows: pick('matrixRows', isCategory),
+      matrixCols: pick('matrixCols', isCategory),
+      matrixStat: pick('matrixStat', (v) => v === 'count' || isMetricId(v)),
+    };
   } catch {
     return DEFAULT_PREFS;
   }

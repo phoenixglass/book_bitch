@@ -2,10 +2,11 @@ import { useMemo } from 'react';
 import { useAppStore } from '../store/appStore';
 import { collectVocabulary, collectSceneList } from '../utils/vocabulary';
 import type { BinderItem } from '../types';
+import { toText } from '../utils/metaValues';
 
-function pushAll(into: Map<string, string>, values: Iterable<string | undefined>) {
+function pushAll(into: Map<string, string>, values: Iterable<unknown>) {
   for (const raw of values) {
-    const v = raw?.trim();
+    const v = toText(raw);
     if (v && !into.has(v.toLowerCase())) into.set(v.toLowerCase(), v);
   }
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAppStore, findItem, totalWordCount } from '../store/appStore';
 import { collectSceneList, collectVocabulary, snapListToExisting } from '../utils/vocabulary';
+import { toList, toScale, toText } from '../utils/metaValues';
 import type {
   AIActionType,
   AIObjectType,
@@ -670,20 +671,20 @@ function MetadataResult({
     let hasMeta = false;
 
     if (accepted.synopsis) patch.synopsis = output.synopsis;
-    if (accepted.povCharacter) { metaPatch.povCharacter = output.povCharacter; hasMeta = true; }
-    if (accepted.charactersPresent) { metaPatch.charactersPresent = output.charactersPresent; hasMeta = true; }
-    if (accepted.location) { metaPatch.location = output.location; hasMeta = true; }
-    if (accepted.timelineDateClue) { metaPatch.timelineDateStart = output.timelineDateClue; hasMeta = true; }
-    if (accepted.timelineSpecificDate) { metaPatch.timelineSpecificDate = output.timelineSpecificDate; hasMeta = true; }
-    if (accepted.emotionalTemperature) { metaPatch.emotionalTemperature = output.emotionalTemperature; hasMeta = true; }
-    if (accepted.tensionLevel) { metaPatch.tensionLevel = output.tensionLevel; hasMeta = true; }
+    if (accepted.povCharacter) { metaPatch.povCharacter = toText(output.povCharacter); hasMeta = true; }
+    if (accepted.charactersPresent) { metaPatch.charactersPresent = toList(output.charactersPresent); hasMeta = true; }
+    if (accepted.location) { metaPatch.location = toText(output.location); hasMeta = true; }
+    if (accepted.timelineDateClue) { metaPatch.timelineDateStart = toText(output.timelineDateClue); hasMeta = true; }
+    if (accepted.timelineSpecificDate) { metaPatch.timelineSpecificDate = toText(output.timelineSpecificDate); hasMeta = true; }
+    if (accepted.emotionalTemperature) { metaPatch.emotionalTemperature = toScale(output.emotionalTemperature) ?? undefined; hasMeta = true; }
+    if (accepted.tensionLevel) { metaPatch.tensionLevel = toScale(output.tensionLevel) ?? undefined; hasMeta = true; }
     // Snap AI spellings onto names the project already uses ("Grief" → "grief")
     // so each run doesn't mint another near-duplicate.
-    if (accepted.themes) { metaPatch.themes = snapListToExisting(output.themes ?? [], collectSceneList(binder, 'themes')); hasMeta = true; }
-    if (accepted.motifs) { metaPatch.motifs = snapListToExisting(output.motifs ?? [], collectSceneList(binder, 'motifs')); hasMeta = true; }
-    if (accepted.sceneFunction) { metaPatch.sceneFunction = output.sceneFunction; hasMeta = true; }
-    if (accepted.whatChanged) { metaPatch.whatChanged = output.whatChanged; hasMeta = true; }
-    if (accepted.suggestedTags) { metaPatch.tags = snapListToExisting(output.suggestedTags ?? [], collectSceneList(binder, 'tags')); hasMeta = true; }
+    if (accepted.themes) { metaPatch.themes = snapListToExisting(toList(output.themes), collectSceneList(binder, 'themes')); hasMeta = true; }
+    if (accepted.motifs) { metaPatch.motifs = snapListToExisting(toList(output.motifs), collectSceneList(binder, 'motifs')); hasMeta = true; }
+    if (accepted.sceneFunction) { metaPatch.sceneFunction = toText(output.sceneFunction); hasMeta = true; }
+    if (accepted.whatChanged) { metaPatch.whatChanged = toText(output.whatChanged); hasMeta = true; }
+    if (accepted.suggestedTags) { metaPatch.tags = snapListToExisting(toList(output.suggestedTags), collectSceneList(binder, 'tags')); hasMeta = true; }
     if (hasMeta) patch.sceneMetadata = metaPatch;
 
     if (Object.keys(patch).length > 0) {
