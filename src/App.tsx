@@ -30,6 +30,7 @@ import { ReferencePane } from './components/ReferencePane';
 import { AIPanel } from './components/AIPanel';
 import { ErrorBoundary, PaneError } from './components/ErrorBoundary';
 import type { ViewMode } from './types';
+import { onFailedLoad, previousFailedLoad } from './utils/bootGuard';
 
 const VIEW_NAMES: Record<ViewMode, string> = {
   editor: 'Editor', corkboard: 'Corkboard', outline: 'Outline', 'scene-cards': 'Scene Cards',
@@ -55,6 +56,8 @@ function App() {
 
   const [compileOpen, setCompileOpen] = useState(false);
   const [mobileBinderOpen, setMobileBinderOpen] = useState(false);
+  const [failedLoad, setFailedLoad] = useState(previousFailedLoad);
+  useEffect(() => onFailedLoad(setFailedLoad), []);
   const isMobile = useIsMobile();
 
   const selectedItem = selectedId ? findItem(binder, selectedId) : null;
@@ -84,6 +87,19 @@ function App() {
     <div className="flex flex-col h-screen bg-[#0d1117] text-gray-200">
       {/* Top toolbar */}
       <Toolbar onOpenBinder={isMobile ? () => setMobileBinderOpen(true) : undefined} />
+
+      {failedLoad && (
+        <div className="flex items-start gap-3 px-4 py-2 bg-amber-900/40 border-b border-amber-600/40 text-xs text-amber-100 shrink-0">
+          <span className="flex-1">
+            Book Bitch didn’t finish loading last time
+            {failedLoad.area === 'manuscript' && failedLoad.view in VIEW_NAMES
+              ? <> while showing the <b>{VIEW_NAMES[failedLoad.view as ViewMode]}</b></>
+              : failedLoad.area !== 'unknown' ? <> (section: <b>{failedLoad.area}</b>)</> : null}
+            , so it opened in the Editor instead. Your writing is safe.
+          </span>
+          <button onClick={() => setFailedLoad(null)} className="text-amber-300 hover:text-white">Dismiss</button>
+        </div>
+      )}
 
       {/* Main workspace */}
       <div className="flex flex-1 overflow-hidden">
