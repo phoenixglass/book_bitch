@@ -1,6 +1,13 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 
-interface Props { children: ReactNode }
+interface Props {
+  children: ReactNode;
+  /**
+   * Render this instead of the full-screen crash page. Use it to contain a
+   * single view so one broken pane doesn't take down the whole app.
+   */
+  fallback?: (error: Error, reset: () => void) => ReactNode;
+}
 interface State { error: Error | null }
 
 export class ErrorBoundary extends Component<Props, State> {
@@ -14,7 +21,12 @@ export class ErrorBoundary extends Component<Props, State> {
     console.error('React error boundary caught:', error, info);
   }
 
+  reset = () => this.setState({ error: null });
+
   render() {
+    if (this.state.error && this.props.fallback) {
+      return this.props.fallback(this.state.error, this.reset);
+    }
     if (this.state.error) {
       return (
         <div className="fixed inset-0 bg-[#0f0f1a] flex items-center justify-center p-8">
@@ -38,4 +50,25 @@ export class ErrorBoundary extends Component<Props, State> {
     }
     return this.props.children;
   }
+}
+
+/** In-place fallback for a single view that crashed, used with `fallback`. */
+export function PaneError({ name, error, reset }: { name: string; error: Error; reset: () => void }) {
+  return (
+    <div className="h-full flex items-center justify-center p-8">
+      <div className="bg-[#1a1a2e] border border-red-500/40 rounded-xl p-6 max-w-lg w-full">
+        <h2 className="text-red-400 font-semibold mb-1">{name} hit an error</h2>
+        <p className="text-white/60 text-sm mb-3">
+          The rest of the app is fine — switch views to keep working, or try this view again.
+        </p>
+        <pre className="bg-black/40 rounded p-3 text-xs text-red-300 overflow-auto max-h-40">{error.message}</pre>
+        <button
+          onClick={reset}
+          className="mt-3 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium px-4 py-1.5 rounded-lg"
+        >
+          Try again
+        </button>
+      </div>
+    </div>
+  );
 }
