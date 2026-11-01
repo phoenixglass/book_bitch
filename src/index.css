@@ -225,3 +225,33 @@ body {
   font-size: 1.125rem;
   color: #d4d4d4;
 }
+
+/* Explorer-style column / panel resize handles */
+.col-resize-handle {
+  cursor: col-resize;
+  touch-action: none;
+}
+.col-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 20%;
+  bottom: 20%;
+  right: 0;
+  width: 1px;
+  background: #2d3748;
+  transition: background-color 120ms;
+}
+.col-resize-handle--left::after {
+  right: auto;
+  left: 0;
+}
+.col-resize-handle:hover::after {
+  top: 0;
+  bottom: 0;
+  background: #6b46c1;
+}
+body.is-col-resizing,
+body.is-col-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
