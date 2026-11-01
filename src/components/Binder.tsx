@@ -7,6 +7,8 @@ import { useDriveImport } from '../hooks/useDriveImport';
 import { parseFile } from '../utils/documentParser';
 import type { ParsedItem, SplitLevel } from '../utils/documentParser';
 import type { BinderItem, ImportSourceMeta } from '../types';
+import { useStoredWidths } from '../hooks/useStoredWidths';
+import { ResizeHandle } from './ResizeHandle';
 
 const STATUS_COLORS: Record<string, string> = {
   'No Status': 'transparent',
@@ -420,8 +422,14 @@ interface BinderPendingImport {
   parsedItems: ParsedItem[];
 }
 
-export function Binder() {
+const BINDER_WIDTH = { width: 224 };
+const BINDER_LIMITS = { width: { min: 160, max: 600 } };
+
+/** `resizable` is off in the mobile drawer, which has its own fixed width. */
+export function Binder({ resizable = false }: { resizable?: boolean } = {}) {
   const { binder, importToManuscript } = useAppStore();
+  const paneWidth = useStoredWidths('book_bitch.binder.width', BINDER_WIDTH, BINDER_LIMITS);
+  const paneDragStart = useRef(0);
   const { resyncDriveFolder, resyncDriveDoc, pendingResync, confirmPendingResync, cancelPendingResync } = useDriveImport();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingImport, setPendingImport] = useState<BinderPendingImport | null>(null);
@@ -490,7 +498,25 @@ export function Binder() {
 
   return (
     <>
-      <div className="w-56 shrink-0 bg-[#16213e] border-r border-[#0f3460] flex flex-col overflow-hidden">
+      <div
+        className="relative shrink-0 bg-[#16213e] border-r border-[#0f3460] flex flex-col overflow-hidden"
+        style={{ width: resizable ? paneWidth.widths.width : 224 }}
+      >
+        {resizable && (
+          <ResizeHandle
+            side="right"
+            title="Drag to resize · double-click to reset"
+            onDragStart={() => {
+              paneDragStart.current = paneWidth.latest.current.width;
+            }}
+            onDrag={(dx) => paneWidth.setWidth('width', paneDragStart.current + dx)}
+            onDragEnd={paneWidth.save}
+            onDoubleClick={() => {
+              paneWidth.reset('width');
+              requestAnimationFrame(paneWidth.save);
+            }}
+          />
+        )}
         {/* Header */}
         <div className="flex items-center justify-between px-3 py-2 border-b border-[#0f3460]">
           <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">

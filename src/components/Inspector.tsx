@@ -1,10 +1,15 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useAppStore, findItem } from '../store/appStore';
 import { TagInput } from './TagInput';
 import { SnapshotDiffModal, type DiffSide } from './SnapshotDiffModal';
 import { ConnectionsPanel } from './ConnectionsPanel';
 import { TruthMirrorPanel } from './TruthMirrorPanel';
 import type { BinderItem, Status, SceneMetadata } from '../types';
+import { useStoredWidths } from '../hooks/useStoredWidths';
+import { ResizeHandle } from './ResizeHandle';
+
+const INSPECTOR_WIDTH = { width: 240 };
+const INSPECTOR_LIMITS = { width: { min: 200, max: 640 } };
 
 const STATUSES: Status[] = [
   'No Status', 'To Do', 'In Progress', 'First Draft',
@@ -250,6 +255,9 @@ export function Inspector() {
     projectTarget, setProjectTarget,
   } = useAppStore();
 
+  const paneWidth = useStoredWidths('book_bitch.inspector.width', INSPECTOR_WIDTH, INSPECTOR_LIMITS);
+  const paneDragStart = useRef(0);
+
   const [tab, setTab] = useState<Tab>('synopsis');
   const [snapshotLabel, setSnapshotLabel] = useState('');
   const [diffPair, setDiffPair] = useState<{ left: DiffSide; right: DiffSide } | null>(null);
@@ -274,7 +282,23 @@ export function Inspector() {
   }
 
   return (
-    <div className="w-60 shrink-0 bg-[#16213e] border-l border-[#0f3460] flex flex-col overflow-hidden">
+    <div
+      className="relative shrink-0 bg-[#16213e] border-l border-[#0f3460] flex flex-col overflow-hidden"
+      style={{ width: paneWidth.widths.width }}
+    >
+      <ResizeHandle
+        side="left"
+        title="Drag to resize · double-click to reset"
+        onDragStart={() => {
+          paneDragStart.current = paneWidth.latest.current.width;
+        }}
+        onDrag={(dx) => paneWidth.setWidth('width', paneDragStart.current - dx)}
+        onDragEnd={paneWidth.save}
+        onDoubleClick={() => {
+          paneWidth.reset('width');
+          requestAnimationFrame(paneWidth.save);
+        }}
+      />
       <div className="px-3 py-2 border-b border-[#0f3460]">
         <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
           Inspector

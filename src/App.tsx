@@ -90,7 +90,7 @@ function App() {
           {area === 'manuscript' && (
             <>
               {/* Binder sidebar — desktop inline, mobile drawer */}
-              {!compositionMode && !isMobile && <Binder />}
+              {!compositionMode && !isMobile && <Binder resizable />}
 
               {/* Mobile binder drawer */}
               {!compositionMode && isMobile && mobileBinderOpen && (
