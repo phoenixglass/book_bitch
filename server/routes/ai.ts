@@ -293,8 +293,9 @@ aiRouter.post('/metadata', async (req: Request, res: Response) => {
 
   const {
     title, content, mode = 'metadata_assistance', allowDrafting = false,
-    storyContext, existingMetadata = {}, relevantCodex = [], projectStructure,
+    storyContext, existingMetadata = {}, relevantCodex = [], projectStructure, existingVocabulary,
   } = req.body as {
+    existingVocabulary?: { themes?: string[]; motifs?: string[]; tags?: string[] };
     title?: string;
     content?: string;
     mode?: string;
@@ -316,7 +317,7 @@ aiRouter.post('/metadata', async (req: Request, res: Response) => {
   const briefIncluded = !!storyContext?.trim();
 
   const systemPrompt = metadataSystemPrompt(preamble, briefIncluded);
-  const userPrompt = metadataUserPrompt({ title, storyContext, existingMetadata, relevantCodex, projectStructure, chapterText: truncatedText });
+  const userPrompt = metadataUserPrompt({ title, storyContext, existingMetadata, relevantCodex, projectStructure, existingVocabulary, chapterText: truncatedText });
 
   try {
     const raw = await callAI(config, systemPrompt, userPrompt, 3072);
@@ -889,6 +890,99 @@ aiRouter.post('/tags', async (req: Request, res: Response) => {
       return;
     }
     res.json({ ...parsed, truncated });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    res.status(502).json({ error: `AI call failed: ${msg}` });
+  }
+});
+
+// ── POST /api/ai/consolidate-vocabulary ─────────────────────────────────────
+// Given every distinct theme / motif / tag in the project, propose groups of
+// values that name the same idea so the author can merge them. String
+// matching on the client already catches spelling variants; this is for
+// synonyms ("grief" / "mourning") that only a reader can see.
+
+const VOCAB_FIELD_DESCRIPTIONS: Record<string, string> = {
+  themes: 'themes — abstract ideas the scenes explore',
+  motifs: 'motifs — concrete recurring images, objects, sounds or actions',
+  tags: 'tags — organisational labels',
+};
+
+aiRouter.post('/consolidate-vocabulary', async (req: Request, res: Response) => {
+  const config = getAIConfig();
+  if (!config) {
+    res.status(503).json({ error: 'AI is not configured. Add an API key in environment settings.' });
+    return;
+  }
+
+  const {
+    field = 'themes',
+    values = [],
+    mode = 'metadata_assistance',
+    allowDrafting = false,
+    storyContext,
+  } = req.body as {
+    field?: string;
+    values?: Array<{ value: string; count: number }>;
+    mode?: string;
+    allowDrafting?: boolean;
+    storyContext?: string;
+  };
+
+  const clean = (Array.isArray(values) ? values : [])
+    .filter((v) => v && typeof v.value === 'string' && v.value.trim())
+    .slice(0, 600);
+  if (clean.length < 2) {
+    res.json({ groups: [] });
+    return;
+  }
+
+  const fieldDesc = VOCAB_FIELD_DESCRIPTIONS[field] ?? field;
+  const systemPrompt = [
+    'You are helping a novelist tidy the vocabulary they use to label scenes.',
+    modePreamble(mode, allowDrafting),
+    `The list in the user message is every distinct value of one field: ${fieldDesc}. Each line is "value (number of scenes/items using it)".`,
+    'Your task: find groups of values that name the SAME idea, so that merging them into one name would lose no distinction the author is likely to care about.',
+    'Rules:',
+    '- Group synonyms and near-synonyms ("grief", "mourning", "bereavement"), narrower phrasings that add nothing ("feelings of guilt" → "guilt"), and wordy variants of the same label.',
+    '- Do NOT group ideas that are merely related or often co-occur ("grief" and "love", "power" and "control", "surveillance" and "paranoia"). When in doubt, leave them apart — a missed merge is cheap, a wrong merge destroys information.',
+    '- Do NOT group values that differ only by capitalisation, plurals or punctuation — the app already handles those.',
+    '- Every member must be copied EXACTLY as it appears in the list. A value may appear in at most one group.',
+    '- canonical: the name the group should keep. Prefer the clearest, most-used existing member; only propose a new name if every member is clumsy, and keep it to 1–3 words.',
+    '- reason: one short sentence on why these are the same idea.',
+    storyContext ? 'A Story Brief is included in the user message — use it to judge which distinctions matter in this particular book.' : '',
+    '',
+    'Return ONLY valid JSON in this exact structure:',
+    JSON.stringify({ groups: [{ canonical: 'name to keep', members: ['value', 'value'], reason: 'why' }] }),
+  ].filter(Boolean).join('\n');
+
+  const userPrompt = [
+    storyContextBlock(storyContext),
+    `Field: ${fieldDesc}`,
+    'Values:',
+    ...clean.map((v) => `- ${v.value.trim()} (${Number(v.count) || 0})`),
+  ].join('\n');
+
+  try {
+    const raw = await callAI(config, systemPrompt, userPrompt, 4096);
+    const parsed = extractJSON(raw) as { groups?: Array<{ canonical?: unknown; members?: unknown; reason?: unknown }> };
+    if (!parsed || !Array.isArray(parsed.groups)) {
+      res.status(502).json({ error: 'AI returned an unexpected format. Try again.' });
+      return;
+    }
+    // Only keep members that really exist, and never let a value sit in two groups.
+    const known = new Set(clean.map((v) => v.value.trim()));
+    const used = new Set<string>();
+    const groups = parsed.groups.flatMap((g) => {
+      const members = (Array.isArray(g.members) ? g.members : [])
+        .filter((m): m is string => typeof m === 'string' && known.has(m) && !used.has(m));
+      const unique = [...new Set(members)];
+      if (unique.length < 2) return [];
+      unique.forEach((m) => used.add(m));
+      const canonical = typeof g.canonical === 'string' && g.canonical.trim() ? g.canonical.trim() : unique[0];
+      return [{ canonical, members: unique, reason: typeof g.reason === 'string' ? g.reason : '' }];
+    });
+    res.json({ groups });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     res.status(502).json({ error: `AI call failed: ${msg}` });

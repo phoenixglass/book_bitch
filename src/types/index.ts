@@ -939,6 +939,12 @@ export interface AppState {
   deleteTag: (id: string) => void;
   getOrCreateTag: (name: string) => Tag;
 
+  // ─── Themes / motifs / tags vocabulary ─────────────────────────────────────
+  /** Rename, merge, delete or move theme/motif/tag values across the whole project. Returns objects changed. */
+  applyVocabularyOp: (op: import('../utils/vocabulary').VocabOp, description: string) => number;
+  /** Drop names from the tag autocomplete list that no object uses as a tag. Returns how many were removed. */
+  pruneUnusedTags: () => number;
+
   // ─── Fragments ─────────────────────────────────────────────────────────────
   addFragment: (partial?: Partial<Fragment>) => string;
   updateFragment: (id: string, patch: Partial<Fragment>) => void;

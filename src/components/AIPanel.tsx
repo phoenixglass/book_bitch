@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAppStore, findItem, totalWordCount } from '../store/appStore';
+import { collectSceneList, collectVocabulary, snapListToExisting } from '../utils/vocabulary';
 import type {
   AIActionType,
   AIObjectType,
@@ -676,11 +677,13 @@ function MetadataResult({
     if (accepted.timelineSpecificDate) { metaPatch.timelineSpecificDate = output.timelineSpecificDate; hasMeta = true; }
     if (accepted.emotionalTemperature) { metaPatch.emotionalTemperature = output.emotionalTemperature; hasMeta = true; }
     if (accepted.tensionLevel) { metaPatch.tensionLevel = output.tensionLevel; hasMeta = true; }
-    if (accepted.themes) { metaPatch.themes = output.themes; hasMeta = true; }
-    if (accepted.motifs) { metaPatch.motifs = output.motifs; hasMeta = true; }
+    // Snap AI spellings onto names the project already uses ("Grief" → "grief")
+    // so each run doesn't mint another near-duplicate.
+    if (accepted.themes) { metaPatch.themes = snapListToExisting(output.themes ?? [], collectSceneList(binder, 'themes')); hasMeta = true; }
+    if (accepted.motifs) { metaPatch.motifs = snapListToExisting(output.motifs ?? [], collectSceneList(binder, 'motifs')); hasMeta = true; }
     if (accepted.sceneFunction) { metaPatch.sceneFunction = output.sceneFunction; hasMeta = true; }
     if (accepted.whatChanged) { metaPatch.whatChanged = output.whatChanged; hasMeta = true; }
-    if (accepted.suggestedTags) { metaPatch.tags = output.suggestedTags; hasMeta = true; }
+    if (accepted.suggestedTags) { metaPatch.tags = snapListToExisting(output.suggestedTags ?? [], collectSceneList(binder, 'tags')); hasMeta = true; }
     if (hasMeta) patch.sceneMetadata = metaPatch;
 
     if (Object.keys(patch).length > 0) {
@@ -1689,6 +1692,7 @@ export function AIPanel() {
     setResult(null);
 
     try {
+      const vocabState = useAppStore.getState();
       const endpoint = action === 'extract-questions' ? 'questions' : action;
       // Trim before sending — the server truncates anyway, but keeping
       // the payload small avoids proxy/ingress body-size limits.
@@ -1718,7 +1722,21 @@ export function AIPanel() {
       }
 
       if (action === 'tags') {
-        body.allProjectTags = projectTags.map((t) => t.name);
+        // The registry only holds hand-typed tags; AI-applied ones live only on
+        // the objects. Offer both so the AI reuses whatever is actually in use.
+        const all = new Map<string, string>();
+        for (const t of [...collectVocabulary(vocabState, 'tags').map((e) => e.value), ...projectTags.map((t) => t.name)]) {
+          if (!all.has(t.toLowerCase())) all.set(t.toLowerCase(), t);
+        }
+        body.allProjectTags = [...all.values()];
+      }
+
+      if (action === 'metadata') {
+        body.existingVocabulary = {
+          themes: collectVocabulary(vocabState, 'themes').map((e) => e.value),
+          motifs: collectVocabulary(vocabState, 'motifs').map((e) => e.value),
+          tags: collectVocabulary(vocabState, 'tags').map((e) => e.value),
+        };
       }
 
       if (action === 'plotline') {

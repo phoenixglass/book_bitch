@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { idbStorage } from '../utils/idbStorage';
 import { countWords as countWordsInHtml } from '../utils/textStats';
 import { replaceInBinder } from '../utils/findReplace';
+import { applyVocabOp, tagsInUse } from '../utils/vocabulary';
 import { downloadBlob } from '../utils/exportDownload';
 import type {
   AppState,
@@ -563,6 +564,56 @@ export const useAppStore = create<AppState>()(
         );
         if (existing) return existing;
         return get().addTag(name);
+      },
+
+      // ── Themes / motifs / tags vocabulary ────────────────────────────────
+
+      applyVocabularyOp: (op, description) => {
+        const s = get();
+        const { patch, changed } = applyVocabOp(s, op);
+        if (changed === 0) return 0;
+
+        // Keep the tag autocomplete list in step: names merged or moved away
+        // from tags drop out of it, and a tag that gains new carriers is in it.
+        let projectTags = s.projectTags;
+        const removed = new Set<string>();
+        const added: string[] = [];
+        if (op.type === 'rename' && op.field === 'tags') {
+          for (const [from, to] of Object.entries(op.mapping)) {
+            if (to !== from) removed.add(from.toLowerCase());
+            if (to) added.push(to);
+          }
+        } else if (op.type === 'move') {
+          if (op.from === 'tags') op.values.forEach((v) => removed.add(v.toLowerCase()));
+          if (op.to === 'tags') added.push(op.target);
+        }
+        if (removed.size > 0 || added.length > 0) {
+          const keep = new Set(added.map((a) => a.toLowerCase()));
+          projectTags = projectTags.filter((t) => keep.has(t.name.toLowerCase()) || !removed.has(t.name.toLowerCase()));
+          for (const name of added) {
+            if (!projectTags.some((t) => t.name.toLowerCase() === name.toLowerCase())) {
+              projectTags = [...projectTags, { id: makeId(), name, color: '#6b46c1', createdAt: now() }];
+            }
+          }
+        }
+
+        set({ ...patch, projectTags });
+        get().recordEvent({
+          eventType: 'updated',
+          objectType: 'scene',
+          objectId: 'vocabulary',
+          objectTitle: 'Themes, motifs & tags',
+          description: `${description} (${changed} item${changed === 1 ? '' : 's'})`,
+        });
+        return changed;
+      },
+
+      pruneUnusedTags: () => {
+        const used = tagsInUse(get());
+        const before = get().projectTags;
+        const projectTags = before.filter((t) => used.has(t.name.trim().toLowerCase()));
+        if (projectTags.length !== before.length) set({ projectTags });
+        return before.length - projectTags.length;
       },
 
       // ── Fragments ────────────────────────────────────────────────────────
