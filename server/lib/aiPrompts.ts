@@ -19,6 +19,12 @@ export function metadataSystemPrompt(preamble: string, briefIncluded: boolean): 
     '- emotionalTemperature and tensionLevel are integers 1–10.',
     '- form: classify the item as manuscript | blog_entry | notes | fragment | research | other based on its style.',
     '- Do not invent details not grounded in the chapter or the Brief.',
+    'Themes, motifs and tags — keep the project vocabulary small and consistent:',
+    '- themes: abstract ideas the chapter explores (e.g. "complicity", "grief"). Short noun phrases, 1–3 words. At most 4.',
+    '- motifs: concrete recurring images, objects, sounds or actions (e.g. "keyholes", "the mug"). Not abstract ideas. At most 4.',
+    '- suggestedTags: organisational labels (thread, form, status, era…). Never repeat a theme or motif as a tag. At most 5.',
+    '- Never put the same idea in more than one of these three lists.',
+    '- If the project already uses a name for an idea (listed under EXISTING PROJECT VOCABULARY in the user message), reuse that exact spelling — do not coin a synonym, plural, reordering or longer variant of it. Coin a new name only for an idea genuinely not covered.',
     '',
     'Return ONLY valid JSON in this exact structure:',
     JSON.stringify({
@@ -58,9 +64,16 @@ export function metadataUserPrompt(opts: {
   existingMetadata?: Record<string, unknown>;
   relevantCodex?: string[];
   projectStructure?: string;
+  existingVocabulary?: { themes?: string[]; motifs?: string[]; tags?: string[] };
   chapterText: string;
 }): string {
-  const { title, storyContext, existingMetadata = {}, relevantCodex = [], projectStructure, chapterText } = opts;
+  const { title, storyContext, existingMetadata = {}, relevantCodex = [], projectStructure, existingVocabulary, chapterText } = opts;
+  const vocabLines = existingVocabulary
+    ? (['themes', 'motifs', 'tags'] as const)
+        .map((k) => [k, (existingVocabulary[k] ?? []).filter((v) => typeof v === 'string' && v.trim()).slice(0, 200)] as const)
+        .filter(([, v]) => v.length > 0)
+        .map(([k, v]) => `- ${k}: ${v.join('; ')}`)
+    : [];
   const existingLines = Object.entries(existingMetadata)
     .filter(([, v]) => v && (typeof v === 'string' ? v.trim() : (Array.isArray(v) ? v.length : true)))
     .map(([k, v]) => `- ${k}: ${Array.isArray(v) ? v.join(', ') : String(v)}`);
@@ -69,6 +82,7 @@ export function metadataUserPrompt(opts: {
     relevantCodex.length > 0 ? `Existing Codex entries relevant to this chapter: ${relevantCodex.join(', ')}\n` : '',
     projectStructure?.trim() ? `Project structure / timeline:\n${projectStructure.trim()}\n` : '',
     existingLines.length > 0 ? `Existing metadata on this chapter:\n${existingLines.join('\n')}\n` : '',
+    vocabLines.length > 0 ? `EXISTING PROJECT VOCABULARY (reuse these exact spellings where the idea matches):\n${vocabLines.join('\n')}\n` : '',
     `Chapter title: ${title ?? 'Untitled'}`,
     '',
     'Chapter content (analyze AFTER the Story Brief):',

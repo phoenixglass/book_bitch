@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useAppStore } from '../store/appStore';
 import { TagInput } from './TagInput';
+import { useVocabSuggestions } from '../hooks/useVocabSuggestions';
 import { WritingEditor } from './WritingEditor';
 import { ImportPreviewModal } from './ImportPreviewModal';
 import { GoogleDriveUpload } from './GoogleDriveUpload';
@@ -79,6 +80,7 @@ function OmittedDetail({
     restoreOmittedToScene,
     setArea,
   } = useAppStore();
+  const vocab = useVocabSuggestions();
 
   const [showMoveMenu, setShowMoveMenu] = useState(false);
 
@@ -215,6 +217,7 @@ function OmittedDetail({
             <TagInput
               tags={item.relatedCharacters}
               onChange={(v) => updateOmittedMaterial(item.id, { relatedCharacters: v })}
+              suggestions={vocab.characters}
               placeholder="Add character…"
             />
           </div>
@@ -223,6 +226,7 @@ function OmittedDetail({
             <TagInput
               tags={item.relatedThemes}
               onChange={(v) => updateOmittedMaterial(item.id, { relatedThemes: v })}
+              suggestions={vocab.themes}
               placeholder="Add theme…"
             />
           </div>
@@ -231,6 +235,7 @@ function OmittedDetail({
             <TagInput
               tags={item.relatedLocations}
               onChange={(v) => updateOmittedMaterial(item.id, { relatedLocations: v })}
+              suggestions={vocab.places}
               placeholder="Add location…"
             />
           </div>

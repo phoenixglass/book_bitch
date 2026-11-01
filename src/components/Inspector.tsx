@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { useAppStore, findItem } from '../store/appStore';
 import { TagInput } from './TagInput';
+import { useVocabSuggestions } from '../hooks/useVocabSuggestions';
 import { SnapshotDiffModal, type DiffSide } from './SnapshotDiffModal';
 import { ConnectionsPanel } from './ConnectionsPanel';
 import { TruthMirrorPanel } from './TruthMirrorPanel';
@@ -88,6 +89,7 @@ function SliderField({
 
 function SceneTab({ item, updateMeta }: { item: BinderItem; updateMeta: (patch: Partial<SceneMetadata>) => void }) {
   const meta = item.sceneMetadata ?? {};
+  const vocab = useVocabSuggestions();
 
   return (
     <div className="flex flex-col gap-3">
@@ -103,6 +105,7 @@ function SceneTab({ item, updateMeta }: { item: BinderItem; updateMeta: (patch: 
         <TagInput
           tags={meta.charactersPresent ?? []}
           onChange={(v) => updateMeta({ charactersPresent: v })}
+          suggestions={vocab.characters}
           placeholder="Add character…"
         />
       </div>
@@ -200,6 +203,7 @@ function SceneTab({ item, updateMeta }: { item: BinderItem; updateMeta: (patch: 
         <TagInput
           tags={meta.themes ?? []}
           onChange={(v) => updateMeta({ themes: v })}
+          suggestions={vocab.themes}
           placeholder="Add theme…"
         />
       </div>
@@ -209,6 +213,7 @@ function SceneTab({ item, updateMeta }: { item: BinderItem; updateMeta: (patch: 
         <TagInput
           tags={meta.motifs ?? []}
           onChange={(v) => updateMeta({ motifs: v })}
+          suggestions={vocab.motifs}
           placeholder="Add motif…"
         />
       </div>

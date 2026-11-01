@@ -1,31 +1,41 @@
 import { useState, useRef } from 'react';
 import { useAppStore } from '../store/appStore';
+import { snapToExisting } from '../utils/vocabulary';
 
 interface TagInputProps {
   tags: string[];
   onChange: (tags: string[]) => void;
   placeholder?: string;
   className?: string;
+  /**
+   * Autocomplete list for this field. When given, the field keeps its own
+   * vocabulary (themes, motifs, characters…) and entries are NOT added to the
+   * project's tag list. When omitted, the field is a real tag field and uses
+   * the project tag list.
+   */
+  suggestions?: string[];
 }
 
-export function TagInput({ tags, onChange, placeholder = 'Add tag…', className = '' }: TagInputProps) {
+export function TagInput({ tags, onChange, placeholder = 'Add tag…', className = '', suggestions: own }: TagInputProps) {
   const [input, setInput] = useState('');
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const { projectTags, getOrCreateTag } = useAppStore();
+  const isTagField = own === undefined;
+  const pool = own ?? projectTags.map((t) => t.name);
 
   const lc = input.toLowerCase();
   const suggestions = lc.length > 0
-    ? projectTags.filter(
-        (t) => t.name.toLowerCase().includes(lc) && !tags.includes(t.name),
-      ).slice(0, 5)
+    ? pool.filter((name) => name.toLowerCase().includes(lc) && !tags.includes(name)).slice(0, 5)
     : [];
 
   function addTag(name: string) {
-    const trimmed = name.trim();
-    if (!trimmed || tags.includes(trimmed)) return;
-    getOrCreateTag(trimmed);
-    onChange([...tags, trimmed]);
+    // "Grief" typed where "grief" already exists becomes "grief", instead of
+    // quietly starting a second spelling.
+    const value = snapToExisting(name, [...tags, ...pool]);
+    if (!value || tags.includes(value)) { setInput(''); return; }
+    if (isTagField) getOrCreateTag(value);
+    onChange([...tags, value]);
     setInput('');
   }
 
@@ -54,7 +64,7 @@ export function TagInput({ tags, onChange, placeholder = 'Add tag…', className
             key={tag}
             className="inline-flex items-center gap-1 bg-[#6b46c1]/30 text-purple-300 rounded px-1.5 py-0.5 text-xs"
           >
-            #{tag}
+            {isTagField ? '#' : ''}{tag}
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); removeTag(tag); }}
@@ -78,14 +88,14 @@ export function TagInput({ tags, onChange, placeholder = 'Add tag…', className
 
       {focused && suggestions.length > 0 && (
         <div className="absolute top-full left-0 right-0 mt-0.5 bg-[#2d3748] border border-[#0f3460] rounded shadow-lg z-50">
-          {suggestions.map((t) => (
+          {suggestions.map((name) => (
             <button
-              key={t.id}
+              key={name}
               type="button"
-              onMouseDown={(e) => { e.preventDefault(); addTag(t.name); }}
+              onMouseDown={(e) => { e.preventDefault(); addTag(name); }}
               className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-[#6b46c1]/40 transition-colors"
             >
-              #{t.name}
+              {isTagField ? '#' : ''}{name}
             </button>
           ))}
         </div>

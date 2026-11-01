@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useAppStore } from '../store/appStore';
 import { TagInput } from './TagInput';
+import { useVocabSuggestions } from '../hooks/useVocabSuggestions';
 import { WritingEditor } from './WritingEditor';
 import { ImportPreviewModal } from './ImportPreviewModal';
 import { GoogleDriveUpload } from './GoogleDriveUpload';
@@ -81,6 +82,7 @@ function FragmentDetail({
     attachFragmentToScene,
     binder,
   } = useAppStore();
+  const vocab = useVocabSuggestions();
 
   const [showAttach, setShowAttach] = useState(false);
   const [showMoveMenu, setShowMoveMenu] = useState(false);
@@ -248,6 +250,7 @@ function FragmentDetail({
             <TagInput
               tags={frag.relatedCharacters}
               onChange={(v) => updateFragment(frag.id, { relatedCharacters: v })}
+              suggestions={vocab.characters}
               placeholder="Add character…"
             />
           </div>
@@ -256,6 +259,7 @@ function FragmentDetail({
             <TagInput
               tags={frag.relatedPlaces}
               onChange={(v) => updateFragment(frag.id, { relatedPlaces: v })}
+              suggestions={vocab.places}
               placeholder="Add place…"
             />
           </div>
@@ -264,6 +268,7 @@ function FragmentDetail({
             <TagInput
               tags={frag.relatedThemes}
               onChange={(v) => updateFragment(frag.id, { relatedThemes: v })}
+              suggestions={vocab.themes}
               placeholder="Add theme…"
             />
           </div>
