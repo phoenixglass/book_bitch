@@ -7,6 +7,8 @@ interface Props {
    * single view so one broken pane doesn't take down the whole app.
    */
   fallback?: (error: Error, reset: () => void) => ReactNode;
+  /** When this changes (e.g. the user switches view), a caught error is cleared. */
+  resetKey?: string;
 }
 interface State { error: Error | null }
 
@@ -22,6 +24,10 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   reset = () => this.setState({ error: null });
+
+  componentDidUpdate(prev: Props) {
+    if (this.state.error && prev.resetKey !== this.props.resetKey) this.reset();
+  }
 
   render() {
     if (this.state.error && this.props.fallback) {

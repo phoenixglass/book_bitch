@@ -4,6 +4,7 @@ import { idbStorage } from '../utils/idbStorage';
 import { countWords as countWordsInHtml } from '../utils/textStats';
 import { replaceInBinder } from '../utils/findReplace';
 import { applyVocabOp, tagsInUse } from '../utils/vocabulary';
+import { normalizeBinder, normalizeSceneMetadata } from '../utils/metaValues';
 import { downloadBlob } from '../utils/exportDownload';
 import type {
   AppState,
@@ -402,7 +403,10 @@ export const useAppStore = create<AppState>()(
               }
             }
           }
-          return { binder: patchItemInTree(s.binder, id, patch), dailyWordCounts };
+          const clean = 'sceneMetadata' in patch
+            ? { ...patch, sceneMetadata: normalizeSceneMetadata(patch.sceneMetadata) }
+            : patch;
+          return { binder: patchItemInTree(s.binder, id, clean), dailyWordCounts };
         });
       },
 
@@ -1949,7 +1953,7 @@ export const useAppStore = create<AppState>()(
         set({
           projectTitle: (data.projectTitle as string) ?? 'My Project',
           projectTarget: (data.projectTarget as ProjectTarget) ?? { wordTarget: 80000, deadlineDate: '' },
-          binder: (data.binder as BinderItem[]) ?? INITIAL_BINDER,
+          binder: data.binder ? normalizeBinder(data.binder) : INITIAL_BINDER,
           fragments: (data.fragments as Fragment[]) ?? [],
           omittedMaterial: (data.omittedMaterial as OmittedMaterial[]) ?? [],
           notebookEntries: (data.notebookEntries as NotebookEntry[]) ?? [],
@@ -1984,7 +1988,7 @@ export const useAppStore = create<AppState>()(
           set({
             projectTitle: data.projectTitle ?? 'Imported Project',
             projectTarget: data.projectTarget ?? { wordTarget: 80000, deadlineDate: '' },
-            binder: data.binder ?? INITIAL_BINDER,
+            binder: data.binder ? normalizeBinder(data.binder) : INITIAL_BINDER,
             fragments: data.fragments ?? [],
             omittedMaterial: data.omittedMaterial ?? [],
             notebookEntries: data.notebookEntries ?? [],
@@ -2015,6 +2019,18 @@ export const useAppStore = create<AppState>()(
         }
       },
     }),
-    { name: 'book-bitch-project', storage: createJSONStorage(() => idbStorage) },
+    {
+      name: 'book-bitch-project',
+      storage: createJSONStorage(() => idbStorage),
+      // Clean the saved project on load. Malformed scene metadata (from older
+      // AI runs or imports) otherwise crashes whichever view renders it, and
+      // since the current view is saved too, every reload lands on the crash.
+      merge: (persisted, current) => {
+        const saved = (persisted ?? {}) as Partial<AppState>;
+        const merged = { ...current, ...saved };
+        if ('binder' in saved) merged.binder = saved.binder ? normalizeBinder(saved.binder) : current.binder;
+        return merged;
+      },
+    },
   ),
 );
