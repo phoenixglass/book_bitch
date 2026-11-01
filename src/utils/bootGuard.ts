@@ -1,5 +1,6 @@
 import { useAppStore } from '../store/appStore';
 import type { ViewMode } from '../types';
+import { takeUnfinishedMapDiag, type MapDiag } from './mapDiagnostics';
 
 /**
  * Breaks "crashes the moment it loads" loops.
@@ -10,8 +11,9 @@ import type { ViewMode } from '../types';
  * that a session is running and which view it's on, with a heartbeat while
  * the page is responsive. A clean exit (tab closed, page hidden) marks it
  * finished. If the next load finds a session that stopped responding soon
- * after it started, it opens in the Editor instead and says which view it
- * was on.
+ * after it started (or after entering its view), or finds the Structural Map's
+ * diagnostic record still open, it opens in the Editor instead and says which
+ * view it was on — with the map's size details, if it was the map.
  */
 
 const KEY = 'book_bitch.bootGuard';
@@ -25,6 +27,8 @@ interface Record_ {
   lastAlive: number;
   view?: string;
   area?: string;
+  /** When the current view was entered; a crash soon after that counts too. */
+  viewSince?: number;
 }
 
 function read(): Record_ | null {
@@ -43,6 +47,8 @@ function write(r: Record_) {
 export interface FailedLoad {
   view: string;
   area: string;
+  /** Present when the Structural Map was on screen when the tab died. */
+  mapDiag?: MapDiag;
 }
 
 let failed: FailedLoad | null = null;
@@ -62,8 +68,15 @@ export function onFailedLoad(cb: (f: FailedLoad | null) => void): () => void {
 
 export function startBootGuard() {
   const prev = read();
-  if (prev?.state === 'running' && prev.lastAlive - prev.startedAt < FAILED_LOAD_WINDOW_MS) {
-    failed = { view: prev.view ?? 'unknown', area: prev.area ?? 'unknown' };
+  const mapDiag = takeUnfinishedMapDiag();
+  if (mapDiag) {
+    // The map was open when the tab died, however long after loading.
+    failed = { view: 'structural-map', area: 'manuscript', mapDiag };
+  } else if (prev?.state === 'running') {
+    const since = Math.max(prev.startedAt, prev.viewSince ?? 0);
+    if (prev.lastAlive - since < FAILED_LOAD_WINDOW_MS) {
+      failed = { view: prev.view ?? 'unknown', area: prev.area ?? 'unknown' };
+    }
   }
 
   const now = Date.now();
@@ -77,7 +90,7 @@ export function startBootGuard() {
   const recover = () => {
     if (!failed) return;
     const s = useAppStore.getState();
-    failed = { view: s.viewMode, area: s.area };
+    if (!failed.mapDiag) failed = { view: s.viewMode, area: s.area };
     useAppStore.setState({ viewMode: 'editor' as ViewMode, area: 'manuscript' });
     listeners.forEach((cb) => cb(failed));
   };
@@ -93,6 +106,7 @@ export function startBootGuard() {
     if (s.viewMode !== rec.view || s.area !== rec.area) {
       rec.view = s.viewMode;
       rec.area = s.area;
+      rec.viewSince = Date.now();
       write(rec);
     }
   };

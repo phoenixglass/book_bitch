@@ -8,6 +8,7 @@ import {
   type CategoryLayer, type CategoryLayerId, type FocusValue, type Layer, type LayerId,
   type LayerValue, type MetricLayerId, type SceneRow,
 } from '../utils/storyMapData';
+import { contentStats, mapCrumb, mapDiagClose, mapDiagIsOpen, mapDiagOpen, mapDiagReopen, timedStep } from '../utils/mapDiagnostics';
 
 type MapView = 'lanes' | 'bars' | 'matrix';
 type ColorBy = 'none' | MetricLayerId | CategoryLayerId;
@@ -39,6 +40,10 @@ const DEFAULT_PREFS: MapPrefs = {
 
 // Per-viewer convenience only: remembering which layers you had on.
 const PREFS_KEY = 'book_bitch.structuralMap.v2';
+
+function diagPrefs(p: MapPrefs) {
+  return { view: p.view, layers: p.layers, zoom: p.zoom, order: p.order, matrix: `${p.matrixRows} x ${p.matrixCols}, ${p.matrixStat}` };
+}
 
 function loadPrefs(): MapPrefs {
   try {
@@ -83,22 +88,41 @@ export function StructuralMap() {
   const [hoverPos, setHoverPos] = useState<number | null>(null);
   const [expanded, setExpanded] = useState<Set<CategoryLayerId>>(new Set());
 
+  // Breadcrumbs (see mapDiagnostics): opened once per mount, closed on unmount.
+  // Opened in a state initializer so it's written before any heavy work below.
+  useState(() => {
+    mapDiagOpen(diagPrefs(prefs));
+    return null;
+  });
+  const [painted, setPainted] = useState(false);
+  useEffect(() => {
+    // React's dev-only double mount closes the record once; reopen if so.
+    if (!mapDiagIsOpen()) mapDiagReopen(diagPrefs(prefs));
+    const id = requestAnimationFrame(() => { mapCrumb({ stage: 'painted' }); setPainted(true); });
+    return () => { cancelAnimationFrame(id); mapDiagClose(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* storage unavailable */ }
+    mapCrumb(diagPrefs(prefs));
   }, [prefs]);
 
   const patch = useCallback((p: Partial<MapPrefs>) => setPrefs((prev) => ({ ...prev, ...p })), []);
 
-  const rows = useMemo(
-    () => buildRows(sortScenes(collectScenes(binder), prefs.order)),
-    [binder, prefs.order],
-  );
+  const rows = useMemo(() => {
+    const scenes = timedStep('collected', () => collectScenes(binder), (sc) => ({
+      scenes: sc.length,
+      ...contentStats(sc.map((x) => x.content)),
+    }));
+    return timedStep('rows', () => buildRows(sortScenes(scenes, prefs.order)));
+  }, [binder, prefs.order]);
 
-  const valueIndex = useMemo(() => {
+  const valueIndex = useMemo(() => timedStep('indexed', () => {
     const out = {} as Record<CategoryLayerId, LayerValue[]>;
     for (const l of CATEGORY_LAYERS) out[l.id] = indexValues(l, rows);
     return out;
-  }, [rows]);
+  }, (out) => ({ values: Object.fromEntries(CATEGORY_LAYERS.map((l) => [l.id, out[l.id].length])) })), [rows]);
 
   const maxima = useMemo(() => {
     const out = {} as Record<MetricLayerId, number>;
@@ -147,6 +171,8 @@ export function StructuralMap() {
     setViewMode('editor');
   }, [selectItem, setArea, setViewMode]);
 
+  // Only before first paint, so "painted" keeps meaning it drew and then died.
+  if (!painted) mapCrumb({ stage: 'rendering' });
   const hovered = hoverPos != null ? rows[hoverPos - 1] : null;
   const selectedLayers = prefs.layers.map((id) => LAYER_BY_ID[id]);
 
