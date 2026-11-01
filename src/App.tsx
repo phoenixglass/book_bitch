@@ -30,6 +30,8 @@ import { ReferencePane } from './components/ReferencePane';
 import { AIPanel } from './components/AIPanel';
 import { ErrorBoundary, PaneError } from './components/ErrorBoundary';
 import type { ViewMode } from './types';
+import { onFailedLoad, previousFailedLoad, type FailedLoad } from './utils/bootGuard';
+import { formatMapDiag } from './utils/mapDiagnostics';
 
 const VIEW_NAMES: Record<ViewMode, string> = {
   editor: 'Editor', corkboard: 'Corkboard', outline: 'Outline', 'scene-cards': 'Scene Cards',
@@ -55,6 +57,8 @@ function App() {
 
   const [compileOpen, setCompileOpen] = useState(false);
   const [mobileBinderOpen, setMobileBinderOpen] = useState(false);
+  const [failedLoad, setFailedLoad] = useState(previousFailedLoad);
+  useEffect(() => onFailedLoad(setFailedLoad), []);
   const isMobile = useIsMobile();
 
   const selectedItem = selectedId ? findItem(binder, selectedId) : null;
@@ -84,6 +88,8 @@ function App() {
     <div className="flex flex-col h-screen bg-[#0d1117] text-gray-200">
       {/* Top toolbar */}
       <Toolbar onOpenBinder={isMobile ? () => setMobileBinderOpen(true) : undefined} />
+
+      {failedLoad && <FailedLoadBar failed={failedLoad} onDismiss={() => setFailedLoad(null)} />}
 
       {/* Main workspace */}
       <div className="flex flex-1 overflow-hidden">
@@ -266,3 +272,36 @@ function App() {
 }
 
 export default App;
+
+/** Shown after a session froze or crashed; for the map, with copyable details. */
+function FailedLoadBar({ failed, onDismiss }: { failed: FailedLoad; onDismiss: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const details = failed.mapDiag ? formatMapDiag(failed.mapDiag) : null;
+  const where = failed.area === 'manuscript' && failed.view in VIEW_NAMES
+    ? <> while showing the <b>{VIEW_NAMES[failed.view as ViewMode]}</b></>
+    : failed.area !== 'unknown' ? <> (section: <b>{failed.area}</b>)</> : null;
+  return (
+    <div className="px-4 py-2 bg-amber-900/40 border-b border-amber-600/40 text-xs text-amber-100 shrink-0">
+      <div className="flex items-start gap-3">
+        <span className="flex-1">
+          Book Bitch crashed or froze last time{where}, so it opened in the Editor instead. Your writing is safe.
+          {details && ' The details below are counts and sizes only, no text from your book.'}
+        </span>
+        {details && (
+          <button
+            onClick={() => {
+              navigator.clipboard?.writeText(details).then(() => setCopied(true), () => setCopied(false));
+            }}
+            className="text-amber-300 hover:text-white font-semibold"
+          >
+            {copied ? 'Copied ✓' : 'Copy details'}
+          </button>
+        )}
+        <button onClick={onDismiss} className="text-amber-300 hover:text-white">Dismiss</button>
+      </div>
+      {details && (
+        <pre className="mt-2 p-2 bg-black/30 rounded text-[11px] text-amber-50 whitespace-pre-wrap select-all">{details}</pre>
+      )}
+    </div>
+  );
+}

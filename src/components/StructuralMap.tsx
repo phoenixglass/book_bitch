@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import type { SceneOrder } from '../types';
 import { collectScenes, sortScenes } from '../utils/timelineOrder';
@@ -8,6 +8,7 @@ import {
   type CategoryLayer, type CategoryLayerId, type FocusValue, type Layer, type LayerId,
   type LayerValue, type MetricLayerId, type SceneRow,
 } from '../utils/storyMapData';
+import { contentStats, mapCrumb, mapDiagClose, mapDiagIsOpen, mapDiagOpen, mapDiagReopen, timedStep } from '../utils/mapDiagnostics';
 
 type MapView = 'lanes' | 'bars' | 'matrix';
 type ColorBy = 'none' | MetricLayerId | CategoryLayerId;
@@ -39,6 +40,10 @@ const DEFAULT_PREFS: MapPrefs = {
 
 // Per-viewer convenience only: remembering which layers you had on.
 const PREFS_KEY = 'book_bitch.structuralMap.v2';
+
+function diagPrefs(p: MapPrefs) {
+  return { view: p.view, layers: p.layers, zoom: p.zoom, order: p.order, matrix: `${p.matrixRows} x ${p.matrixCols}, ${p.matrixStat}` };
+}
 
 function loadPrefs(): MapPrefs {
   try {
@@ -73,6 +78,8 @@ function loadPrefs(): MapPrefs {
 /** How many values a lane group shows before "show all". */
 const LANE_CAP = 12;
 const LABEL_W = 168;
+/** Matrix values per axis before "show more". */
+const MATRIX_CAP = 40;
 
 export function StructuralMap() {
   const { binder, selectItem, setArea, setViewMode } = useAppStore();
@@ -81,22 +88,41 @@ export function StructuralMap() {
   const [hoverPos, setHoverPos] = useState<number | null>(null);
   const [expanded, setExpanded] = useState<Set<CategoryLayerId>>(new Set());
 
+  // Breadcrumbs (see mapDiagnostics): opened once per mount, closed on unmount.
+  // Opened in a state initializer so it's written before any heavy work below.
+  useState(() => {
+    mapDiagOpen(diagPrefs(prefs));
+    return null;
+  });
+  const [painted, setPainted] = useState(false);
+  useEffect(() => {
+    // React's dev-only double mount closes the record once; reopen if so.
+    if (!mapDiagIsOpen()) mapDiagReopen(diagPrefs(prefs));
+    const id = requestAnimationFrame(() => { mapCrumb({ stage: 'painted' }); setPainted(true); });
+    return () => { cancelAnimationFrame(id); mapDiagClose(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* storage unavailable */ }
+    mapCrumb(diagPrefs(prefs));
   }, [prefs]);
 
-  const patch = (p: Partial<MapPrefs>) => setPrefs((prev) => ({ ...prev, ...p }));
+  const patch = useCallback((p: Partial<MapPrefs>) => setPrefs((prev) => ({ ...prev, ...p })), []);
 
-  const rows = useMemo(
-    () => buildRows(sortScenes(collectScenes(binder), prefs.order)),
-    [binder, prefs.order],
-  );
+  const rows = useMemo(() => {
+    const scenes = timedStep('collected', () => collectScenes(binder), (sc) => ({
+      scenes: sc.length,
+      ...contentStats(sc.map((x) => x.content)),
+    }));
+    return timedStep('rows', () => buildRows(sortScenes(scenes, prefs.order)));
+  }, [binder, prefs.order]);
 
-  const valueIndex = useMemo(() => {
+  const valueIndex = useMemo(() => timedStep('indexed', () => {
     const out = {} as Record<CategoryLayerId, LayerValue[]>;
     for (const l of CATEGORY_LAYERS) out[l.id] = indexValues(l, rows);
     return out;
-  }, [rows]);
+  }, (out) => ({ values: Object.fromEntries(CATEGORY_LAYERS.map((l) => [l.id, out[l.id].length])) })), [rows]);
 
   const maxima = useMemo(() => {
     const out = {} as Record<MetricLayerId, number>;
@@ -120,24 +146,33 @@ export function StructuralMap() {
     patch({ layers: has ? prefs.layers.filter((l) => l !== id) : [...prefs.layers, id] });
   }
 
-  function toggleFocus(layer: CategoryLayerId, v: LayerValue) {
+  const toggleFocus = useCallback((layer: CategoryLayerId, v: LayerValue) => {
     setFocus((prev) => {
       const exists = prev.some((f) => f.layer === layer && f.key === v.key);
       return exists
         ? prev.filter((f) => !(f.layer === layer && f.key === v.key))
         : [...prev, { layer, key: v.key, label: v.label }];
     });
-  }
+  }, []);
 
-  const isFocused = (layer: CategoryLayerId, key: string) =>
-    liveFocus.some((f) => f.layer === layer && f.key === key);
+  const isFocused = useCallback(
+    (layer: CategoryLayerId, key: string) => liveFocus.some((f) => f.layer === layer && f.key === key),
+    [liveFocus],
+  );
+  const toggleExpanded = useCallback((id: CategoryLayerId) => setExpanded((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  }), []);
 
-  function openScene(id: string) {
+  const openScene = useCallback((id: string) => {
     selectItem(id);
     setArea('manuscript');
     setViewMode('editor');
-  }
+  }, [selectItem, setArea, setViewMode]);
 
+  // Only before first paint, so "painted" keeps meaning it drew and then died.
+  if (!painted) mapCrumb({ stage: 'rendering' });
   const hovered = hoverPos != null ? rows[hoverPos - 1] : null;
   const selectedLayers = prefs.layers.map((id) => LAYER_BY_ID[id]);
 
@@ -242,11 +277,7 @@ export function StructuralMap() {
             hoverPos={hoverPos}
             setHoverPos={setHoverPos}
             expanded={expanded}
-            toggleExpanded={(id) => setExpanded((prev) => {
-              const next = new Set(prev);
-              if (next.has(id)) next.delete(id); else next.add(id);
-              return next;
-            })}
+            toggleExpanded={toggleExpanded}
             isFocused={isFocused}
             toggleFocus={toggleFocus}
             openScene={openScene}
@@ -349,6 +380,13 @@ function valueColors(layer: CategoryLayerId, values: LayerValue[]): Map<string, 
 // ─── Lanes ───────────────────────────────────────────────────────────────────
 // Every selected layer as horizontal lanes over one shared scene axis, so you
 // can read down a column ("scene 41: tension 9, Mara + Ilya, the knife motif").
+//
+// Scale matters here: a long manuscript times a messy vocabulary is easily
+// 100k cells, and one DOM element per cell froze the browser. Each lane row is
+// therefore a single SVG holding marks only where a value is present, and one
+// transparent layer over the whole plot handles hover and click by column.
+// Hover state lives above this body, which is memoized, so moving the mouse
+// redraws only the highlight, not the grid.
 
 interface LanesProps {
   rows: SceneRow[];
@@ -367,29 +405,29 @@ interface LanesProps {
   openScene: (id: string) => void;
 }
 
+const METRIC_H = 56;
+const VALUE_H = 18;
+const HEADER_H = 20;
+
 function LanesView(p: LanesProps) {
-  const { rows, prefs, matching, focusActive, hoverPos } = p;
+  const { rows, prefs, hoverPos, setHoverPos, openScene } = p;
   const col = prefs.zoom;
-  const gridTemplateColumns = `${LABEL_W}px repeat(${rows.length}, ${col}px)`;
-  const labelEvery = col >= 22 ? 1 : col >= 14 ? 5 : 10;
+  const plotW = rows.length * col;
 
-  const cellBg = (pos: number) =>
-    pos === hoverPos ? 'rgba(255,255,255,0.07)' : undefined;
-  const dim = (pos: number) => (focusActive && !matching.has(pos) ? 0.18 : 1);
-
-  const cellHandlers = (row: SceneRow) => ({
-    onMouseEnter: () => p.setHoverPos(row.position),
-    onMouseLeave: () => p.setHoverPos(null),
-    onClick: () => p.openScene(row.scene.id),
-  });
-
-  const missing = prefs.layers
+  const missing = useMemo(() => prefs.layers
     .map((id) => {
       const l = LAYER_BY_ID[id];
       const lacking = rows.filter((r) => (l.kind === 'metric' ? r.metrics[l.id] == null : r.keys[l.id].size === 0));
       return { l, lacking };
     })
-    .filter((m) => m.lacking.length > 0 && m.l.id !== 'wordcount');
+    .filter((m) => m.lacking.length > 0 && m.l.id !== 'wordcount'), [prefs.layers, rows]);
+
+  const posAt = (e: React.MouseEvent<HTMLDivElement>) => {
+    const x = e.clientX - e.currentTarget.getBoundingClientRect().left;
+    const pos = Math.floor(x / col) + 1;
+    return pos >= 1 && pos <= rows.length ? pos : null;
+  };
+  const hovered = hoverPos != null ? rows[hoverPos - 1] : null;
 
   return (
     <div className="p-4">
@@ -406,115 +444,40 @@ function LanesView(p: LanesProps) {
       </div>
 
       <div className="overflow-x-auto pb-2">
-        <div className="grid" style={{ gridTemplateColumns, width: LABEL_W + rows.length * col }}>
-          {/* Scene number header */}
-          <div className="sticky left-0 z-20 bg-[#0f0f1e] text-[10px] text-gray-600 flex items-end pb-0.5 pr-2">Scene</div>
-          {rows.map((r) => (
-            <button
-              key={r.scene.id}
-              {...cellHandlers(r)}
-              className="text-[9px] leading-none text-gray-500 hover:text-white h-5 flex items-end justify-center pb-0.5"
-              style={{ background: cellBg(r.position), opacity: dim(r.position) }}
-              title={r.scene.title}
-            >
-              {r.position === 1 || r.position % labelEvery === 0 ? r.position : ''}
-            </button>
-          ))}
-
-          {prefs.layers.map((id) => {
-            const layer = LAYER_BY_ID[id];
-            if (layer.kind === 'metric') {
-              const max = p.maxima[layer.id];
-              return (
-                <Fragment key={id}>
-                  <LaneLabel color={layer.color} title={layer.label} sub={layer.id === 'wordcount' ? `max ${max}` : '1–10'} tall />
-                  {rows.map((r) => {
-                    const v = r.metrics[layer.id];
-                    return (
-                      <button
-                        key={r.scene.id}
-                        {...cellHandlers(r)}
-                        className="h-14 flex items-end justify-center border-t border-[#1f2a44]"
-                        style={{ background: cellBg(r.position), opacity: dim(r.position) }}
-                        aria-label={`${r.scene.title}: ${layer.label} ${v ?? 'not set'}`}
-                      >
-                        {v == null ? (
-                          <span className="w-[60%] h-[3px] mb-0.5 rounded-sm border border-dashed border-gray-600" />
-                        ) : (
-                          <span
-                            className="w-[75%] rounded-t-sm"
-                            style={{ height: `${Math.max(6, (v / max) * 100)}%`, background: heatColor(v, max) }}
-                          />
-                        )}
-                      </button>
-                    );
-                  })}
-                </Fragment>
-              );
-            }
-
-            const values = p.valueIndex[layer.id];
-            const isOpen = p.expanded.has(layer.id);
-            const shown = isOpen ? values : values.slice(0, LANE_CAP);
-            return (
-              <Fragment key={id}>
-                <div className="sticky left-0 z-10 bg-[#0f0f1e] border-t border-[#1f2a44] pt-2 pb-1 pr-2 text-[11px] font-semibold flex items-center gap-1.5" style={{ color: layer.color }}>
-                  {layer.label}
-                  <span className="text-gray-600 font-normal">{values.length}</span>
-                </div>
-                <div className="border-t border-[#1f2a44]" style={{ gridColumn: `span ${rows.length}` }} />
-                {values.length === 0 && (
-                  <>
-                    <div className="sticky left-0 z-10 bg-[#0f0f1e] text-[11px] text-gray-600 pr-2 pb-2">Nothing set yet</div>
-                    <div style={{ gridColumn: `span ${rows.length}` }} />
-                  </>
-                )}
-                {shown.map((v) => {
-                  const focused = p.isFocused(layer.id, v.key);
-                  return (
-                    <Fragment key={v.key}>
-                      <button
-                        onClick={() => p.toggleFocus(layer.id, v)}
-                        className={`sticky left-0 z-10 bg-[#0f0f1e] text-left text-[11px] pr-2 h-[18px] truncate flex items-center gap-1 ${focused ? 'text-white' : 'text-gray-400 hover:text-gray-200'}`}
-                        title={`${v.label} — ${v.count} scene${v.count === 1 ? '' : 's'}. Click to highlight.`}
-                      >
-                        {focused && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: layer.color }} />}
-                        <span className="truncate">{v.label}</span>
-                        <span className="text-gray-600 ml-auto shrink-0">{v.count}</span>
-                      </button>
-                      {rows.map((r) => {
-                        const has = r.keys[layer.id].has(v.key);
-                        return (
-                          <button
-                            key={r.scene.id}
-                            {...cellHandlers(r)}
-                            className="h-[18px] flex items-center justify-center"
-                            style={{ background: cellBg(r.position), opacity: dim(r.position) }}
-                            aria-label={`${r.scene.title}: ${has ? '' : 'no '}${v.label}`}
-                          >
-                            {has
-                              ? <span className="w-[80%] h-[12px] rounded-sm" style={{ background: layer.color, boxShadow: focused ? '0 0 0 1px #fff' : undefined }} />
-                              : <span className="w-[2px] h-[2px] rounded-full bg-[#2d3748]" />}
-                          </button>
-                        );
-                      })}
-                    </Fragment>
-                  );
-                })}
-                {values.length > LANE_CAP && (
-                  <>
-                    <button
-                      onClick={() => p.toggleExpanded(layer.id)}
-                      className="sticky left-0 z-10 bg-[#0f0f1e] text-left text-[11px] text-[#9f7aea] hover:text-white pr-2 py-1"
-                    >
-                      {isOpen ? 'Show fewer' : `Show all ${values.length}`}
-                    </button>
-                    <div style={{ gridColumn: `span ${rows.length}` }} />
-                  </>
-                )}
-              </Fragment>
-            );
-          })}
+        <div className="relative" style={{ width: LABEL_W + plotW }}>
+          <LanesBody
+            rows={rows}
+            layers={prefs.layers}
+            col={col}
+            valueIndex={p.valueIndex}
+            maxima={p.maxima}
+            matching={p.matching}
+            focusActive={p.focusActive}
+            expanded={p.expanded}
+            toggleExpanded={p.toggleExpanded}
+            isFocused={p.isFocused}
+            toggleFocus={p.toggleFocus}
+          />
+          {/* One hit-area for the whole plot: hover and click by column. */}
+          <div
+            className="absolute top-0 bottom-0 z-20 cursor-pointer"
+            style={{ left: LABEL_W, width: plotW }}
+            role="presentation"
+            title={hovered?.scene.title}
+            onMouseMove={(e) => setHoverPos(posAt(e))}
+            onMouseLeave={() => setHoverPos(null)}
+            onClick={(e) => {
+              const pos = posAt(e);
+              if (pos != null) openScene(rows[pos - 1].scene.id);
+            }}
+          >
+            {hoverPos != null && (
+              <div
+                className="absolute top-0 bottom-0 pointer-events-none bg-white/[0.07]"
+                style={{ left: (hoverPos - 1) * col, width: col }}
+              />
+            )}
+          </div>
         </div>
       </div>
 
@@ -523,22 +486,7 @@ function LanesView(p: LanesProps) {
           <p className="text-xs text-gray-400 font-semibold mb-2">Gaps — scenes with nothing set for a selected layer</p>
           <div className="flex flex-col gap-2">
             {missing.map(({ l, lacking }) => (
-              <details key={l.id}>
-                <summary className="text-xs cursor-pointer" style={{ color: l.color }}>
-                  {l.label} <span className="text-gray-500">— {lacking.length} of {rows.length} scenes</span>
-                </summary>
-                <div className="flex flex-wrap gap-1.5 mt-1.5">
-                  {lacking.map((r) => (
-                    <button
-                      key={r.scene.id}
-                      onClick={() => p.openScene(r.scene.id)}
-                      className="text-xs text-gray-500 hover:text-gray-300 bg-[#2d3748] px-2 py-0.5 rounded"
-                    >
-                      {r.position}. {r.scene.title}
-                    </button>
-                  ))}
-                </div>
-              </details>
+              <GapList key={l.id} layer={l} lacking={lacking} total={rows.length} openScene={openScene} />
             ))}
           </div>
         </div>
@@ -547,14 +495,159 @@ function LanesView(p: LanesProps) {
   );
 }
 
-function LaneLabel({ color, title, sub, tall }: { color: string; title: string; sub?: string; tall?: boolean }) {
+/** Builds its scene list only when opened, and caps it. */
+function GapList({ layer, lacking, total, openScene }: {
+  layer: Layer; lacking: SceneRow[]; total: number; openScene: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [limit, setLimit] = useState(200);
   return (
-    <div className={`sticky left-0 z-10 bg-[#0f0f1e] border-t border-[#1f2a44] pr-2 text-[11px] font-semibold flex flex-col justify-center ${tall ? 'h-14' : ''}`} style={{ color }}>
-      {title}
-      {sub && <span className="text-[10px] text-gray-600 font-normal">{sub}</span>}
-    </div>
+    <details onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}>
+      <summary className="text-xs cursor-pointer" style={{ color: layer.color }}>
+        {layer.label} <span className="text-gray-500">— {lacking.length} of {total} scenes</span>
+      </summary>
+      {open && (
+        <div className="flex flex-wrap gap-1.5 mt-1.5">
+          {lacking.slice(0, limit).map((r) => (
+            <button
+              key={r.scene.id}
+              onClick={() => openScene(r.scene.id)}
+              className="text-xs text-gray-500 hover:text-gray-300 bg-[#2d3748] px-2 py-0.5 rounded"
+            >
+              {r.position}. {r.scene.title}
+            </button>
+          ))}
+          {lacking.length > limit && (
+            <button onClick={() => setLimit((n) => n + 200)} className="text-xs text-[#9f7aea] hover:text-white px-2 py-0.5">
+              +{lacking.length - limit} more
+            </button>
+          )}
+        </div>
+      )}
+    </details>
   );
 }
+
+interface LanesBodyProps {
+  rows: SceneRow[];
+  layers: LayerId[];
+  col: number;
+  valueIndex: Record<CategoryLayerId, LayerValue[]>;
+  maxima: Record<MetricLayerId, number>;
+  matching: Set<number>;
+  focusActive: boolean;
+  expanded: Set<CategoryLayerId>;
+  toggleExpanded: (id: CategoryLayerId) => void;
+  isFocused: (layer: CategoryLayerId, key: string) => boolean;
+  toggleFocus: (layer: CategoryLayerId, v: LayerValue) => void;
+}
+
+const LanesBody = memo(function LanesBody(p: LanesBodyProps) {
+  const { rows, col } = p;
+  const plotW = rows.length * col;
+  const labelEvery = col >= 22 ? 1 : col >= 14 ? 5 : 10;
+  const op = (pos: number) => (p.focusActive && !p.matching.has(pos) ? 0.18 : 1);
+  const label = 'sticky left-0 z-30 bg-[#0f0f1e] shrink-0 pr-2';
+
+  return (
+    <div className="flex flex-col">
+      {/* Scene numbers */}
+      <div className="flex">
+        <div className={`${label} text-[10px] text-gray-600 flex items-end pb-0.5`} style={{ width: LABEL_W, height: HEADER_H }}>Scene</div>
+        <svg width={plotW} height={HEADER_H} className="block shrink-0">
+          {rows.map((r, i) => (r.position === 1 || r.position % labelEvery === 0) && (
+            <text key={r.scene.id} x={i * col + col / 2} y={HEADER_H - 4} textAnchor="middle" fontSize={9} fill="#718096" opacity={op(r.position)}>
+              {r.position}
+            </text>
+          ))}
+        </svg>
+      </div>
+
+      {p.layers.map((id) => {
+        const layer = LAYER_BY_ID[id];
+        if (layer.kind === 'metric') {
+          const max = p.maxima[layer.id];
+          return (
+            <div key={id} className="flex border-t border-[#1f2a44]">
+              <div className={`${label} text-[11px] font-semibold flex flex-col justify-center`} style={{ width: LABEL_W, height: METRIC_H, color: layer.color }}>
+                {layer.label}
+                <span className="text-[10px] text-gray-600 font-normal">{layer.id === 'wordcount' ? `max ${max}` : '1–10'}</span>
+              </div>
+              <svg width={plotW} height={METRIC_H} className="block shrink-0" shapeRendering="crispEdges">
+                {rows.map((r, i) => {
+                  const v = r.metrics[layer.id];
+                  if (v == null) {
+                    return <rect key={r.scene.id} x={i * col + col * 0.2} y={METRIC_H - 3} width={col * 0.6} height={1} fill="#4a5568" opacity={op(r.position)} />;
+                  }
+                  const h = Math.max(METRIC_H * 0.06, (v / max) * (METRIC_H - 2));
+                  return <rect key={r.scene.id} x={i * col + col * 0.125} y={METRIC_H - h} width={col * 0.75} height={h} rx={1} fill={heatColor(v, max)} opacity={op(r.position)} />;
+                })}
+              </svg>
+            </div>
+          );
+        }
+
+        const values = p.valueIndex[layer.id];
+        const isOpen = p.expanded.has(layer.id);
+        const shown = isOpen ? values : values.slice(0, LANE_CAP);
+        return (
+          <Fragment key={id}>
+            <div className="flex border-t border-[#1f2a44]">
+              <div className={`${label} pt-2 pb-1 text-[11px] font-semibold flex items-center gap-1.5`} style={{ width: LABEL_W, color: layer.color }}>
+                {layer.label}
+                <span className="text-gray-600 font-normal">{values.length}</span>
+              </div>
+            </div>
+            {values.length === 0 && (
+              <div className="flex">
+                <div className={`${label} text-[11px] text-gray-600 pb-2`} style={{ width: LABEL_W }}>Nothing set yet</div>
+              </div>
+            )}
+            {shown.map((v) => {
+              const focused = p.isFocused(layer.id, v.key);
+              return (
+                <div key={v.key} className="flex">
+                  <button
+                    onClick={() => p.toggleFocus(layer.id, v)}
+                    className={`${label} text-left text-[11px] truncate flex items-center gap-1 ${focused ? 'text-white' : 'text-gray-400 hover:text-gray-200'}`}
+                    style={{ width: LABEL_W, height: VALUE_H }}
+                    title={`${v.label} — ${v.count} scene${v.count === 1 ? '' : 's'}. Click to highlight.`}
+                  >
+                    {focused && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: layer.color }} />}
+                    <span className="truncate">{v.label}</span>
+                    <span className="text-gray-600 ml-auto shrink-0">{v.count}</span>
+                  </button>
+                  <svg width={plotW} height={VALUE_H} className="block shrink-0" shapeRendering="crispEdges">
+                    <line x1={0} x2={plotW} y1={VALUE_H / 2} y2={VALUE_H / 2} stroke="#1f2a44" strokeWidth={1} />
+                    {rows.map((r, i) => r.keys[layer.id].has(v.key) && (
+                      <rect
+                        key={r.scene.id}
+                        x={i * col + col * 0.1} y={3} width={col * 0.8} height={VALUE_H - 6} rx={1.5}
+                        fill={layer.color} opacity={op(r.position)}
+                        stroke={focused ? '#fff' : undefined} strokeWidth={focused ? 1 : undefined}
+                      />
+                    ))}
+                  </svg>
+                </div>
+              );
+            })}
+            {values.length > LANE_CAP && (
+              <div className="flex">
+                <button
+                  onClick={() => p.toggleExpanded(layer.id)}
+                  className={`${label} text-left text-[11px] text-[#9f7aea] hover:text-white py-1`}
+                  style={{ width: LABEL_W }}
+                >
+                  {isOpen ? 'Show fewer' : `Show all ${values.length}`}
+                </button>
+              </div>
+            )}
+          </Fragment>
+        );
+      })}
+    </div>
+  );
+});
 
 // ─── Bars ────────────────────────────────────────────────────────────────────
 // The original tile strip: height from a metric, color from any layer.
@@ -574,7 +667,7 @@ interface BarsProps {
   openScene: (id: string) => void;
 }
 
-function BarsView(p: BarsProps) {
+const BarsView = memo(function BarsView(p: BarsProps) {
   const { rows, prefs } = p;
   const colorLayer = prefs.barColor !== 'none' ? LAYER_BY_ID[prefs.barColor] : null;
   const colorMap = colorLayer?.kind === 'category'
@@ -660,7 +753,7 @@ function BarsView(p: BarsProps) {
       ))}
     </div>
   );
-}
+});
 
 function HeatLegend() {
   return (
@@ -735,6 +828,12 @@ function MatrixView(p: MatrixProps) {
   const colVals = useMemo(() => indexValues(colLayer, rows), [colLayer, rows]);
   const same = rowLayer.id === colLayer.id;
   const [picked, setPicked] = useState<{ r: string; c: string } | null>(null);
+  // Unbounded axes froze the browser (400 tags × 400 tags is 160k cells), so
+  // show the most-used values first and let the user ask for more.
+  const [rowLimit, setRowLimit] = useState(MATRIX_CAP);
+  const [colLimit, setColLimit] = useState(MATRIX_CAP);
+  const shownRows = rowVals.slice(0, rowLimit);
+  const shownCols = colVals.slice(0, colLimit);
 
   const cells = useMemo(() => {
     const m = new Map<string, SceneRow[]>();
@@ -780,19 +879,34 @@ function MatrixView(p: MatrixProps) {
   return (
     <div className="p-4">
       <div className="flex flex-wrap items-center gap-4 mb-2">
-        <Select label="Rows" value={prefs.matrixRows} onChange={(matrixRows) => { p.patch({ matrixRows }); setPicked(null); }} options={catOptions} />
+        <Select label="Rows" value={prefs.matrixRows} onChange={(matrixRows) => { p.patch({ matrixRows }); setPicked(null); setRowLimit(MATRIX_CAP); }} options={catOptions} />
         <button
-          onClick={() => { p.patch({ matrixRows: prefs.matrixCols, matrixCols: prefs.matrixRows }); setPicked(null); }}
+          onClick={() => { p.patch({ matrixRows: prefs.matrixCols, matrixCols: prefs.matrixRows }); setPicked(null); setRowLimit(colLimit); setColLimit(rowLimit); }}
           className="text-xs text-gray-500 hover:text-gray-300"
           title="Swap rows and columns"
         >⇄</button>
-        <Select label="Columns" value={prefs.matrixCols} onChange={(matrixCols) => { p.patch({ matrixCols }); setPicked(null); }} options={catOptions} />
+        <Select label="Columns" value={prefs.matrixCols} onChange={(matrixCols) => { p.patch({ matrixCols }); setPicked(null); setColLimit(MATRIX_CAP); }} options={catOptions} />
         <Select label="Cells" value={prefs.matrixStat} onChange={(matrixStat) => p.patch({ matrixStat })} options={statOptions} />
       </div>
       <p className="text-[11px] text-gray-600 mb-3">
         Each cell is the set of scenes that have both values{same ? ' (the diagonal is each value on its own)' : ''}. Click a cell to list its scenes.
         {p.focusActive && <span className="text-[#9f7aea]"> Counting only the {rows.length} highlighted scenes.</span>}
       </p>
+      {(rowVals.length > rowLimit || colVals.length > colLimit) && (
+        <p className="text-[11px] text-gray-500 mb-3 flex flex-wrap gap-x-3">
+          <span>Showing the most-used values.</span>
+          {rowVals.length > rowLimit && (
+            <button onClick={() => setRowLimit((n) => n + MATRIX_CAP)} className="text-[#9f7aea] hover:text-white">
+              Rows: {rowLimit} of {rowVals.length} — show {Math.min(MATRIX_CAP, rowVals.length - rowLimit)} more
+            </button>
+          )}
+          {colVals.length > colLimit && (
+            <button onClick={() => setColLimit((n) => n + MATRIX_CAP)} className="text-[#9f7aea] hover:text-white">
+              Columns: {colLimit} of {colVals.length} — show {Math.min(MATRIX_CAP, colVals.length - colLimit)} more
+            </button>
+          )}
+        </p>
+      )}
 
       {rowVals.length === 0 || colVals.length === 0 ? (
         <p className="text-sm text-gray-600 mt-8 text-center">
@@ -810,7 +924,7 @@ function MatrixView(p: MatrixProps) {
                     <span style={{ color: colLayer.color }}>{colLayer.label}</span>
                     <span className="text-gray-600"> →</span>
                   </th>
-                  {colVals.map((c) => (
+                  {shownCols.map((c) => (
                     <th key={c.key} className="sticky top-0 z-20 bg-[#0f0f1e] p-0 align-bottom font-normal">
                       <div className="h-28 w-7 flex items-end justify-center pb-1">
                         <span className="[writing-mode:vertical-rl] rotate-180 text-gray-400 truncate max-h-[104px]" title={`${c.label} (${c.count})`}>
@@ -822,12 +936,12 @@ function MatrixView(p: MatrixProps) {
                 </tr>
               </thead>
               <tbody>
-                {rowVals.map((r) => (
+                {shownRows.map((r) => (
                   <tr key={r.key}>
                     <th className="sticky left-0 z-10 bg-[#0f0f1e] text-left font-normal text-gray-400 pr-2 pl-1 max-w-[180px] truncate" title={`${r.label} (${r.count})`}>
                       {r.label} <span className="text-gray-600">{r.count}</span>
                     </th>
-                    {colVals.map((c) => {
+                    {shownCols.map((c) => {
                       const list = cells.get(`${r.key}\u0000${c.key}`);
                       const v = stat(list);
                       const isPicked = picked?.r === r.key && picked?.c === c.key;
@@ -837,6 +951,7 @@ function MatrixView(p: MatrixProps) {
                         : prefs.matrixStat === 'count'
                           ? `rgba(159,122,234,${0.15 + intensity * 0.85})`
                           : heatColor(intensity * 10, 10);
+                      if (!list) return <td key={c.key} className="p-[1px]"><div className="w-7 h-6 rounded-sm bg-[#16213e]" /></td>;
                       return (
                         <td key={c.key} className="p-[1px]">
                           <button

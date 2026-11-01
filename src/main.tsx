@@ -5,6 +5,7 @@ import App from './App.tsx'
 import { AuthGate } from './components/AuthGate.tsx'
 import { SyncProvider } from './components/SyncProvider.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary.tsx'
+import { startBootGuard } from './utils/bootGuard'
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -13,6 +14,8 @@ if ('serviceWorker' in navigator) {
     });
   });
 }
+
+startBootGuard()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
