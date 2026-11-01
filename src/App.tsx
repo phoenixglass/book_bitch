@@ -29,6 +29,12 @@ import { GlobalSearch } from './components/GlobalSearch';
 import { ReferencePane } from './components/ReferencePane';
 import { AIPanel } from './components/AIPanel';
 import { ErrorBoundary, PaneError } from './components/ErrorBoundary';
+import type { ViewMode } from './types';
+
+const VIEW_NAMES: Record<ViewMode, string> = {
+  editor: 'Editor', corkboard: 'Corkboard', outline: 'Outline', 'scene-cards': 'Scene Cards',
+  timeline: 'Timeline', dashboard: 'Dashboard', 'structural-map': 'Structural Map',
+};
 import { useAppStore, findItem } from './store/appStore';
 
 function App() {
@@ -133,6 +139,12 @@ function App() {
                   <div className="flex flex-1 overflow-hidden">
                     {/* Center editor / view */}
                     <div className="flex-1 flex flex-col overflow-hidden">
+                      {/* A view that crashes shows its error here; the toolbar and binder
+                          keep working, so you can switch away instead of being stuck. */}
+                      <ErrorBoundary
+                        resetKey={`${viewMode}:${viewMode === 'editor' ? selectedItem?.id ?? '' : ''}`}
+                        fallback={(error, reset) => <PaneError name={VIEW_NAMES[viewMode] ?? 'This view'} error={error} reset={reset} />}
+                      >
                       {viewMode === 'editor' && selectedItem?.type === 'document' && (
                         <RichEditor
                           key={selectedItem.id}
@@ -172,11 +184,8 @@ function App() {
                       {viewMode === 'scene-cards' && <SceneCards />}
                       {viewMode === 'timeline' && <TimelineView />}
                       {viewMode === 'dashboard' && <DashboardView />}
-                      {viewMode === 'structural-map' && (
-                        <ErrorBoundary fallback={(error, reset) => <PaneError name="Structural Map" error={error} reset={reset} />}>
-                          <StructuralMap />
-                        </ErrorBoundary>
-                      )}
+                      {viewMode === 'structural-map' && <StructuralMap />}
+                      </ErrorBoundary>
                     </div>
 
                     {/* Reference pane (split-screen) */}
@@ -196,7 +205,18 @@ function App() {
               )}
 
               {/* Inspector — desktop only */}
-              {!compositionMode && !isMobile && inspectorOpen && <Inspector />}
+              {!compositionMode && !isMobile && inspectorOpen && (
+                <ErrorBoundary
+                  resetKey={selectedItem?.id ?? ''}
+                  fallback={(error, reset) => (
+                    <div className="w-72 shrink-0 border-l border-[#0f3460] overflow-auto">
+                      <PaneError name="Inspector" error={error} reset={reset} />
+                    </div>
+                  )}
+                >
+                  <Inspector />
+                </ErrorBoundary>
+              )}
 
               {/* Style Check panel — desktop only, editor view */}
               {!compositionMode && !isMobile && styleCheckOpen && viewMode === 'editor' && <StyleCheckPanel />}
@@ -204,6 +224,7 @@ function App() {
           )}
 
           {/* Non-manuscript areas */}
+          <ErrorBoundary resetKey={area} fallback={(error, reset) => <PaneError name="This section" error={error} reset={reset} />}>
           {area === 'fragments' && <FragmentsView />}
           {area === 'omitted' && <OmittedView />}
           {area === 'notebook' && <NotebookView />}
@@ -215,6 +236,7 @@ function App() {
           {area === 'assembly' && <ManuscriptAssemblyView />}
           {area === 'history' && <HistoryView />}
           {area === 'trash' && <TrashView />}
+          </ErrorBoundary>
 
           {/* AI Panel — desktop only */}
           {!compositionMode && !isMobile && aiPanelOpen && <AIPanel />}
