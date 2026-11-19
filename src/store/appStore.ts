@@ -33,6 +33,7 @@ import type {
   SplitRefTarget,
   AISettings,
   AIMode,
+  AIActionType,
   AIObjectType,
   AIResult,
   ManuscriptSettings,
@@ -239,6 +240,16 @@ export function totalWordCount(items: BinderItem[]): number {
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
+const AI_MODES: AIMode[] = ['disabled', 'questions_only', 'analysis_only', 'metadata_assistance', 'continuity_checking', 'summarization', 'full'];
+
+/** The synced part of AI settings from a cloud save, or null if absent/invalid. */
+function cloudAISettings(raw: unknown): { mode: AIMode; allowDrafting: boolean } | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (!AI_MODES.includes(r.mode as AIMode)) return null;
+  return { mode: r.mode as AIMode, allowDrafting: r.allowDrafting === true };
+}
+
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
@@ -287,6 +298,7 @@ export const useAppStore = create<AppState>()(
         allowDrafting: false,
       } as AISettings,
       aiPanelOpen: false,
+      aiRequestedAction: null as AIActionType | null,
       pendingAIResult: null as AIResult | null,
       aiContextObject: null as { type: AIObjectType; id: string } | null,
       storyBrief: null as StoryBrief | null,
@@ -1861,6 +1873,20 @@ export const useAppStore = create<AppState>()(
         set((s) => ({ aiSettings: { ...s.aiSettings, ...patch } }));
       },
 
+      requestAIAction: (action) => {
+        set((s) => ({
+          aiPanelOpen: true,
+          aiRequestedAction: action,
+          // Clicking an explicit "Generate with AI" button is the opt-in; modes that
+          // don't offer metadata would otherwise leave the button doing nothing.
+          aiSettings: action === 'metadata' && !['metadata_assistance', 'continuity_checking', 'full'].includes(s.aiSettings.mode)
+            ? { ...s.aiSettings, mode: 'metadata_assistance' }
+            : s.aiSettings,
+        }));
+      },
+
+      clearAIRequestedAction: () => set({ aiRequestedAction: null }),
+
       setAIPanelOpen: (open) => {
         set({ aiPanelOpen: open });
       },
@@ -1973,6 +1999,10 @@ export const useAppStore = create<AppState>()(
           betaReaderSettings: (data.betaReaderSettings as BetaReaderSettings) ?? undefined,
           storyBrief: (data.storyBrief as StoryBrief | null) ?? null,
           continuityReport: (data.continuityReport as ContinuityReport | null) ?? null,
+          // AI mode used to live only in this browser, so wiping site data
+          // silently switched AI off. It now travels with the project; older
+          // saves without it keep whatever this browser has. The API key never syncs.
+          ...(cloudAISettings(data.aiSettings) ? { aiSettings: { ...get().aiSettings, ...cloudAISettings(data.aiSettings) } } : {}),
           localLastModified: cloudTimestamp ?? null,
           selectedId: null,
         });

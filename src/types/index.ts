@@ -875,6 +875,8 @@ export interface AppState {
   // AI
   aiSettings: AISettings;
   aiPanelOpen: boolean;
+  /** An action another pane asked the AI panel to preselect (e.g. the Inspector's Generate button). */
+  aiRequestedAction: AIActionType | null;
   pendingAIResult: AIResult | null;
   aiContextObject: { type: AIObjectType; id: string } | null;
   storyBrief: StoryBrief | null;
@@ -1050,6 +1052,9 @@ export interface AppState {
   // ─── AI ────────────────────────────────────────────────────────────────────
   setAISettings: (patch: Partial<AISettings>) => void;
   setAIPanelOpen: (open: boolean) => void;
+  /** Open the AI panel with an action preselected, turning AI on if it is off. */
+  requestAIAction: (action: AIActionType) => void;
+  clearAIRequestedAction: () => void;
   setPendingAIResult: (result: AIResult | null) => void;
   setAIContextObject: (obj: { type: AIObjectType; id: string } | null) => void;
   setStoryBrief: (brief: StoryBrief | null) => void;
