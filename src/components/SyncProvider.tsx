@@ -372,6 +372,8 @@ function getSerializableState(state: ReturnType<typeof useAppStore.getState>) {
     manuscriptSettings: state.manuscriptSettings,
     betaReaderSettings: state.betaReaderSettings,
     storyBrief: state.storyBrief,
+    // Mode and drafting permission only — never the optional API key.
+    aiSettings: { mode: state.aiSettings.mode, allowDrafting: state.aiSettings.allowDrafting },
     localLastModified: state.localLastModified,
   };
 }

@@ -258,6 +258,7 @@ export function Inspector() {
     takeSnapshot, restoreSnapshot, deleteSnapshot,
     removeItem, sendSceneToOmitted,
     projectTarget, setProjectTarget,
+    requestAIAction,
   } = useAppStore();
 
   const paneWidth = useStoredWidths('book_bitch.inspector.width', INSPECTOR_WIDTH, INSPECTOR_LIMITS);
@@ -348,6 +349,15 @@ export function Inspector() {
                   rows={6}
                   className="bg-[#1a1a2e] border border-[#2d3748] rounded px-2 py-1 text-sm text-gray-300 outline-none focus:border-[#6b46c1] transition-colors resize-none placeholder-gray-600"
                 />
+                {item.type === 'document' && (
+                  <button
+                    onClick={() => requestAIAction('metadata')}
+                    title="Open the AI Assistant with Generate Metadata selected. You review every suggestion before it is applied."
+                    className="self-start text-xs px-2 py-1 rounded bg-purple-900/40 text-purple-300 hover:bg-purple-800/50 hover:text-white transition-colors"
+                  >
+                    ✦ Generate synopsis &amp; metadata
+                  </button>
+                )}
               </div>
             )}
 

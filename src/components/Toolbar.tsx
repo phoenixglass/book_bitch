@@ -74,7 +74,11 @@ export function Toolbar({ onOpenBinder }: ToolbarProps) {
     {replaceOpen && <FindReplaceDialog onClose={() => setReplaceOpen(false)} />}
     {vocabOpen && <VocabularyDialog onClose={() => setVocabOpen(false)} />}
     {historyOpen && <VersionHistoryDialog onClose={() => setHistoryOpen(false)} />}
-    <div className="flex items-center gap-2 px-3 h-11 bg-[#16213e] border-b border-[#0f3460] shrink-0 select-none overflow-x-auto">
+    {/* Desktop wraps onto a second row rather than scrolling buttons out of
+        sight; mobile keeps a single sideways-scrolling row. */}
+    <div className={`flex items-center gap-x-2 px-3 bg-[#16213e] border-b border-[#0f3460] shrink-0 select-none ${
+      isMobile ? 'h-11 overflow-x-auto' : 'flex-wrap min-h-11 py-1 gap-y-1'
+    }`}>
       {/* Mobile: binder toggle */}
       {isMobile && area === 'manuscript' && onOpenBinder && (
         <button
@@ -195,16 +199,19 @@ export function Toolbar({ onOpenBinder }: ToolbarProps) {
       {/* AI panel toggle */}
       <button
         onClick={() => setAIPanelOpen(!aiPanelOpen)}
-        title={aiPanelOpen ? 'Close AI panel' : 'Open AI Assistant'}
+        title={aiPanelOpen ? 'Close AI panel' : aiSettings.mode === 'disabled' ? 'Open AI Assistant (AI is off — open the panel to turn it on)' : 'Open AI Assistant'}
         className={`px-2 py-1 rounded text-xs transition-colors ${
           aiPanelOpen
             ? 'bg-purple-700 text-white'
             : aiSettings.mode !== 'disabled'
             ? 'text-purple-400 hover:text-white hover:bg-[#2d3748]'
-            : 'text-gray-600 hover:text-gray-400 hover:bg-[#2d3748]'
+            : 'text-gray-300 hover:text-white hover:bg-[#2d3748]'
         }`}
       >
         ✦<span className="ml-1 hidden sm:inline">AI</span>
+        {aiSettings.mode === 'disabled' && !aiPanelOpen && (
+          <span className="ml-1 hidden sm:inline text-[10px] text-gray-500">off</span>
+        )}
       </button>
 
       {/* Format settings — desktop only */}

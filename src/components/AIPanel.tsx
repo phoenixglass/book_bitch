@@ -1485,6 +1485,8 @@ export function AIPanel() {
     codexEntries,
     continuityReport,
     setContinuityReport,
+    aiRequestedAction,
+    clearAIRequestedAction,
   } = useAppStore();
 
   const ctx = useAIContext();
@@ -1524,6 +1526,15 @@ export function AIPanel() {
       setAction(actions[0].value);
     }
   }
+
+  // Another pane (the Inspector's Generate button) asked for a specific action:
+  // select it during render, then clear the request once it has taken.
+  if (aiRequestedAction && action !== aiRequestedAction && actions.some((a) => a.value === aiRequestedAction)) {
+    setAction(aiRequestedAction);
+  }
+  useEffect(() => {
+    if (aiRequestedAction && (action === aiRequestedAction || !ctx)) clearAIRequestedAction();
+  }, [aiRequestedAction, action, ctx, clearAIRequestedAction]);
 
   const resultResetKey = `${action}:${ctx?.objectId}`;
   const [prevResultResetKey, setPrevResultResetKey] = useState(resultResetKey);
